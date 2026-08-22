@@ -95,10 +95,9 @@ and skipped rather than throwing, so a map can be opened by an older build.
 | `type` | Properties | Notes |
 | --- | --- | --- |
 | `PlayerSpawn` | `rotation` (deg) | Exactly one required per map. |
-| `Checkpoint` | `id` | Respawn anchor; see §6. |
 | `Flashlight` | — | Pick-up. |
 | `Note` | `noteId` | Key into `notes.json`; see §6. |
-| `PowerSwitch` | `targetId` | Names a light group or gate. |
+| `PowerSwitch` | `targetId`, `mode` | Names a light group or gate; `mode` is `toggle` or `latch` (§6). |
 | `EnvironmentLight` | `groupId`, `radius`, `intensity` | Off until its group is powered. |
 | `Gate` | `id`, `targetId`, `locked` | Rotates open when triggered. |
 | `ExitGate` | `id`, `locked`, `requiredSwitches` | Win objective. |
@@ -283,9 +282,14 @@ and by taking routes the player cannot.
 - If `distance(player, enemy) < 1.0m` (radius overlap):
   - Input is disabled.
   - A full-screen jump-scare UI element (CSS/HTML overlay) triggers, holding for 1.5 s.
-  - Scene reloads to the last checkpoint or level start (§6).
+  - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
+    game-over screen, and the only continuation is a new game from the level start with
+    all switch, note, and pick-up progress cleared.
 - The check runs against the player's 0.4 m capsule; the 1.0 m threshold means contact is
   lethal slightly before the meshes visibly touch, which reads as being grabbed.
+- One touch is fatal — there is no health pool, no damage state, and no invulnerability
+  window. Every encounter is therefore a total-loss risk, which is what makes retreating
+  into the dark (§4.1) a real decision rather than a resource trade.
 
 ## 6. Items & Interactivity Specification
 
@@ -294,30 +298,35 @@ and by taking routes the player cannot.
    lore/clues. Body text lives in a separate `notes.json` keyed by `noteId`, not in the
    map file, so writing and level design stay independent. Opening a note pauses
    simulation; the world does not advance while the player is reading.
-3. **Power Switches / Buttons:** interactive objects used to restore power to sections or
-   open access points. A switch toggles every entity sharing its `targetId` — a light
-   group, a gate, or the exit's power routing. Switches latch on and cannot be switched
-   back off; progress through the map is monotonic. Safe zones are removed only by the
-   temporary outages in §4.2, never by losing switch progress.
+3. **Power Switches / Buttons:** interactive objects that act on every entity sharing
+   their `targetId`. Two modes:
+   - **`latch`** — one-way. Turns its target on and cannot be turned back off. Used for
+     gates and for the exit's power routing, so objective progress is monotonic and the
+     exit's counter never moves backwards.
+   - **`toggle`** — two-way. Used for light groups, so the player can deliberately kill a
+     lit area as well as restore it. Cutting a lamp forfeits its safe zone but removes the
+     pool of light the player is standing in — worth it when being seen matters more than
+     being safe.
+   Safe zones otherwise go dark only through the temporary outages in §4.2.
 4. **Fences & Gates:** solid obstacle prefabs. Gates transition from `solid = true` to
    `solid = false` and rotate 90° when triggered.
 5. **The Exit Gate:** the final objective. Unpowered initially. Requires the player to
    navigate the map, find specific buttons/switches to route power to it, and survive the
-   escape. It unlocks once `requiredSwitches` distinct switches targeting it have latched;
+   escape. It unlocks once `requiredSwitches` distinct `latch` switches targeting it have
+   fired;
    a HUD counter shows how many remain so the objective never becomes a hunt for an
    unmarked last switch.
-6. **Checkpoints:** invisible respawn anchors placed on the grid. Passing within 1.5 m
-   activates one and records the player's position along with world state — which switches
-   have latched, which notes have been read, which pick-ups are held. Death (§5.3) restores
-   that snapshot rather than resetting the map, so objective progress is never lost to a
-   death. Light outages (§4.2) are transient and are not part of the snapshot: every lamp
-   is restored lit on respawn. Enemies respawn at their map-defined positions.
+### Run Structure
+
+A run is a single life over the whole map (§2), with no checkpoints, no saves, and no
+mid-run persistence. World state — latched switches, toggled light groups, notes read,
+pick-ups held — lives only for the duration of the run and is discarded on death (§5.3) or
+victory.
 
 ### Victory Condition
 
 Reaching the unlocked exit gate ends the run: input is disabled, a victory overlay
-displays elapsed time, notes found, and deaths taken, and the player may restart from the
-level start.
+displays elapsed time and notes found, and the player may start a new run.
 
 ## 7. Rendering & Performance Targets
 

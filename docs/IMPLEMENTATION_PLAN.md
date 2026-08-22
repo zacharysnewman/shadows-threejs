@@ -102,20 +102,24 @@ cone mid-strain resets it.
 
 ## Phase 9 — Interactables, Power & Objectives
 
-Pick-ups, note modals with simulation pause, latching switches wired to light groups and
+Pick-ups, note modals with simulation pause, both switch modes wired to light groups and
 gates, gate open transitions with their walkability flip, the exit gate unlock counter, and
 the HUD (§6). Depends on Phase 6 only for the interaction prompt's aim test.
 
-**Exit:** a full objective chain — find flashlight, read a note, latch the required
-switches, open the exit — is completable on the example map with enemies disabled.
+**Exit:** a full objective chain — find flashlight, read a note, fire the required latch
+switches, open the exit — is completable on the example map with enemies disabled; a
+`toggle` switch cuts and restores its light group without touching exit progress.
 
-## Phase 10 — Game States
+## Phase 10 — Run Lifecycle
 
-Checkpoint capture and restore including the world-state snapshot, the death check and
-jump-scare overlay, and the victory overlay and scoring (§5.3, §6).
+The death check and jump-scare overlay, the game-over and victory screens, and run
+teardown and restart from a clean map (§5.3, §6). No checkpointing or save system — a run
+is one life, so this phase is about tearing the world down and rebuilding it cleanly, not
+about snapshotting it.
 
-**Exit:** death restores the snapshot with switch and note state intact and all lamps
-relit, not a fresh map; the objective chain from Phase 9 is completable end to end with enemies live.
+**Exit:** death and victory both return to a fresh run with no state carried over —
+including no leaked timers, audio sources, or lights from the previous run; the objective
+chain from Phase 9 is completable end to end with enemies live.
 
 ## Phase 11 — Content & Tuning
 
@@ -134,7 +138,9 @@ here rather than treating the current values as final.
 - **Test maps per phase**, small and purpose-built, checked in beside the example map. The
   real map (Phase 11) is the worst possible place to first exercise a flee raycast.
 - **Determinism.** Every timer runs on the fixed sim clock (§7); seed the randomised values
-  (§5.1, §5.2) from a per-run seed so a bug can be reproduced.
+  (§5.1, §5.2) from a per-run seed so a bug can be reproduced. With one life per run
+  (§6), a bug that only surfaces deep into a run is otherwise expensive to reach — pair
+  the seed with a debug warp so late-run state can be re-entered directly.
 - **The spec is the source of truth for constants.** Load them from one typed config module
   mirroring the spec's values rather than scattering literals, so Phase 11's tuning is an
   edit in two places, not thirty.
