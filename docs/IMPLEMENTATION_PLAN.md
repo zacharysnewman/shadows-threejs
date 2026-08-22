@@ -42,12 +42,15 @@ without throwing.
 
 ## Phase 2 — Player Controller & Camera
 
-Movement, capsule collision against Phase 1 colliders, and the camera rig (§3.1–3.2).
-Input abstraction covering keyboard+mouse, gamepad, and touch from the start — retrofitting
-a second input path onto a mouse-only aim implementation is the expensive version of this.
+Movement, capsule collision against Phase 1 colliders, and the camera rig (§3.1–3.2),
+plus the health pool with its regeneration delay and invulnerability window (§3.4), driven
+by a debug damage key until real enemies exist. Input abstraction covering keyboard+mouse,
+gamepad, and touch from the start — retrofitting a second input path onto a mouse-only aim
+implementation is the expensive version of this.
 
-**Exit:** the player traverses the example map, slides along walls without catching, and
-the camera tracks smoothly and clamps at map bounds.
+**Exit:** the player traverses the example map, slides along walls without catching, the
+camera tracks smoothly and clamps at map bounds, and debug damage produces the correct
+regeneration delay and refill curve.
 
 ## Phase 3 — Lighting Core & Flashlight
 
@@ -67,8 +70,9 @@ Listener, positional source pooling, distance models (§4.3), and the autoplay-g
 ## Phase 5 — Navigation & Enemy Base
 
 A\* over the Phase 1 grid with the repath interval and local avoidance (§5), a base enemy
-entity with the shared state machine skeleton and movement speeds, and spawning from map
-entities. No light reactions yet.
+entity with the shared state machine skeleton and movement speeds, spawning from map
+entities, and the shared contact check (§5.3) emitting a contact event that each AI
+resolves its own way in Phases 7 and 8. No light reactions yet.
 
 **Exit:** a placeholder enemy pursues the player around obstacles, repaths when the player
 breaks line of sight, and the grid rebuild on a walkability change is picked up mid-path.
@@ -85,15 +89,18 @@ edges, and inside environmental light radii, at the specified raycast budget.
 ## Phase 7 — Spider AI
 
 The four-step light reaction lifecycle (§5.1) on top of Phases 5 and 6: stun, randomised
-deterrence timer, flee target selection, and interruption.
+deterrence timer, flee target selection, and interruption. Also its contact resolution —
+damage, mutual knockback, and the post-hit recoil hold (§5.3).
 
 **Exit:** every branch of the lifecycle is reachable and observable in a test map; the flee
-raycast never targets an unwalkable point.
+raycast never targets an unwalkable point; three contacts from full health kill, and a
+cornered player is never drained faster than the invulnerability window allows.
 
 ## Phase 8 — Shadow Monster
 
 Near-invisible shadow-casting material, freeze-on-lit, the flicker curve and its severity
-ramp, blink stepping, and the environmental light sabotage lifecycle (§5.2, §4.2).
+ramp, blink stepping, its fatal contact resolution (§5.3), and the environmental light
+sabotage lifecycle (§5.2, §4.2).
 
 **Exit:** the monster is trackable by shadow and footsteps alone; sustained focus produces
 the flicker ramp and blink; a lamp the monster stands under runs the full
@@ -112,8 +119,9 @@ switches, open the exit — is completable on the example map with enemies disab
 
 ## Phase 10 — Run Lifecycle
 
-The death check and jump-scare overlay, the game-over and victory screens, and run
-teardown and restart from a clean map (§5.3, §6). No checkpointing or save system — a run
+Death resolution from the Phase 5 contact events, the per-enemy jump-scare overlays, the
+damage feedback effects — vignette, heartbeat, desaturation (§3.4) — the game-over and
+victory screens, and run teardown and restart from a clean map (§5.3, §6). No checkpointing or save system — a run
 is one life, so this phase is about tearing the world down and rebuilding it cleanly, not
 about snapshotting it.
 

@@ -137,6 +137,28 @@ by the mapping above, offset to the tile centre.
   the nearest wins — so cluttered tiles cannot produce ambiguous input.
 - Interaction is disabled while a UI modal (§6) or the death overlay (§5.3) is up.
 
+### 3.4 Health & Regeneration
+
+- Health is a 0.0–1.0 pool, full at run start. It is a buffer against the spider only —
+  the Shadow Monster ignores it entirely (§5.3).
+- **Spider damage:** 0.34 per contact, so three hits from full kill. The pool is not
+  segmented; a partially regenerated player can die in two.
+- **Invulnerability window:** 1.0 s after taking damage, during which further spider
+  contact does nothing. Without it the per-tick contact check (§5.3) would drain the whole
+  pool in three consecutive frames and the health system would not exist in practice.
+- **Regeneration:** begins 6.0 s after the last damage taken and refills at 0.12/s —
+  roughly 3 s to undo one hit, 8 s to recover from near-death. Taking damage resets the
+  delay. Regeneration continues while moving; there is no resting or bandaging action, and
+  nothing to collect.
+- **Feedback:** no numeric bar or hearts. Damage state reads through a red vignette that
+  tightens as health drops, an audible heartbeat that quickens below 0.34, and desaturation
+  at the lowest band. The player should feel the state without reading a HUD element,
+  and the effects fade as regeneration proceeds.
+
+The intent is that spider encounters are survivable and recoverable — a mistake costs
+tempo and forces a retreat rather than the run — while the Shadow Monster stays absolute.
+Health never mitigates it, so no amount of regeneration makes standing near it viable.
+
 ## 4. Lighting, Visibility & Audio System
 
 Lighting is the primary mechanics driver, paired tightly with spatial audio and battery
@@ -245,6 +267,8 @@ and by taking routes the player cannot.
      1.5× speed.
   4. **Interruption:** if light is removed before `T_flee` expires, it resumes approaching
      after a 0.2 s delay.
+- **On contact:** the spider damages rather than kills, and recoils afterwards; see §5.3.
+  It is a war of attrition the player can lose slowly, not a single mistake.
 
 ### 5.2 Enemy 2: Shadow Monster
 
@@ -276,20 +300,34 @@ and by taking routes the player cannot.
      the lamp's flicker is what tells the player where it is pinned. See the sabotage
      lifecycle in §4.2 for timings.
 
-### 5.3 The Death State (Fail Condition)
+### 5.3 Contact, Damage & The Death State (Fail Condition)
 
 - A simple X/Z distance check is run between the player and any hostile entity.
-- If `distance(player, enemy) < 1.0m` (radius overlap):
-  - Input is disabled.
-  - A full-screen jump-scare UI element (CSS/HTML overlay) triggers, holding for 1.5 s.
-  - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
-    game-over screen, and the only continuation is a new game from the level start with
-    all switch, note, and pick-up progress cleared.
-- The check runs against the player's 0.4 m capsule; the 1.0 m threshold means contact is
-  lethal slightly before the meshes visibly touch, which reads as being grabbed.
-- One touch is fatal — there is no health pool, no damage state, and no invulnerability
-  window. Every encounter is therefore a total-loss risk, which is what makes retreating
-  into the dark (§4.1) a real decision rather than a resource trade.
+- If `distance(player, enemy) < 1.0m` (radius overlap), the outcome depends on which
+  enemy made contact:
+
+**Spider contact — damaging.** Deducts 0.34 health (§3.4) and opens the 1.0 s
+invulnerability window. The player is knocked back 1.0 m from the spider, and the spider
+itself recoils 1.5 m and holds for 1.0 s before resuming pursuit (§5.1) — without that
+recoil a spider that reaches the player simply stands on them and the invulnerability
+window only delays the same death. The run continues; if the deduction takes health to
+0.0, it resolves as death below.
+
+**Shadow Monster contact — fatal.** Kills outright at any health, ignoring the
+invulnerability window. There is no chip damage, no partial hit, and no survivable
+brush — reaching the player is the whole of its threat.
+
+**On death:**
+
+- Input is disabled.
+- A full-screen jump-scare UI element (CSS/HTML overlay) triggers, holding for 1.5 s. The
+  two enemies use different jump-scare presentations, so the player reads what killed them.
+- The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
+  game-over screen, and the only continuation is a new game from the level start with all
+  switch, note, and pick-up progress cleared.
+
+The check runs against the player's 0.4 m capsule; the 1.0 m threshold means contact
+lands slightly before the meshes visibly touch, which reads as being grabbed.
 
 ## 6. Items & Interactivity Specification
 
