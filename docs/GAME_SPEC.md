@@ -1,10 +1,5 @@
 # Top-Down Web Horror Game — Game Design & Technical Specification
 
-> **Note on placeholders:** the source text for this spec lost several inline numeric
-> values and formulas in transit (they appeared as replacement characters). Those spots
-> are marked `TBD` below, with the surrounding context preserved so the intended value
-> can be filled in. Nothing has been invented in their place.
-
 ## 1. Project Overview & Tech Stack Architecture
 
 The goal of this project is to build a browser-based, top-down horror game utilizing a
@@ -17,19 +12,20 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
 - **Map Design Tools:** blurymind Tilemap Editor (PWA/Web) or NotTiled (Android/Web).
 - **Build Tooling:** Vite (development server & asset bundling).
 - **Language & Core Engine:** Modern JavaScript / TypeScript with Three.js (WebGL).
-- **Camera Perspective:** Pitched top-down — perspective camera pitched at `TBD`–`TBD`
-  degrees down, to ensure floor shadows from upright entities are visible.
+- **Camera Perspective:** Pitched top-down — perspective camera pitched at ≈70°–75° down,
+  to ensure floor shadows from upright entities are visible.
 - **Pathfinding:** 2D grid-based A\* algorithm (EasyStar.js or custom) layered with simple
   local avoidance.
-- **3D Asset Pipeline:** Low-poly `.glb` / `.gltf` modular grid assets (`TBD` grid unit
-  standard — the sample `map.json` in §2 declares `tileSize: 2.0`).
+- **3D Asset Pipeline:** Low-poly `.glb` / `.gltf` modular grid assets (2 m × 2 m grid unit
+  standard).
 - **Audio:** `THREE.PositionalAudio` for spatial 3D sound, crucial for tracking invisible
   threats.
 
 ## 2. Map Pipeline & JSON Data Schema
 
 The game takes place on a single, continuous map. Level maps are created on a 2D tile
-grid. Grid coordinates `(x, y)` map directly to 3D world space as `(x, 0, y)`.
+grid. Grid coordinates `(x, y)` map directly to 3D world space as
+`(x · tileSize, 0, y · tileSize)`.
 
 ### Map Layers Structure
 
@@ -75,17 +71,18 @@ management.
 ### 3.1 Flashlight Mechanics & Battery
 
 - **Type:** attached `THREE.SpotLight` bound to the player's position and directed towards
-  the mouse cursor / right analog position on the `XZ` plane.
-- **Spotlight Properties:** angle `TBD`, penumbra `TBD`, cast shadow enabled, range `TBD`.
+  the mouse cursor / right analog position on the X/Z plane.
+- **Spotlight Properties:** angle ≈45°, penumbra 0.3, cast shadow enabled, range 12 m.
 - **Battery Drain & Recharge (mechanic):**
   - The flashlight has a finite charge capacity.
   - When turned ON, the battery drains steadily.
   - When turned OFF, the battery auto-recharges over time. This forces the player into
     terrifying moments of vulnerability in the dark.
 - **Optimized FOV Detection:**
-  - Checks if an enemy target position lies within distance `TBD` and within angle `TBD`.
+  - Checks if an enemy target position `P_e` lies within distance `d ≤ range` and within
+    angle `θ ≤ spotlightAngle / 2`.
   - Raycasts to confirm line-of-sight are only performed at a fixed interval
-    (e.g. every `TBD`).
+    (e.g. every 100 ms / 10 Hz).
 
 ### 3.2 Environmental Lighting (Dynamic Sabotage)
 
@@ -106,7 +103,7 @@ management.
 ## 4. Enemy Design & AI Specification
 
 Both enemies rely on a base A\* pathfinding logic that updates their target paths
-periodically (e.g. every `TBD`). The Shadow Monster ignores other entity colliders.
+periodically (e.g. every 500 ms). The Shadow Monster ignores other entity colliders.
 
 ### 4.1 Enemy 1: Giant Spider (Dog-Sized)
 
@@ -116,12 +113,13 @@ periodically (e.g. every `TBD`). The Shadow Monster ignores other entity collide
 - **Light Reaction Lifecycle:**
   1. **Instant Stun:** the instant the flashlight beam hits the spider's bounding box, its
      velocity drops to `0`.
-  2. **Deterrence Timer:** a timer `t` randomized between `TBD` and `TBD` begins.
-  3. **Flee Mode:** if illuminated for `t`, the spider enters `Flee` state. It calculates a
-     vector directly away from the player, raycasts to find the furthest walkable point on
-     that vector, and sets that as its new target for `TBD`, moving at `TBD` speed.
-  4. **Interruption:** if light is removed before `t` expires, it resumes approaching after
-     a `TBD` delay.
+  2. **Deterrence Timer:** a timer `T_flee` randomized between 1.0 s and 4.0 s begins.
+  3. **Flee Mode:** if illuminated for `T_flee`, the spider enters `Flee` state. It
+     calculates a vector directly away from the player, raycasts to find the furthest
+     walkable point on that vector, and sets that as its new target for 3 s, moving at
+     1.5× speed.
+  4. **Interruption:** if light is removed before `T_flee` expires, it resumes approaching
+     after a 0.2 s delay.
 
 ### 4.2 Enemy 2: Shadow Monster
 
@@ -133,8 +131,13 @@ periodically (e.g. every `TBD`). The Shadow Monster ignores other entity collide
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
      Monster cannot move.
   2. **Light Interference / Flickering:**
-     - Sustained flashlight focus causes the beam intensity to fluctuate (formula `TBD`).
-     - `flickerSeverity` ramps from `TBD` to `TBD` over `TBD` seconds of continuous focus.
+     - Sustained flashlight focus causes the beam intensity `I` to fluctuate:
+
+       ```
+       I(t) = I_base · (1.0 - flickerSeverity · |sin(f · t)| · random(0.7, 1.3))
+       ```
+
+     - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus.
      - **The "Blink" Movement:** during extreme flickers (when light intensity drops below
        threshold for a few frames), the Shadow Monster breaks its freeze state and takes a
        rapid, lurching step toward the player.
@@ -143,7 +146,7 @@ periodically (e.g. every `TBD`). The Shadow Monster ignores other entity collide
 
 ### 4.3 The Death State (Fail Condition)
 
-- A simple distance check is run between the player and any hostile entity.
+- A simple X/Z distance check is run between the player and any hostile entity.
 - If `distance(player, enemy) < 1.0m` (radius overlap):
   - Input is disabled.
   - A full-screen jump-scare UI element (CSS/HTML overlay) triggers.
@@ -157,7 +160,7 @@ periodically (e.g. every `TBD`). The Shadow Monster ignores other entity collide
 3. **Power Switches / Buttons:** interactive objects used to restore power to sections or
    open access points.
 4. **Fences & Gates:** solid obstacle prefabs. Gates transition from `solid = true` to
-   `solid = false` and rotate `TBD` degrees when triggered.
+   `solid = false` and rotate 90° when triggered.
 5. **The Exit Gate:** the final objective. Unpowered initially. Requires the player to
    navigate the map, find specific buttons/switches to route power to it, and survive the
    escape.
