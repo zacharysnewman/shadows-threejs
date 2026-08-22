@@ -93,12 +93,12 @@ raycast never targets an unwalkable point.
 ## Phase 8 — Shadow Monster
 
 Near-invisible shadow-casting material, freeze-on-lit, the flicker curve and its severity
-ramp, blink stepping, and environmental light sabotage with its interruptible wind-up
-(§5.2, §4.2).
+ramp, blink stepping, and the environmental light sabotage lifecycle (§5.2, §4.2).
 
 **Exit:** the monster is trackable by shadow and footsteps alone; sustained focus produces
-the flicker ramp and blink; a sabotage is both completable and interruptible; a destroyed
-light stays destroyed through a switch re-toggle.
+the flicker ramp and blink; a lamp the monster stands under runs the full
+strain/failure/recovery cycle and releases the freeze exactly when it fails; leaving the
+cone mid-strain resets it.
 
 ## Phase 9 — Interactables, Power & Objectives
 
@@ -114,8 +114,8 @@ switches, open the exit — is completable on the example map with enemies disab
 Checkpoint capture and restore including the world-state snapshot, the death check and
 jump-scare overlay, and the victory overlay and scoring (§5.3, §6).
 
-**Exit:** death restores the snapshot with sabotage and switch state intact, not a fresh
-map; the objective chain from Phase 9 is completable end to end with enemies live.
+**Exit:** death restores the snapshot with switch and note state intact and all lamps
+relit, not a fresh map; the objective chain from Phase 9 is completable end to end with enemies live.
 
 ## Phase 11 — Content & Tuning
 

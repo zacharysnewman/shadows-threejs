@@ -169,21 +169,38 @@ management.
 
 - Turning on power switches activates environmental lights (e.g. overhead streetlamps or
   facility lights), addressed in groups by `groupId` (§2).
-- **Properties:** each light is a `THREE.PointLight` at 4 m height with a default 6 m
-  radius and per-entity `intensity` override. Only environmental lights within the camera
-  frustum cast shadows, and at most two do so at once (§7).
+- **Properties:** each light is a downward-facing `THREE.SpotLight` mounted at 4 m,
+  throwing a cone that pools to a default 6 m ground radius, with a per-entity `intensity`
+  override. Only environmental lights within the camera frustum cast shadows, and at most
+  two do so at once (§7).
 - These lights act as temporary safe zones. The effect is per-enemy, not generic: a spider
-  inside the radius is repelled and runs its flee lifecycle (§5.1); a Shadow Monster inside
+  inside the cone is repelled and runs its flee lifecycle (§5.1); a Shadow Monster inside
   it is frozen (§5.2). Illumination from an environmental light counts as "lit" for both,
   identically to the flashlight beam.
-- **Sabotage Mechanic:** the Shadow Monster can interact with environmental lights, turning
-  them off or breaking them to remove safe zones, dynamically altering the safe paths
-  through the map.
-- **Sabotage semantics:** a sabotaged light is destroyed, not merely switched off — its
-  group's `PowerSwitch` no longer restores it, and the safe zone is gone for the rest of
-  the run. This makes lit territory a depleting resource and prevents the player from
-  farming one lamp indefinitely. A 1.0 s wind-up plays before the light dies, giving the
-  player a window to illuminate the monster and interrupt it.
+- **Sabotage Mechanic:** the Shadow Monster's presence degrades a light it is standing
+  under. This is not a deliberate action it takes and not a permanent one — the lamp
+  struggles while the monster is in its cone, fails, and recovers.
+
+#### Sabotage Lifecycle
+
+A light tracks the monster's continuous dwell time inside its cone. Leaving the cone
+resets the dwell to zero.
+
+1. **Strain (dwell ≥ 2.0 s):** the lamp begins to flicker, its intensity fluttering with
+   the same character as the flashlight interference (§5.2) and audibly buzzing.
+2. **Failure (after 1.5 s of flicker):** the lamp goes out. Its safe zone is gone and the
+   Shadow Monster's freeze (§5.2) releases the instant the cone dies.
+3. **Recovery (6.0 s later):** the lamp relights at full intensity, with the dwell timer
+   reset. If the monster is still standing under it, the cycle begins again from strain.
+
+The light is never destroyed and its `PowerSwitch` state is untouched — a powered group
+stays powered, and an outage is a rolling hazard rather than lost progress. The design
+consequence is a moving map of safe ground: routes the player relied on go dark for a few
+seconds at a time and come back, and camping under one lamp forever fails on its own.
+
+**The flicker is a tell.** The Shadow Monster is invisible (§5.2), so a lamp starting to
+strain across the map is the clearest information the player ever gets about where it is —
+readable at any distance, and worth reading before the pool goes dark.
 
 ### 4.3 Audio Core
 
@@ -253,8 +270,12 @@ and by taking routes the player cannot.
        `I_base` for 3 consecutive frames. The step covers up to 2.0 m toward the player
        over 0.15 s, stopping short at the first solid tile, and cannot retrigger for
        0.5 s. The step is instant enough to read as a jump-cut rather than a walk.
-  3. **Environmental Sabotage:** if the Shadow Monster enters the radius of an active
-     environmental light, it disables the light source.
+  3. **Environmental Sabotage:** if the Shadow Monster enters the cone of an active
+     environmental light, it disables the light source — by standing in it rather than by
+     acting on it. Note that the cone also freezes the monster, so the frozen monster
+     degrading the lamp above it is the same event: it is pinned until the lamp fails, and
+     the lamp's flicker is what tells the player where it is pinned. See the sabotage
+     lifecycle in §4.2 for timings.
 
 ### 5.3 The Death State (Fail Condition)
 
@@ -276,8 +297,8 @@ and by taking routes the player cannot.
 3. **Power Switches / Buttons:** interactive objects used to restore power to sections or
    open access points. A switch toggles every entity sharing its `targetId` — a light
    group, a gate, or the exit's power routing. Switches latch on and cannot be switched
-   back off; progress through the map is monotonic, and the only thing that removes a
-   safe zone is sabotage (§4.2).
+   back off; progress through the map is monotonic. Safe zones are removed only by the
+   temporary outages in §4.2, never by losing switch progress.
 4. **Fences & Gates:** solid obstacle prefabs. Gates transition from `solid = true` to
    `solid = false` and rotate 90° when triggered.
 5. **The Exit Gate:** the final objective. Unpowered initially. Requires the player to
@@ -287,18 +308,16 @@ and by taking routes the player cannot.
    unmarked last switch.
 6. **Checkpoints:** invisible respawn anchors placed on the grid. Passing within 1.5 m
    activates one and records the player's position along with world state — which switches
-   have latched, which lights have been sabotaged, which notes have been read. Death (§5.3)
-   restores that snapshot, not a fresh map: sabotage survives death, so a bad run leaves
-   the map permanently darker and there is no value in dying deliberately to reset it.
-   Enemies respawn at their map-defined positions.
+   have latched, which notes have been read, which pick-ups are held. Death (§5.3) restores
+   that snapshot rather than resetting the map, so objective progress is never lost to a
+   death. Light outages (§4.2) are transient and are not part of the snapshot: every lamp
+   is restored lit on respawn. Enemies respawn at their map-defined positions.
 
 ### Victory Condition
 
 Reaching the unlocked exit gate ends the run: input is disabled, a victory overlay
-displays elapsed time, notes found, and lights lost to sabotage, and the player may
-restart from the level start. Escaping with most of the map's lights destroyed is a worse
-score than escaping with them intact, which rewards interrupting sabotage (§4.2) rather
-than only running.
+displays elapsed time, notes found, and deaths taken, and the player may restart from the
+level start.
 
 ## 7. Rendering & Performance Targets
 
