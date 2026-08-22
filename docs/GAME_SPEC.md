@@ -22,7 +22,7 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
 - **Pathfinding:** 2D grid-based A\* algorithm (EasyStar.js or custom) layered with simple
   local avoidance.
 - **3D Asset Pipeline:** Low-poly `.glb` / `.gltf` modular grid assets (`TBD` grid unit
-  standard).
+  standard — the sample `map.json` in §2 declares `tileSize: 2.0`).
 - **Audio:** `THREE.PositionalAudio` for spatial 3D sound, crucial for tracking invisible
   threats.
 
@@ -41,9 +41,31 @@ grid. Grid coordinates `(x, y)` map directly to 3D world space as `(x, 0, y)`.
 
 ### Example JSON Specification Export (`map.json`)
 
-*The concrete export sample was not included in the source spec — to be supplied from the
-chosen editor's actual export. It must express the three layers above plus an entity list
-carrying type, grid position, and per-type properties.*
+```json
+{
+  "width": 50,
+  "height": 50,
+  "tileSize": 2.0,
+  "layers": [
+    {
+      "name": "Floor",
+      "data": [1, 1, 1, 1, 1, /* ... */ ]
+    },
+    {
+      "name": "Walls",
+      "data": [0, 2, 2, 0, 2, /* ... */ ]
+    }
+  ],
+  "entities": [
+    { "type": "PlayerSpawn", "x": 2, "y": 2, "properties": { "rotation": 0 } },
+    { "type": "Flashlight", "x": 3, "y": 2, "properties": {} },
+    { "type": "PowerSwitch", "x": 20, "y": 22, "properties": { "targetId": "Area2Lights" } },
+    { "type": "ExitGate", "x": 48, "y": 48, "properties": { "id": "MainExit", "locked": true, "requiredSwitches": 3 } },
+    { "type": "SpiderEnemy", "x": 12, "y": 10, "properties": {} },
+    { "type": "ShadowMonster", "x": 30, "y": 30, "properties": {} }
+  ]
+}
+```
 
 ## 3. Lighting, Visibility & Audio System
 
