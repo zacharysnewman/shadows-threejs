@@ -43,8 +43,8 @@ without throwing.
 ## Phase 2 — Player Controller & Camera
 
 Movement, capsule collision against Phase 1 colliders, and the camera rig (§3.1–3.2),
-plus the health pool with its regeneration delay and invulnerability window (§3.4), driven
-by a debug damage key until real enemies exist. Input abstraction covering keyboard+mouse,
+plus the health pool with its regeneration delay and curve (§3.4), driven by a debug
+damage key until real enemies exist. Input abstraction covering keyboard+mouse,
 gamepad, and touch from the start — retrofitting a second input path onto a mouse-only aim
 implementation is the expensive version of this.
 
@@ -93,8 +93,9 @@ deterrence timer, flee target selection, and interruption. Also its contact reso
 damage, mutual knockback, and the post-hit recoil hold (§5.3).
 
 **Exit:** every branch of the lifecycle is reachable and observable in a test map; the flee
-raycast never targets an unwalkable point; three contacts from full health kill, and a
-cornered player is never drained faster than the invulnerability window allows.
+raycast never targets an unwalkable point; three contacts from full health kill; one
+spider cannot land hits faster than its own cooldown, and two spiders converging both
+register inside the same second.
 
 ## Phase 8 — Shadow Monster
 

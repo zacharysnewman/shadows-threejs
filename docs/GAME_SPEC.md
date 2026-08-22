@@ -143,9 +143,11 @@ by the mapping above, offset to the tile centre.
   the Shadow Monster ignores it entirely (§5.3).
 - **Spider damage:** 0.34 per contact, so three hits from full kill. The pool is not
   segmented; a partially regenerated player can die in two.
-- **Invulnerability window:** 1.0 s after taking damage, during which further spider
-  contact does nothing. Without it the per-tick contact check (§5.3) would drain the whole
-  pool in three consecutive frames and the health system would not exist in practice.
+- **No invulnerability window.** Damage is gated per attacker, not per player: each spider
+  carries its own attack cooldown (§5.3), so it cannot re-hit on consecutive ticks, but
+  nothing stops two spiders landing within the same second. A pack is proportionally more
+  dangerous than one spider, and three converging can take a player from full health to
+  dead in a single exchange.
 - **Regeneration:** begins 6.0 s after the last damage taken and refills at 0.12/s —
   roughly 3 s to undo one hit, 8 s to recover from near-death. Taking damage resets the
   delay. Regeneration continues while moving; there is no resting or bandaging action, and
@@ -306,16 +308,17 @@ and by taking routes the player cannot.
 - If `distance(player, enemy) < 1.0m` (radius overlap), the outcome depends on which
   enemy made contact:
 
-**Spider contact — damaging.** Deducts 0.34 health (§3.4) and opens the 1.0 s
-invulnerability window. The player is knocked back 1.0 m from the spider, and the spider
-itself recoils 1.5 m and holds for 1.0 s before resuming pursuit (§5.1) — without that
-recoil a spider that reaches the player simply stands on them and the invulnerability
-window only delays the same death. The run continues; if the deduction takes health to
-0.0, it resolves as death below.
+**Spider contact — damaging.** Deducts 0.34 health (§3.4). The player is knocked back
+1.0 m from the spider, and the spider itself recoils 1.5 m, holds for 1.0 s, then resumes
+pursuit (§5.1). That spider cannot damage again for 1.5 s from the moment it lands the
+hit; the cooldown is tracked on the spider, not on the player, so other spiders are
+unaffected and can land their own hits in the same second. Without the recoil and cooldown
+a spider that reaches the player would deal its whole pool in consecutive ticks; with them,
+being caught by one spider is survivable and being caught by three is not. The run
+continues; if the deduction takes health to 0.0, it resolves as death below.
 
-**Shadow Monster contact — fatal.** Kills outright at any health, ignoring the
-invulnerability window. There is no chip damage, no partial hit, and no survivable
-brush — reaching the player is the whole of its threat.
+**Shadow Monster contact — fatal.** Kills outright at any health. There is no chip damage,
+no partial hit, and no survivable brush — reaching the player is the whole of its threat.
 
 **On death:**
 
