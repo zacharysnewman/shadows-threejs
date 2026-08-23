@@ -170,9 +170,12 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   camera that hides the void by losing the player has failed at the more important half of
   its job.
 - Static geometry between the camera and the player must not hide the player. At a 70°–75°
-  pitch a full-height wall on the camera side of the player does exactly that, so the art
-  pass (§1) owns the treatment — low walls, cutaways, or fading the occluder. No camera
-  setting rescues it.
+  pitch a full-height wall on the camera side of the player does exactly that, and once the
+  map is dark (§4) the occluder does not even read as a wall — it is a black rectangle
+  covering the player and their beam. Geometry inside a cylinder between the player and the
+  camera is therefore faded out. Only the *visible surface* fades: the occluder still blocks
+  light and still casts its shadow, so the fade cannot be used to see into a room the player
+  could not otherwise see into. It is a way to see the player, not a way to see past walls.
 
 ### 3.3 Interaction
 
@@ -211,11 +214,33 @@ Health never mitigates it, so no amount of regeneration makes standing near it v
 Lighting is the primary mechanics driver, paired tightly with spatial audio and battery
 management.
 
+**The dark is not pure black.** Unlit ground carries a dim ambient: enough that walls and
+floor read as silhouettes, not enough to identify anything or to make the flashlight
+optional. At zero ambient an unlit room renders as a blank screen rather than as a dark
+one, and the Shadow Monster (§5.2) is trackable only as a shadow cast onto ground that has
+some light on it.
+
+**The player's own silhouette stays readable.** The character is legible in the dark as a
+dim shape. This is a rendering allowance, not a light source — it illuminates nothing,
+lights no surface, and no light-reactive enemy responds to it. A player who cannot see
+which of the shapes on screen is theirs is not playing a dark game, they are playing a
+broken one.
+
 ### 4.1 Flashlight Mechanics & Battery
 
 - **Type:** attached `THREE.SpotLight` bound to the player's position and directed towards
   the mouse cursor / right analog position on the X/Z plane.
-- **Spotlight Properties:** angle ≈45°, penumbra 0.3, cast shadow enabled, range 12 m.
+- **Spotlight Properties:** angle ≈45° (the full cone), penumbra 0.3, cast shadow enabled,
+  range 12 m along the ground.
+- **Mounting:** carried at chest height and emitted just clear of the player's capsule — a
+  light inside the player's own mesh is shadowed by it, and the player's shoulders throw a
+  black wedge across their own beam. The axis is declined so the cone's *upper* edge meets
+  the ground at the beam's range, which puts the near edge of the lit pool about a metre in
+  front of the player. A beam pointed flat along the aim vector spends its upper half on
+  walls and leaves the floor dark around the player, which under the pitched camera (§3.2)
+  reads as a hole rather than as a torch.
+- **Toggle:** `F` / gamepad `X` / the on-screen action button. A toggle is refused outright,
+  with no state change, while the battery is flat or the lockout below is holding.
 - **Battery Drain & Recharge (mechanic):**
   - The flashlight has a finite charge capacity, expressed as a 0.0–1.0 charge fraction.
   - When turned ON, the battery drains steadily: 1/45 per second, i.e. 45 s of continuous
@@ -426,6 +451,9 @@ constraint and not a polish-phase concern.
   environmental lights illuminate without casting.
 - Shadow map 2048×2048 for the flashlight, 1024×1024 for environmental lights; PCF soft
   shadows; shadow camera near/far tightened to the light's range to keep depth precision.
+- Filmic tone mapping. The scene is a handful of small, close lights against near-black
+  (§4) — exactly the range that clips. Without a tone curve the middle of a light pool goes
+  flat white and takes the detail with it, including the shadows the game is played by.
 - Static Layer 0/1 geometry is merged or instanced per prefab at load time — a 50×50 map is
   2,500 floor tiles and must not be 2,500 draw calls.
 - Simulation runs on a fixed 60 Hz timestep decoupled from rendering, so AI timers (§4.1,

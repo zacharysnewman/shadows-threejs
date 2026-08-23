@@ -35,6 +35,9 @@ export class EntityMarkers {
   constructor(registry: EntityRegistry) {
     const group = new THREE.Group();
     group.name = 'DebugEntityMarkers';
+    // Off by default, like the other overlays. From Phase 3 the map is dark (§4), and
+    // unlit marker posts glowing through it are the loudest thing on the screen.
+    group.visible = false;
 
     this.geometry = new THREE.CylinderGeometry(MARKER_RADIUS, MARKER_RADIUS, MARKER_HEIGHT, 8);
     this.geometry.translate(0, MARKER_HEIGHT / 2, 0);

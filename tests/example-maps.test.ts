@@ -4,6 +4,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { RENDER } from '../src/config';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildColliders, buildFloorGapColliders } from '../src/map/colliders';
@@ -137,5 +138,58 @@ describe('maps/phase2-test', () => {
     expect(grid.isWalkable(map.width - 2, 1)).toBe(true);
     expect(grid.isWalkable(1, map.height - 2)).toBe(true);
     expect(grid.isWalkable(map.width - 2, map.height - 2)).toBe(true);
+  });
+});
+
+describe('maps/phase3-test', () => {
+  const { map, grid, entities } = load('phase3-test');
+
+  it('loads clean, with no warnings', () => {
+    expect(map.warnings).toEqual([]);
+    expect(entities.byType('PlayerSpawn')).toHaveLength(1);
+  });
+
+  it('has more lit lamps than §7 has shadow slots, so the budget has to choose', () => {
+    const lamps = entities.byType('EnvironmentLight');
+    expect(lamps.length).toBeGreaterThan(RENDER.maxShadowCastingEnvironmentLights);
+
+    // In more than one group, so powering them is visibly per-group rather than global.
+    const groups = new Set(lamps.map((l) => l.groupId));
+    expect(groups.size).toBeGreaterThan(1);
+  });
+
+  it('gives every lamp group a switch for Phase 9 to find (§6)', () => {
+    for (const lamp of entities.byType('EnvironmentLight')) {
+      expect(entities.switchesTargeting(lamp.groupId).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('stands props in open ground for the beam to throw shadows from (§4.1)', () => {
+    // Solid tiles with walkable floor on every side: a wall casts a shadow too, but only a
+    // free-standing prop shows the shape of one.
+    const walls = map.layers[1]!;
+    let freeStanding = 0;
+    for (let y = 1; y < map.height - 1; y += 1) {
+      for (let x = 1; x < map.width - 1; x += 1) {
+        if (walls.data[y * map.width + x] === 0) continue;
+        const open =
+          grid.isWalkable(x - 1, y) &&
+          grid.isWalkable(x + 1, y) &&
+          grid.isWalkable(x, y - 1) &&
+          grid.isWalkable(x, y + 1);
+        if (open) freeStanding += 1;
+      }
+    }
+    expect(freeStanding).toBeGreaterThanOrEqual(8);
+  });
+
+  it('keeps one corridor no lamp reaches, where the beam is the only light', () => {
+    const lamps = entities.byType('EnvironmentLight');
+    // The corridor between the two dividers, walked north to south.
+    for (let gy = 1; gy < map.height - 1; gy += 1) {
+      const { wx, wz } = grid.gridToWorld(14, gy);
+      const nearest = Math.min(...lamps.map((l) => Math.hypot(l.wx - wx, l.wz - wz) - l.radius));
+      expect(nearest).toBeGreaterThan(0);
+    }
   });
 });

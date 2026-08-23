@@ -26,9 +26,11 @@ npm test           # unit tests
 - `/?map=phase2-test` — a small map built to catch the player capsule out: a diagonal
   pillar staircase, one-tile doorways, a fence run, a pit with no floor, a dead-end
   alcove, and walkable ground against every map edge for the camera clamp
+- `/?map=phase3-test` — a map for the lighting: a field of free-standing props to throw
+  beam shadows from, seven lamps in three groups (more than the two that may cast shadows
+  at once), and a corridor no lamp reaches
 
-`node scripts/gen-example-map.mjs` and `node scripts/gen-phase2-map.mjs` regenerate those
-maps' layer data.
+The `scripts/gen-*-map.mjs` generators regenerate those maps' layer data.
 
 ## CI
 
@@ -69,6 +71,10 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | --- | --- |
 | `WASD` / arrows | move; the mouse aims |
 | `V` | hand the camera to the debug free camera — `WASD` then pans, wheel zooms |
+| `F` | flashlight on/off |
+| `B` | drain the battery to 5%, to reach the cut-out and lockout without waiting 45 s |
+| `L` | power every light group — Phase 9 replaces this with the switches |
+| `O` | occluder fade (geometry between the camera and the player) |
 | `K` | debug damage: one spider contact's worth (0.34) |
 | `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |
@@ -88,7 +94,7 @@ Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–2 are implemented:
+Phases 0–3 are implemented:
 
 - **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
 - **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
@@ -101,10 +107,16 @@ Phases 0–2 are implemented:
   clamp; and the health pool with its regeneration delay and refill, driven by a debug
   damage key until enemies exist.
 
-Not yet built: the flashlight and lighting (Phase 3), audio (Phase 4), enemies (Phases 5,
-7, 8), interaction and objectives (Phase 9), and the run lifecycle (Phase 10) — health
-reaching zero currently logs and nothing more. Prefab `.glb` assets do not exist yet, so
-the asset loader stands in coloured placeholder boxes sized by prefab name prefix.
+- **Phase 3** — the lighting: the map is dark, and lit by the flashlight bound to the
+  player's aim — with its battery drain, recharge, intensity falloff and re-enable
+  lockout — plus environmental lamps that light in groups, of which at most two cast
+  shadows at a time.
+
+Not yet built: audio (Phase 4), enemies (Phases 5, 7, 8), interaction and objectives
+(Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently logs and
+nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
+Prefab `.glb` assets do not exist yet, so the asset loader stands in coloured placeholder
+boxes sized by prefab name prefix.
 
 `docs/IMPLEMENTATION_PLAN.md` carries the per-phase detail, including what each finished
 phase deliberately left for later.
@@ -113,9 +125,10 @@ phase deliberately left for later.
 
 ```
 src/config.ts     constants mirroring the spec — tuning happens here, not in systems
-src/core/         sim clock, viewport, asset loader, input
+src/core/         sim clock, viewport, asset loader, input, occluder fade
 src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
+src/lighting/     flashlight, battery, environmental lights, night ambient
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map
 scripts/          map generators for the checked-in maps
