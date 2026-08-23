@@ -26,6 +26,11 @@ npm test           # unit tests
 
 `node scripts/gen-example-map.mjs` regenerates the example map's layer data.
 
+## CI
+
+`.github/workflows/ci.yml` runs the tests and the build on every pull request — the same
+steps the deploy runs, so a PR that would break the deploy fails while it is still a PR.
+
 ## Deployment
 
 The site is a static bundle published to GitHub Pages from this repository.
