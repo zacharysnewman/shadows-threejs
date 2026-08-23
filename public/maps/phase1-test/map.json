@@ -1,0 +1,151 @@
+{
+  "width": 12,
+  "height": 8,
+  "tileSize": 2.0,
+  "layers": [
+    {
+      "name": "Floor",
+      "data": [
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 9, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 1,
+        1, 4, 4, 4, 1, 1, 1, 1, 1, 0, 0, 1,
+        1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
+      ]
+    },
+    {
+      "name": "Walls",
+      "data": [
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 2, 2, 2, 2, 2, 3, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 2,
+        2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2,
+        2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "type": "PlayerSpawn",
+      "x": 1,
+      "y": 1,
+      "properties": {
+        "rotation": 0
+      }
+    },
+    {
+      "type": "Flashlight",
+      "x": 2,
+      "y": 2,
+      "properties": {}
+    },
+    {
+      "type": "Note",
+      "x": 4,
+      "y": 2,
+      "properties": {
+        "noteId": "test_note"
+      }
+    },
+    {
+      "type": "PowerSwitch",
+      "x": 6,
+      "y": 2,
+      "properties": {
+        "targetId": "TestLights",
+        "mode": "toggle"
+      }
+    },
+    {
+      "type": "PowerSwitch",
+      "x": 7,
+      "y": 6,
+      "properties": {
+        "targetId": "TestGate",
+        "mode": "latch"
+      }
+    },
+    {
+      "type": "PowerSwitch",
+      "x": 3,
+      "y": 5,
+      "properties": {
+        "targetId": "TestLights"
+      }
+    },
+    {
+      "type": "EnvironmentLight",
+      "x": 4,
+      "y": 5,
+      "properties": {
+        "groupId": "TestLights",
+        "radius": 6,
+        "intensity": 1.0
+      }
+    },
+    {
+      "type": "EnvironmentLight",
+      "x": 8,
+      "y": 5,
+      "properties": {
+        "groupId": "TestLights"
+      }
+    },
+    {
+      "type": "Gate",
+      "x": 5,
+      "y": 5,
+      "properties": {
+        "id": "TestGate",
+        "targetId": "TestGate",
+        "locked": true
+      }
+    },
+    {
+      "type": "ExitGate",
+      "x": 10,
+      "y": 1,
+      "properties": {
+        "id": "TestExit",
+        "locked": true,
+        "requiredSwitches": 1
+      }
+    },
+    {
+      "type": "SpiderEnemy",
+      "x": 9,
+      "y": 2,
+      "properties": {}
+    },
+    {
+      "type": "ShadowMonster",
+      "x": 2,
+      "y": 6,
+      "properties": {}
+    },
+    {
+      "type": "TeleportPad",
+      "x": 5,
+      "y": 2,
+      "properties": {}
+    },
+    {
+      "type": "Note",
+      "x": 6,
+      "y": 6,
+      "properties": {}
+    },
+    {
+      "type": "SpiderEnemy",
+      "x": 99,
+      "y": 4,
+      "properties": {}
+    }
+  ]
+}
