@@ -55,7 +55,7 @@ grid. Grid coordinates `(x, y)` map directly to 3D world space as
   "entities": [
     { "type": "PlayerSpawn", "x": 2, "y": 2, "properties": { "rotation": 0 } },
     { "type": "Flashlight", "x": 3, "y": 2, "properties": {} },
-    { "type": "PowerSwitch", "x": 20, "y": 22, "properties": { "targetId": "Area2Lights" } },
+    { "type": "PowerSwitch", "x": 20, "y": 22, "properties": { "targetId": "Area2Lights", "mode": "toggle" } },
     { "type": "ExitGate", "x": 48, "y": 48, "properties": { "id": "MainExit", "locked": true, "requiredSwitches": 3 } },
     { "type": "SpiderEnemy", "x": 12, "y": 10, "properties": {} },
     { "type": "ShadowMonster", "x": 30, "y": 30, "properties": {} }
@@ -80,8 +80,15 @@ alongside the map. The map file carries no art or collision information itself.
 ```
 
 - `data` arrays are row-major, length `width × height`; index `i` is tile
-  `(i % width, ⌊i / width⌋)`.
+  `(i % width, ⌊i / width⌋)`. A `data` array of the wrong length is a load failure: the
+  layout cannot be recovered from it and guessing at the intent would silently shift every
+  tile after the error.
 - `prefab` names a `.glb` in the asset bundle; `null` renders nothing.
+- Tile id `0` always means "nothing here" — no prefab, not solid — whether or not the
+  tileset declares it.
+- A tile id a layer uses but the tileset does not define is logged and treated as `0`, for
+  the same reason unknown entity types are skipped: an older build should still open a
+  newer map, rendering what it understands.
 - **Walkability derivation:** a tile is walkable for pathfinding when its Layer 0 tile is
   non-zero *and* its Layer 1 tile is not `solid`. Gates flip their tile's walkability at
   runtime (§6). The resulting boolean grid is the A\* input and is rebuilt on any
@@ -92,17 +99,31 @@ alongside the map. The map file carries no art or collision information itself.
 Every `type` the loader accepts, with its `properties` contract. Unknown types are logged
 and skipped rather than throwing, so a map can be opened by an older build.
 
+Properties are marked **required** or given a default. A required property that is missing
+logs and skips that entity — it names something (a note's body, a switch's target) that
+cannot be guessed. Everything else defaults, because tile editors export sparse property
+objects and a map should not fail to load over an unwritten field.
+
 | `type` | Properties | Notes |
 | --- | --- | --- |
-| `PlayerSpawn` | `rotation` (deg) | Exactly one required per map. |
+| `PlayerSpawn` | `rotation` (deg, default `0`) | Exactly one required per map. |
 | `Flashlight` | — | Pick-up. |
-| `Note` | `noteId` | Key into `notes.json`; see §6. |
-| `PowerSwitch` | `targetId`, `mode` | Names a light group or gate; `mode` is `toggle` or `latch` (§6). |
-| `EnvironmentLight` | `groupId`, `radius`, `intensity` | Off until its group is powered. |
-| `Gate` | `id`, `targetId`, `locked` | Rotates open when triggered. |
-| `ExitGate` | `id`, `locked`, `requiredSwitches` | Win objective. |
+| `Note` | `noteId` (required) | Key into `notes.json`; see §6. |
+| `PowerSwitch` | `targetId` (required), `mode` (default `toggle`) | Names a light group or gate; `mode` is `toggle` or `latch` (§6). |
+| `EnvironmentLight` | `groupId` (required), `radius` (default `6` m), `intensity` (default `1.0`) | Off until its group is powered. |
+| `Gate` | `id`, `targetId` (both required), `locked` (default `true`) | Rotates open when triggered. |
+| `ExitGate` | `id` (required), `locked` (default `true`), `requiredSwitches` (default `3`) | Win objective. |
 | `SpiderEnemy` | — | Spawns at tile centre. |
 | `ShadowMonster` | — | Spawns at tile centre. |
+
+`mode` defaults to `toggle` rather than `latch` because `latch` is irreversible and feeds
+the exit counter (§6): an unannotated switch defaulting to `latch` would silently create
+objective progress the player cannot undo, while one defaulting to `toggle` is merely
+reversible.
+
+An entity whose `x`/`y` fall outside the map is logged and skipped on the same terms as an
+unknown type. Missing or duplicated `PlayerSpawn` is the one entity-level load failure —
+the run has nowhere to start, so there is nothing to degrade to.
 
 Multiple `EnvironmentLight` entities may share a `groupId`; a `PowerSwitch` toggles the
 whole group at once. Entity `x`/`y` are grid coordinates and are converted to world space

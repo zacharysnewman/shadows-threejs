@@ -1,0 +1,62 @@
+# Builds the site and publishes it to GitHub Pages.
+#
+# Nothing is committed: the build artifact is produced here and handed straight to Pages,
+# so `dist/` never enters the repository and the deployed site can never drift from the
+# commit it was built from.
+#
+# One-time setup: Settings → Pages → Source → "GitHub Actions". Pages also requires the
+# repository to be public unless the account has GitHub Pro.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Allows a redeploy without a new commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let an in-flight deploy finish rather than cancelling it, but queue at most one behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # A broken build should not reach Pages, and neither should a broken map: the
+      # fixture tests load the checked-in maps through the real validator.
+      - run: npm test
+
+      # `npm run build` typechecks before it bundles, and `base` defaults to the project
+      # site path (/shadows-threejs/), which is where Pages serves this repo from.
+      - run: npm run build
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

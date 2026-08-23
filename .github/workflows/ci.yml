@@ -1,0 +1,37 @@
+# Runs on pull requests what the deploy workflow runs before publishing, so a PR that
+# would break the deploy fails here instead — while it is still a PR.
+#
+# Deliberately not run on pushes to `main`: the deploy workflow already runs these same
+# steps there, and duplicating them would just double the work on every merge.
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+# A superseded run tells you nothing, so cancel it — unlike a deploy, which is allowed to
+# finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      # `npm run build` typechecks before bundling, so this covers both. It is the same
+      # command the deploy runs: passing here means the deploy will get this far too.
+      - run: npm run build

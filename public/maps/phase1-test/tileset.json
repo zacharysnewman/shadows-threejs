@@ -1,0 +1,10 @@
+{
+  "tiles": {
+    "0": { "prefab": null,               "solid": false },
+    "1": { "prefab": "floor_concrete",   "solid": false },
+    "2": { "prefab": "wall_brick",       "solid": true  },
+    "3": { "prefab": "fence_chainlink",  "solid": true  },
+    "4": { "prefab": "floor_dirt",       "solid": false },
+    "5": { "prefab": "gate_wood",        "solid": true  }
+  }
+}
