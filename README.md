@@ -75,6 +75,7 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `B` | drain the battery to 5%, to reach the cut-out and lockout without waiting 45 s |
 | `L` | power every light group — Phase 9 replaces this with the switches |
 | `O` | occluder fade (geometry between the camera and the player) |
+| `Z` | orbit a test emitter off-screen — audio only, nothing to see |
 | `K` | debug damage: one spider contact's worth (0.34) |
 | `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |
@@ -94,7 +95,7 @@ Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–3 are implemented:
+Phases 0–4 are implemented:
 
 - **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
 - **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
@@ -112,9 +113,12 @@ Phases 0–3 are implemented:
   lockout — plus environmental lamps that light in groups, of which at most two cast
   shadows at a time.
 
-Not yet built: audio (Phase 4), enemies (Phases 5, 7, 8), interaction and objectives
-(Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently logs and
-nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
+- **Phase 4** — spatial audio: the listener rides the player, sources come from a pool,
+  §4.3's two distance models are in place, and the `AudioContext` waits for a gesture.
+  Sounds are synthesised placeholders until real files exist.
+
+Not yet built: enemies (Phases 5, 7, 8), interaction and objectives (Phase 9), and the run
+lifecycle (Phase 10) — health reaching zero currently logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
 Prefab `.glb` assets do not exist yet, so the asset loader stands in coloured placeholder
 boxes sized by prefab name prefix.
 
@@ -129,6 +133,7 @@ src/core/         sim clock, viewport, asset loader, input, occluder fade
 src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
 src/lighting/     flashlight, battery, environmental lights, night ambient
+src/audio/        listener, source pool, distance profiles, sound bank
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map
 scripts/          map generators for the checked-in maps

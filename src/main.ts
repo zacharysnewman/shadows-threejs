@@ -1,10 +1,14 @@
 /**
  * Entry point.
  *
- * Phase 3 turns the lights out. The map the Phase 1 pipeline builds and the player Phase 2
+ * Phase 4 adds ears. Phase 3 turned the lights out; The map the Phase 1 pipeline builds and the player Phase 2
  * drives are now lit only by the flashlight bound to the player's aim and by environmental
  * lights whose groups have been powered (§4) — the debug harness stands in for the switches
  * that arrive in Phase 9, and hands the player the flashlight the pick-up will hand them.
+ *
+ * with the map dark, the spatial audio in §4.3 is how an unseen thing is located at all —
+ * the listener rides the player, sources come from a pool, and a debug emitter orbits
+ * off-screen so the cue can be checked before there is anything real to hear.
  *
  * No enemies yet (Phase 5), and nothing consumes the beam as a detection query yet: that
  * shared "is this entity lit" service is Phase 6, built once for both AIs.
@@ -14,6 +18,8 @@
  */
 
 import * as THREE from 'three';
+import { AudioCore } from './audio/AudioCore';
+import { FootstepCadence } from './audio/Footsteps';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
 import { OccluderFade } from './core/OccluderFade';
@@ -23,6 +29,7 @@ import { ColliderOverlay } from './debug/ColliderOverlay';
 import { DebugOverlay } from './debug/DebugOverlay';
 import { EntityMarkers } from './debug/EntityMarkers';
 import { FreeCamera } from './debug/FreeCamera';
+import { AudioTestEmitter } from './debug/AudioTestEmitter';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
 import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
@@ -71,8 +78,15 @@ async function main(): Promise<void> {
   const assets = new AssetLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
+  const audio = new AudioCore(viewport.scene);
+  // §4.3 — the context starts suspended until the player touches something.
+  audio.armGesture();
 
   addNightAmbient(viewport.scene);
+
+  // Sounds are decoded up front, alongside the map: one that has to be fetched when it is
+  // needed arrives after the thing it was meant to announce.
+  const audioReady = audio.load();
 
   const directory = selectedMap();
   let loaded: LoadedMap;
@@ -111,6 +125,10 @@ async function main(): Promise<void> {
   const environment = new EnvironmentLights(loaded.entities.byType('EnvironmentLight'));
   viewport.scene.add(environment.root);
 
+  await audioReady;
+  const footsteps = new FootstepCadence();
+  const testEmitter = new AudioTestEmitter(audio);
+
   const rig = new CameraRig(viewport, loaded.bounds);
   rig.snapTo(player.position.x, player.position.y);
   // The free camera starts where the player is, so toggling to it does not jump the view.
@@ -123,8 +141,17 @@ async function main(): Promise<void> {
     // harness) — otherwise panning the debug view walks the player across the map.
     const moveX = freeCamera.enabled ? 0 : input.moveX;
     const moveZ = freeCamera.enabled ? 0 : input.moveZ;
+    const before = player.position.clone();
     player.tick(dt, moveX, moveZ);
     flashlight.tick(dt);
+
+    // The pool's first customer: a step every stride of ground actually covered, so a
+    // player stopped against a wall makes no noise however hard they walk into it.
+    if (footsteps.tick(before.distanceTo(player.position))) {
+      audio.playAt('footstep_light', player.position.x, player.position.y);
+    }
+
+    testEmitter.tick(dt, player.position.x, player.position.y);
   });
 
   // --- Debug readout ------------------------------------------------------
@@ -186,6 +213,14 @@ async function main(): Promise<void> {
       ? 'none on this map'
       : `${environment.litCount}/${environment.lamps.length} lit · ${environment.shadowCasterCount} casting shadows`,
   );
+  overlay.addRow('audio', () => {
+    const placeholders = audio.bank?.placeholders.length ?? 0;
+    return (
+      `${audio.state} · ${audio.playingCount} playing` +
+      (placeholders > 0 ? ` · ${placeholders} placeholder sound(s)` : '')
+    );
+  });
+  overlay.addRow('emitter', () => testEmitter.describe());
   overlay.addRow('camera', () =>
     `(${rig.targetX.toFixed(1)}, ${rig.targetZ.toFixed(1)})${freeCamera.enabled ? ' · FREE' : ''}`,
   );
@@ -240,6 +275,7 @@ async function main(): Promise<void> {
   overlay.addBinding('WASD', 'move · mouse aims');
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
   overlay.addBinding('O', 'occluder fade');
+  overlay.addBinding('Z', 'orbit a test emitter off-screen (audio)');
   overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
   overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
@@ -265,6 +301,9 @@ async function main(): Promise<void> {
           // otherwise sail the camera across it.
           rig.snapTo(player.position.x, player.position.y);
         }
+        break;
+      case 'KeyZ':
+        testEmitter.toggle(player.position.x, player.position.y);
         break;
       case 'KeyO':
         occluders.enabled = !occluders.enabled;
@@ -302,6 +341,8 @@ async function main(): Promise<void> {
         break;
       case 'KeyP':
         clock.paused = !clock.paused;
+        // §4.3 — the world going quiet is part of pausing it.
+        audio.setPaused(clock.paused);
         break;
       case 'Period':
         clock.stepOnce();
@@ -319,6 +360,25 @@ async function main(): Promise<void> {
         break;
     }
   });
+
+  /**
+   * Debug handle (Cross-Cutting: debug harness). Everything the overlay reports, reachable
+   * from the console and from automated checks — which is how this phase is verified at
+   * all: "locatable by ear" cannot be asserted from a test runner, but the audio graph can
+   * be tapped from here and measured.
+   */
+  (window as unknown as { shadows: unknown }).shadows = {
+    clock,
+    input,
+    loaded,
+    player,
+    rig,
+    flashlight,
+    environment,
+    audio,
+    testEmitter,
+    occluders,
+  };
 
   // --- Render loop --------------------------------------------------------
   let previous = performance.now();
@@ -343,6 +403,10 @@ async function main(): Promise<void> {
       player.aim.x,
       player.aim.y,
     );
+    // The listener rides the player, not the camera (§4.3): every distance in the spec is
+    // measured from where the player stands, and the camera is 14 m away from that.
+    audio.update(player.object.position.x, player.object.position.z);
+
     // Fed the interpolated position for the same reason the beam is: it is a visual
     // effect, and following the tick position would make the window stutter.
     occluders.update(
