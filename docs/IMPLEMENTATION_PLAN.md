@@ -32,7 +32,7 @@ re-checked rather than taken on trust.
 | 0 — Scaffold | **Done** |
 | 1 — Map Pipeline | **Done** |
 | 2 — Player Controller & Camera | **Done** |
-| 3 — Lighting Core & Flashlight | Not started |
+| 3 — Lighting Core & Flashlight | **Done** |
 | 4 — Audio Core | Not started |
 | 5 — Navigation & Enemy Base | Not started |
 | 6 — Illumination Detection Service | Not started |
@@ -126,6 +126,48 @@ toggle, and the shadow budget and quality settings (§7).
 
 **Exit:** the beam casts hard floor shadows from a test prop; a full drain-to-empty cycle
 behaves per spec including the lockout; frame rate holds with the shadow budget saturated.
+
+**Status: done.**
+
+*Landed.* `src/lighting/` — `Battery.ts` (drain, recharge, the intensity falloff and the
+lockout, all on the sim clock), `Flashlight.ts` (the one shadow-casting spotlight §7
+budgets for, bound to the player's aim), `EnvironmentLights.ts` (a lamp per entity, shaped
+to its authored ground pool, powered by group, with §7's two shadow slots re-chosen each
+frame by proximity and frustum) and `Ambient.ts` (the night baseline that replaced the
+flat placeholder lighting). Filmic tone mapping in the viewport. `maps/phase3-test` is the
+map for this phase: a prop field to throw shadows from, seven lamps in three groups —
+more than the two shadow slots, so the budget has to choose — and a corridor no lamp
+reaches. Debug harness gained `F` (torch), `B` (drain to 5%), `L` (power every group) and
+`O` (occluder fade), plus torch and lamp readouts.
+
+*Verified.* The beam's hard shadows and the lamp pools were checked in a browser, not only
+in tests. The full battery cycle was driven end to end there too: 5% → drains out → cuts
+off and latches → `F` refused → recharges past 15% → relights at partial beam.
+
+*Not verified.* "Frame rate holds with the shadow budget saturated" could not be measured:
+this environment renders through a software rasteriser at 7–15 fps regardless of what is on
+screen. The budget itself is enforced and tested — never more than two environmental
+shadow casters, chosen by proximity within the frustum — but the frame-rate half of the
+exit criterion needs a real GPU and is outstanding.
+
+*Sent back to the spec.* The ambient floor the dark sits on and the player's own legibility
+in it (§4); the beam's mounting, its derived declination, and the input that toggles it
+(§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
+
+*Solved rather than deferred.* Phase 2 recorded camera-side occluders as a problem for the
+art pass. Turning the lights out promoted it: an unlit occluder is not a wall the player
+can see over, it is a black rectangle covering the player and their beam, and on the
+example map the player spawns behind one. Static geometry inside a cylinder between the
+player and the camera is now dithered away in the fragment shader — visible surface only,
+so an occluder still blocks light and still casts its shadow, and the fade cannot be used
+to see into a room. §3.2 records the rule and its limit.
+
+*Left to later phases.* Nothing consumes the beam as a query yet: "is this entity lit" is
+Phase 6, built once for both AIs, and the cheap cone test plus throttled raycast in §4.1
+belong to it. Phase 8 drives `Flashlight.intensityScale` for the flicker (§5.2) — the hook
+exists and is tested, the curve does not. The flashlight is held from the start; the
+pick-up that grants it is Phase 9, as is wiring `PowerSwitch` to the light groups the
+debug key currently powers wholesale.
 
 ## Phase 4 — Audio Core
 

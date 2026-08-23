@@ -1,13 +1,13 @@
 /**
  * Entry point.
  *
- * Phase 2 puts a player in the map the Phase 1 pipeline builds: the input abstraction, the
- * capsule resolved against Layer 1 colliders, the camera rig, and the health pool driven by
- * a debug damage key until real enemies exist (§3). The debug free camera is still here but
- * hands the camera to the player rig by default.
+ * Phase 3 turns the lights out. The map the Phase 1 pipeline builds and the player Phase 2
+ * drives are now lit only by the flashlight bound to the player's aim and by environmental
+ * lights whose groups have been powered (§4) — the debug harness stands in for the switches
+ * that arrive in Phase 9, and hands the player the flashlight the pick-up will hand them.
  *
- * There is still no real lighting (Phase 3) — the scene is flat-lit so the geometry is
- * legible — and no enemies (Phase 5).
+ * No enemies yet (Phase 5), and nothing consumes the beam as a detection query yet: that
+ * shared "is this entity lit" service is Phase 6, built once for both AIs.
  *
  * `?map=<directory>` selects which map under `maps/` to load, so the per-phase test maps
  * are reachable without a rebuild.
@@ -16,6 +16,7 @@
 import * as THREE from 'three';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
+import { OccluderFade } from './core/OccluderFade';
 import { SimClock } from './core/SimClock';
 import { Viewport } from './core/Viewport';
 import { ColliderOverlay } from './debug/ColliderOverlay';
@@ -25,10 +26,13 @@ import { FreeCamera } from './debug/FreeCamera';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
 import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
+import { addNightAmbient } from './lighting/Ambient';
+import { EnvironmentLights } from './lighting/EnvironmentLights';
+import { Flashlight } from './lighting/Flashlight';
 import { CameraRig } from './player/CameraRig';
 import { ColliderIndex } from './player/collision';
 import { Player } from './player/Player';
-import { HEALTH } from './config';
+import { FLASHLIGHT, HEALTH, PLAYER } from './config';
 
 const DEFAULT_MAP = 'example';
 
@@ -60,14 +64,6 @@ function showFatal(message: string): void {
   document.body.appendChild(panel);
 }
 
-/** Placeholder lighting so Phase 1 geometry is visible; Phase 3 owns the real rig (§4). */
-function addPlaceholderLighting(scene: THREE.Scene): void {
-  scene.add(new THREE.HemisphereLight(0x9fb6cd, 0x1a1d22, 1.6));
-  const key = new THREE.DirectionalLight(0xffffff, 0.9);
-  key.position.set(-1, 2.2, 1.4);
-  scene.add(key);
-}
-
 async function main(): Promise<void> {
   const viewport = new Viewport();
   const overlay = new DebugOverlay();
@@ -76,7 +72,7 @@ async function main(): Promise<void> {
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
 
-  addPlaceholderLighting(viewport.scene);
+  addNightAmbient(viewport.scene);
 
   const directory = selectedMap();
   let loaded: LoadedMap;
@@ -89,6 +85,11 @@ async function main(): Promise<void> {
   }
 
   viewport.scene.add(loaded.root);
+
+  // §3.2 — nothing between the camera and the player may hide the player. Attached to the
+  // static geometry's shared materials, so it survives the instancing §7 requires.
+  const occluders = new OccluderFade();
+  occluders.attach(loaded.root);
 
   const walkability = new WalkabilityOverlay(loaded.grid);
   const colliders = new ColliderOverlay(loaded.colliders);
@@ -105,6 +106,11 @@ async function main(): Promise<void> {
   const player = new Player(loaded.entities.playerSpawn, colliderIndex);
   viewport.scene.add(player.object);
 
+  // --- Lighting -----------------------------------------------------------
+  const flashlight = new Flashlight(viewport.scene);
+  const environment = new EnvironmentLights(loaded.entities.byType('EnvironmentLight'));
+  viewport.scene.add(environment.root);
+
   const rig = new CameraRig(viewport, loaded.bounds);
   rig.snapTo(player.position.x, player.position.y);
   // The free camera starts where the player is, so toggling to it does not jump the view.
@@ -118,6 +124,7 @@ async function main(): Promise<void> {
     const moveX = freeCamera.enabled ? 0 : input.moveX;
     const moveZ = freeCamera.enabled ? 0 : input.moveZ;
     player.tick(dt, moveX, moveZ);
+    flashlight.tick(dt);
   });
 
   // --- Debug readout ------------------------------------------------------
@@ -166,6 +173,19 @@ async function main(): Promise<void> {
         : `regen in ${health.regenDelayRemaining.toFixed(1)}s`;
     return `${health.value.toFixed(2)} · ${state}${health.critical ? ' · CRITICAL' : ''}`;
   });
+  overlay.addRow('torch', () => {
+    const { battery } = flashlight;
+    const charge = `${(battery.charge * 100).toFixed(0)}%`;
+    if (battery.on) {
+      return `ON · ${charge} · beam ${(battery.intensityFraction * 100).toFixed(0)}%`;
+    }
+    return `off · ${charge}${battery.lockedOut ? ` · LOCKED OUT until ${FLASHLIGHT.reEnableCharge * 100}%` : ''}`;
+  });
+  overlay.addRow('lamps', () =>
+    environment.lamps.length === 0
+      ? 'none on this map'
+      : `${environment.litCount}/${environment.lamps.length} lit · ${environment.shadowCasterCount} casting shadows`,
+  );
   overlay.addRow('camera', () =>
     `(${rig.targetX.toFixed(1)}, ${rig.targetZ.toFixed(1)})${freeCamera.enabled ? ' · FREE' : ''}`,
   );
@@ -219,6 +239,10 @@ async function main(): Promise<void> {
   // --- Debug keys ---------------------------------------------------------
   overlay.addBinding('WASD', 'move · mouse aims');
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
+  overlay.addBinding('O', 'occluder fade');
+  overlay.addBinding('F', 'flashlight');
+  overlay.addBinding('B', 'drain the battery to 5%');
+  overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
   overlay.addBinding('K', `debug damage (${HEALTH.spiderDamage})`);
   overlay.addBinding('J', 'heal to full');
   overlay.addBinding('G', 'walkability overlay');
@@ -241,6 +265,24 @@ async function main(): Promise<void> {
           // otherwise sail the camera across it.
           rig.snapTo(player.position.x, player.position.y);
         }
+        break;
+      case 'KeyO':
+        occluders.enabled = !occluders.enabled;
+        break;
+      case 'KeyF':
+        // §4.1 — refused while the battery is flat or still locked out.
+        if (!flashlight.toggle() && flashlight.battery.lockedOut) {
+          console.info(
+            `[torch] locked out at ${(flashlight.battery.charge * 100).toFixed(0)}%; ` +
+              `needs ${FLASHLIGHT.reEnableCharge * 100}%`,
+          );
+        }
+        break;
+      case 'KeyB':
+        flashlight.battery.set(0.05);
+        break;
+      case 'KeyL':
+        environment.toggleAll();
         break;
       case 'KeyK':
         // §3.4 — one spider's worth of damage, the only damage source until Phase 7.
@@ -293,6 +335,23 @@ async function main(): Promise<void> {
     clock.advance(realDelta);
 
     player.render(clock.alpha);
+    // Bound to the interpolated position, not the tick position: a beam that stepped at
+    // 60 Hz while the player moved smoothly would visibly swim around them.
+    flashlight.update(
+      player.object.position.x,
+      player.object.position.z,
+      player.aim.x,
+      player.aim.y,
+    );
+    // Fed the interpolated position for the same reason the beam is: it is a visual
+    // effect, and following the tick position would make the window stutter.
+    occluders.update(
+      viewport.camera,
+      player.object.position.x,
+      PLAYER.height * 0.5,
+      player.object.position.z,
+    );
+
     if (freeCamera.enabled) {
       freeCamera.update(realDelta);
     } else {
@@ -302,6 +361,7 @@ async function main(): Promise<void> {
       rig.update(realDelta, player.object.position.x, player.object.position.z);
     }
 
+    environment.update(viewport.camera);
     overlay.update(realDelta);
     viewport.render();
     input.endFrame();

@@ -55,6 +55,8 @@ export const RENDER = {
   maxShadowCastingEnvironmentLights: 2,
   /** Clamp for `devicePixelRatio`; mobile is a 30 fps floor (§7). */
   maxPixelRatio: 2,
+  /** Exposure under the filmic tone curve — the scene's overall brightness knob. */
+  toneMappingExposure: 1.35,
 } as const;
 
 /** §2 — map pipeline limits. Guardrails for the loader/validator, not gameplay values. */
@@ -133,4 +135,64 @@ export const INPUT = {
   aimDeadzone: 0.35,
   /** Radius in CSS pixels at which a touch drag counts as full stick deflection. */
   touchStickRadius: 56,
+} as const;
+
+/** §4.1 — the flashlight spotlight and its battery. */
+export const FLASHLIGHT = {
+  /**
+   * Full cone angle in degrees (§4.1). Three.js `SpotLight.angle` is the *half* angle from
+   * the axis, and §4.1's detection test is written against the half angle too, so this is
+   * halved at both use sites rather than stored pre-halved and doubled back.
+   */
+  coneAngleDegrees: 45,
+  penumbra: 0.3,
+  /** Beam range in metres (§4.1). */
+  range: 12,
+  /** Height the beam is carried at, in metres. Chest height on a 1.8 m player (§3.1). */
+  mountHeight: 1.6,
+  /**
+   * Beam brightness at full charge, in Three.js spotlight units at the decay below. A look
+   * value: §4.1 fixes the cone's shape and the battery's arithmetic, not its candela.
+   */
+  baseIntensity: 55,
+  /**
+   * Falloff exponent. Well below 2 (physical) because the far half of a physically
+   * falling-off beam is too dim to make decisions by, and the beam's reach is a mechanic.
+   */
+  decay: 1.0,
+  /** Fraction of charge drained per second while on — 45 s from full (§4.1). */
+  drainPerSecond: 1 / 45,
+  /** Fraction recharged per second while off — half the drain rate (§4.1). */
+  rechargePerSecond: 1 / 90,
+  /** After a full drain, the charge needed before it can be switched on again (§4.1). */
+  reEnableCharge: 0.15,
+  /** Charge above which the beam is at full intensity (§4.1). */
+  falloffCharge: 0.25,
+  /** Intensity fraction at zero charge, interpolated up to full at `falloffCharge` (§4.1). */
+  minIntensityFraction: 0.4,
+} as const;
+
+/** §4.2 — environmental lights, and §7's budget for how many of them cast shadows. */
+export const ENVIRONMENT_LIGHT = {
+  penumbra: 0.4,
+  /**
+   * Brightness at `intensity: 1.0`. Dimmer than the flashlight per metre lit: a lamp pool
+   * is a safe zone to stand in, not a floodlight that makes the torch redundant.
+   */
+  baseIntensity: 30,
+  decay: 1.2,
+} as const;
+
+/**
+ * §4 — the darkness the lighting mechanics act on.
+ *
+ * Not pure black: at zero ambient an unlit room is a blank screen rather than a dark one,
+ * and the Shadow Monster (§5.2) is legible only against ground that has *some* light on it.
+ * Low enough that nothing is identifiable without the flashlight, high enough that walls
+ * read as silhouettes.
+ */
+export const AMBIENT = {
+  skyColor: 0x223044,
+  groundColor: 0x0a0c10,
+  intensity: 0.25,
 } as const;

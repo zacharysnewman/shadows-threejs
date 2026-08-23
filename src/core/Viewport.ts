@@ -23,6 +23,12 @@ export class Viewport {
     this.renderer.shadowMap.enabled = true;
     // §7 — PCF soft shadows.
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // From Phase 3 the map is lit by a handful of small, close lights against near-black
+    // (§4), which is exactly the range that clips without a tone curve: the middle of a
+    // lamp pool goes flat white and takes the detail with it. Filmic rolls the highlights
+    // off instead, and costs nothing.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = RENDER.toneMappingExposure;
     parent.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();

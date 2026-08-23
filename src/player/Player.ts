@@ -163,7 +163,16 @@ function buildPlaceholderMesh(): THREE.Object3D[] {
 
   const body = new THREE.Mesh(
     new THREE.CapsuleGeometry(PLAYER.radius, cylinderHeight, 4, 12),
-    new THREE.MeshStandardMaterial({ color: 0xd8e0e8, roughness: 0.7 }),
+    new THREE.MeshStandardMaterial({
+      // Mid-tone rather than near-white: under an environmental light (§4.2) a white
+      // capsule blows out to a featureless blob.
+      color: 0x8a94a2,
+      roughness: 0.7,
+      // §4 — the player stays readable as a silhouette in the dark. Emissive rather than a
+      // light: it illuminates nothing, so it cannot be used to see by and no light-reactive
+      // enemy responds to it.
+      emissive: 0x2a3038,
+    }),
   );
   body.position.y = PLAYER.height / 2;
   body.castShadow = true;
