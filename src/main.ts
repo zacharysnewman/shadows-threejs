@@ -363,22 +363,29 @@ async function main(): Promise<void> {
 
   /**
    * Debug handle (Cross-Cutting: debug harness). Everything the overlay reports, reachable
-   * from the console and from automated checks — which is how this phase is verified at
-   * all: "locatable by ear" cannot be asserted from a test runner, but the audio graph can
-   * be tapped from here and measured.
+   * from the console and from automated checks — which is how some of this is verified at
+   * all: "locatable by ear" (§4.3) cannot be asserted from a test runner, but the audio
+   * graph can be tapped from here and measured.
+   *
+   * Development builds only. `import.meta.env.DEV` is a compile-time constant, so the
+   * whole block — and the references keeping those systems reachable from a global — is
+   * dead code the bundler removes from a production build. Reaching the handle therefore
+   * means driving `npm run dev`, not `npm run preview`.
    */
-  (window as unknown as { shadows: unknown }).shadows = {
-    clock,
-    input,
-    loaded,
-    player,
-    rig,
-    flashlight,
-    environment,
-    audio,
-    testEmitter,
-    occluders,
-  };
+  if (import.meta.env.DEV) {
+    (window as unknown as { shadows: unknown }).shadows = {
+      clock,
+      input,
+      loaded,
+      player,
+      rig,
+      flashlight,
+      environment,
+      audio,
+      testEmitter,
+      occluders,
+    };
+  }
 
   // --- Render loop --------------------------------------------------------
   let previous = performance.now();

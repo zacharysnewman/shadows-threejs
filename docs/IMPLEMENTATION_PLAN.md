@@ -199,7 +199,9 @@ listener's own output, measuring what actually comes out:
 
 The gesture gate was watched going `suspended` → `running` on the first key, pausing was
 watched taking it back to `suspended` and unpausing returning it, and walking for three
-seconds at 3 m/s produced nine footsteps against a 0.95 m stride.
+seconds at 3 m/s produced nine footsteps against a 0.95 m stride. Those measurements go
+through the development-only debug handle (Cross-Cutting), so they run against the dev
+server; a production bundle has no handle to reach.
 
 *Sent back to the spec.* The listener rides the player rather than the camera, and why
 (§4.3) — with the consequence that north and south of the player pan alike, so distance
@@ -292,6 +294,12 @@ here rather than treating the current values as final.
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit
   readout, free camera, and a time-scale control. Most of this spec's behaviour is a state
   machine reacting to light — without visualisation, tuning it is guesswork.
+- **A debug handle on `window`, in development builds only.** The overlay is for reading;
+  the handle is for reaching — the systems behind every row, addressable from a console or
+  an automated check. Some exit criteria cannot be met any other way: Phase 4's is about
+  what a player hears, and the only honest way to check it is to tap the live audio graph
+  and measure what comes out. It is compiled out of production builds, so verification that
+  uses it runs against the dev server rather than a preview of the bundle.
 - **Test maps per phase**, small and purpose-built, checked in beside the example map. The
   real map (Phase 11) is the worst possible place to first exercise a flee raycast.
 - **Determinism.** Every timer runs on the fixed sim clock (§7); seed the randomised values

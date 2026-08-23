@@ -91,6 +91,14 @@ touch, the left half of the screen is a floating movement stick and the right ha
 floating aim stick, with an on-screen action button; the touch chrome only appears once a
 touch is seen, so a desktop session never renders it.
 
+**Development builds** additionally expose `window.shadows` — the clock, player, camera
+rig, flashlight, lights, audio core and map, reachable from the console. Some behaviour can
+only be checked through it: "a moving off-screen emitter is locatable by ear" (§4.3) is not
+something a test runner can assert, but the live audio graph can be tapped from the handle
+and measured. It is compiled out of production builds, so anything driving it — a console
+session, a Playwright check — has to run against `npm run dev` rather than `npm run
+preview`.
+
 Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
