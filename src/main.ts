@@ -368,6 +368,7 @@ async function main(): Promise<void> {
   overlay.addBinding('N', 'enemy paths');
   overlay.addBinding('X', 'block/unblock the hovered tile (walkability only)');
   overlay.addBinding('Y', 'disable the enemies');
+  overlay.addBinding('I', 'draw the Shadow Monster\'s body (§5.2 says never)');
   overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
   overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
@@ -399,6 +400,11 @@ async function main(): Promise<void> {
         break;
       case 'KeyY':
         enemies.enabled = !enemies.enabled;
+        break;
+      case 'KeyI':
+        // §5.2 — the Shadow Monster's body is never drawn. This draws it anyway, because
+        // the harness cannot debug a thing by staring at where it is not.
+        console.info(`[debug] invisible bodies ${enemies.toggleRevealBodies() ? 'shown' : 'hidden'}`);
         break;
       case 'KeyX': {
         // Flips walkability under the cursor without touching geometry, which is what a

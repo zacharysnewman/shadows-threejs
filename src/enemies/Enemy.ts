@@ -139,6 +139,20 @@ export class Enemy {
   }
 
   /**
+   * Draw a body that §5.2 says is never drawn. Debug harness only — finding the Shadow
+   * Monster is the game, and it cannot be debugged by staring at where it is not.
+   */
+  setBodyRevealed(revealed: boolean): void {
+    if (this.profile.kind !== 'ShadowMonster') return;
+    this.object.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      const material = node.material as THREE.Material;
+      material.colorWrite = revealed;
+      material.depthWrite = revealed;
+    });
+  }
+
+  /**
    * Enter a state directly. Phases 7 and 8 drive this from their light reactions; nothing
    * in Phase 5 calls it except the debug harness and the tests.
    */
@@ -404,8 +418,13 @@ const _steer = new THREE.Vector2();
 
 /**
  * Placeholder bodies until the art pass (Phase 11). Both cast shadows, because that is how
- * each is meant to be read: the spider by sight, the Shadow Monster by the shadow it throws
- * while being near-invisible itself (§5.2 — the material is Phase 8's).
+ * each is meant to be read: the spider by sight, and the Shadow Monster *only* by the shadow
+ * it throws (§5.2).
+ *
+ * The monster's body is never drawn. `colorWrite` and `depthWrite` off rather than
+ * `visible = false`, because an invisible object is skipped by the shadow pass too, and the
+ * shadow is the entire creature. What is left is a mesh that contributes nothing to the
+ * image and everything to the shadow map.
  */
 function buildPlaceholderMesh(profile: EnemyProfile): THREE.Object3D {
   const spider = profile.kind === 'SpiderEnemy';
@@ -413,13 +432,16 @@ function buildPlaceholderMesh(profile: EnemyProfile): THREE.Object3D {
     ? new THREE.SphereGeometry(profile.radius, 10, 8)
     : new THREE.CapsuleGeometry(profile.radius, Math.max(0.1, profile.height - profile.radius * 2), 4, 10);
 
-  const mesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color: spider ? 0x6b3f3f : 0x201d28,
-      roughness: 0.85,
-    }),
-  );
+  const material = new THREE.MeshStandardMaterial({
+    color: spider ? 0x6b3f3f : 0x201d28,
+    roughness: 0.85,
+  });
+  if (!spider) {
+    material.colorWrite = false;
+    material.depthWrite = false;
+  }
+
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.position.y = spider ? profile.radius * 0.8 : profile.height / 2;
   if (spider) mesh.scale.set(1, 0.7, 1.2);
   mesh.castShadow = true;

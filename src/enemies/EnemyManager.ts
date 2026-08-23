@@ -30,6 +30,7 @@ export class EnemyManager {
   private readonly listeners = new Set<ContactListener>();
   /** Debug switch; nothing in the game turns the enemies off. */
   private _enabled = true;
+  private bodiesRevealed = false;
 
   constructor(
     registry: EntityRegistry,
@@ -83,6 +84,13 @@ export class EnemyManager {
       counts.set(enemy.state, (counts.get(enemy.state) ?? 0) + 1);
     }
     return [...counts].map(([state, n]) => `${state}×${n}`).join(' ');
+  }
+
+  /** Debug harness: draw the bodies §5.2 keeps invisible. Returns the new state. */
+  toggleRevealBodies(): boolean {
+    this.bodiesRevealed = !this.bodiesRevealed;
+    for (const enemy of this.enemies) enemy.setBodyRevealed(this.bodiesRevealed);
+    return this.bodiesRevealed;
   }
 
   onContact(listener: ContactListener): () => void {

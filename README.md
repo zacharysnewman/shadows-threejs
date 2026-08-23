@@ -85,6 +85,7 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `N` | enemy paths, coloured by state |
 | `X` | block/unblock the hovered tile — walkability only, the way a gate does |
 | `Y` | switch the enemies off |
+| `I` | draw the Shadow Monster's body — the spec says it is never drawn, so this is for debugging only |
 | `K` | debug damage: one spider contact's worth (0.34) |
 | `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |

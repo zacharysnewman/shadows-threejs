@@ -251,28 +251,25 @@ two read differently at range:
 - **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
   at range it is a silhouette crossing the gloom.
 - **The Shadow Monster is nothing at all.** The ambient reveals ordinary things; it reveals
-  the monster not one bit. Its body is near-invisible (§5.2) and the gloom casts no shadows,
-  so in the dark it has no presence of any kind — not a silhouette, not a shadow, nothing.
+  the monster not one bit. Its body is never drawn (§5.2) and the gloom casts no shadows, so
+  outside a light it has no presence of any kind — not a silhouette, not a shadow, nothing.
   **It is visible only where a directed light falls on it**, as the hard shadow that light
-  throws, and it goes back to nothing the moment the light leaves.
+  throws, and it is nothing again the moment the light leaves.
 
-  That asymmetry is the whole point, and it only works because the map *is* lit enough to see
-  ordinary things by. On a blacked-out map nothing is visible outside the beam, so the
-  monster's invisibility distinguishes it from nothing — everything is equally unseen. Against
-  a gloom where a spider is a shape crossing open ground, a creature that never appears there
-  is a different kind of thing entirely. Its other tells stay the ones §5 gives it: footsteps
-  that carry further than anything else on the map (§4.3), and the lamp it makes flicker from
-  across the level (§4.2).
+  That asymmetry only works because the map *is* lit enough to see ordinary things by. Where
+  nothing is visible outside the beam, an invisible monster is distinguishable from nothing —
+  everything is equally unseen. Against a gloom in which a spider is a shape crossing open
+  ground, a creature that never appears there at all is a different kind of thing. Its other
+  tells stay the ones §5 gives it: footsteps that carry further than anything else on the map
+  (§4.3), and the lamp it makes flicker from across the level (§4.2).
 
-**A moon, and it casts nothing.** One dim directional light, steeply angled, gives the gloom
-a direction so an unlit yard reads as a place rather than as a flat grey wash. It is
-deliberately **not** a shadow caster, and that is a rule about the Shadow Monster rather
-than a saving.
+**A moon for shape.** One dim directional light, steeply angled, gives the gloom a direction
+so an unlit yard reads as a place rather than as a flat grey wash. It casts no shadow.
 
-**Shadows exist only where a directed light does.** The flashlight and the environmental
-lamps cast; the ambient and the moon do not. So a shadow on the ground is itself
-information: something is being lit. This is the rule the Shadow Monster is built on — see
-below.
+**Shadows exist only where a directed light does.** The flashlight casts and the
+environmental lamps cast; the ambient and the moon do not. A shadow on the ground is
+therefore information in itself — something is being lit — and it is what the Shadow Monster
+is built on (§5.2).
 
 The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
 mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
@@ -482,13 +479,17 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 ### 5.2 Enemy 2: Shadow Monster
 
 - **Visual Representation:**
-  - **Material:** the mesh uses a custom material that is nearly invisible (e.g. a faint
-    visual distortion) but casts a stark, hard shadow onto the floor (`castShadow = true`).
-    It casts under the flashlight and under environmental lamps, and under nothing else —
-    the ambient and the moon throw no shadows at all (§4). The consequence is the creature's
-    defining property: **it is visible only inside a light**, as the shadow that light throws,
-    and outside one it has no presence whatsoever. Sweeping a beam across empty ground and
-    finding a shadow in it is the only way to see the thing at all.
+  - **Material: the body is never drawn.** Not faint, not a distortion, not a shimmer —
+    the mesh contributes nothing to the image at all. It exists in the scene solely to cast
+    a stark, hard shadow onto the floor (`castShadow = true`), and it casts under the
+    flashlight and the environmental lamps and under nothing else, because the ambient and
+    the moon throw no shadows (§4).
+    
+    So **the shadow is the creature**. Sweeping a beam across apparently empty ground and
+    finding a shadow lying in it is the only way to see the thing, and the moment the light
+    leaves it there is nothing there again. A faint visible body would be strictly worse: it
+    would give the player a second, easier way to find the monster, and the whole design is
+    that there is only the one hard way.
   - **Audio:** heavy, slow, spatial footsteps.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
