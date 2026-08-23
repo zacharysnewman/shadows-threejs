@@ -37,7 +37,7 @@ re-checked rather than taken on trust.
 | 5 — Navigation & Enemy Base | **Done** |
 | 6 — Illumination Detection Service | **Done** |
 | 7 — Spider AI | **Done** |
-| 8 — Shadow Monster | Not started |
+| 8 — Shadow Monster | **Done** |
 | 9 — Interactables, Power & Objectives | Not started |
 | 10 — Run Lifecycle | Not started |
 | 11 — Content & Tuning | Not started |
@@ -419,6 +419,78 @@ visible, so one pose covers it.
 the flicker ramp and blink; a lamp the monster stands under runs the full
 strain/failure/recovery cycle and releases the freeze exactly when it fails; leaving the
 cone mid-strain resets it.
+
+**Status: done.**
+
+*Landed.* `src/enemies/ShadowMonster.ts` — the freeze, the severity ramp, the blink and the
+fatal contact, on the same `decide` hook the spider uses. `src/lighting/flicker.ts` holds
+§5.2's curve as three pure functions, and **both** the beam and a straining lamp go through
+it, because §4.2 asks for "the same character" and the reason is a gameplay one: a lamp
+straining across the map and a beam starting to blink are the player learning the same fact.
+`EnvironmentLights` gained §4.2's lifecycle, with *powered* and *working* kept as two
+separate facts so a failure never touches the switch. `blink` joined the state machine as a
+state that is pinned and still moves. `MonsterFootsteps` and `LampVoices` are the two tells
+that work with nothing on screen; `Player.kill` is the contact.
+
+`maps/phase8-test` is the map, and its load-bearing feature is a **pit**: light crosses a
+floor gap (§4.1 occludes on obstacles, and a hole is not one) and walking does not, which
+makes it the only place a monster can be lit with something impassable between it and the
+player — so it is the only reliable way to watch the blink stop short instead of lurching
+into it. Two spiders share the map for the comparison the whole design rests on.
+
+*Verified.* 290 unit tests (up from 256): 21 in `tests/monster.test.ts` for the curve, the
+freeze, the ramp and the blink, 8 more in `tests/lighting.test.ts` for the sabotage
+lifecycle, 5 for the map. The rest was driven in a browser on `phase8-test` at seed
+`phase8`:
+
+| Case | Measured |
+| --- | --- |
+| Beam lands on it | `frozen` on that tick, severity 0.10 |
+| Severity ramp under continuous focus | 0.5 s → 0.25, 1.5 s → 0.53, 3.0 s → 0.86, 5.0 s → 0.95 |
+| First blink | 2.32 s — unreachable before ~1.4 s, as the threshold arithmetic requires |
+| Six seconds of held beam | 5 blinks, 10.0 m closed; it never walks, so every metre of that is a lurch |
+| Beam floor during a deep dip | 0% — an extreme flicker is the light cutting out, not dimming |
+| Blink at the pit's edge | 15 blinks, 0 ticks on an unwalkable tile, furthest z = 19.45 against a pit edge at 20.00 and a 0.55 m radius |
+| Lamp strain | 1.98 s (spec 2.0) |
+| Lamp failure | 3.48 s (spec 3.5) |
+| Freeze release | 3.50 s — the tick the lamp died, not one later |
+| Recovery | relit at 9.48 s (3.48 + 6.0), straining again at 11.50 s with the monster still under it |
+| Control lamp in the other group | `steady`, 100% — never so much as flickered |
+| Group power through a failure | still on: an outage is a rolling hazard, not lost progress |
+| Leaving mid-strain | one tick out of the pool → `steady`, dwell 0.00 s; 1.9 s back under it is still `steady`, so the count restarted rather than resumed |
+| Footsteps | 8 heavy steps in 6 s of walking (1.6 m stride at 1.8 m/s ≈ 1 per 0.89 s) |
+| Footsteps while frozen in the beam at 6 m | 0 in 1.2 s — light takes the sound away too |
+
+The headline read was checked by eye, three frames of the same standing pair 5 m from the
+player. Beam on: the spider is a lit body and beside it a dark column is carved out of the
+pool, running north from where the monster's feet meet the floor. Beam off: the spider is
+still a readable shape in the ambient and where the monster stands there is nothing at all —
+not a silhouette, not a shimmer. Debug bodies revealed: the shadow's base is where the
+monster is. That asymmetry is the entire creature, and it only exists because §4's ambient
+is high enough for an ordinary thing to be a shape in it.
+
+One thing the stills cost an hour to get: a beam held on the monster ramps and it blinks out
+of frame in under two seconds, so each frame has to be staged fresh. That is the mechanic
+working, and worth knowing before anyone tries to screenshot it again.
+
+*Sent back to the spec.* §5.2's flicker formula had a free variable and two unstated
+cadences. `f` is 18 rad/s now — just under six dips a second, fast enough to read as a light
+struggling and slow enough that a dip lasts several ticks and can be acted on. `random(0.7,
+1.3)` is re-rolled every simulation tick, which is what makes successive dips uneven and
+stops the blink arriving on a beat. Focus is *continuous*, on §5.1's precedent: losing the
+monster from the cone restarts the ramp at 0.1. §5.2 also now spells out that only the
+flashlight's interference blinks it and that a monster lit by an environmental light cannot
+blink at all — §4.2 pins it under a lamp until the lamp fails, and a blink that carried it
+out of the pool would take that away. §4.2 says the lamp's own strain uses the same curve
+with severity ramping 0.1 → 0.95 across its 1.5 s. §5.2's footsteps got a stride: 1.6 m,
+slower than the player's 0.95 m so the two are never confusable.
+
+*Left to later phases.* Death itself: contact takes the pool to 0.0 and the readout says
+`DEAD`, and that is all — input is still live, there is no jump-scare and no game-over, all
+of which are Phase 10's (§5.3). The `PowerSwitch` entities on the map still do nothing;
+§4.2's groups are driven by the debug key until Phase 9 wires them. No animation work, as
+the phase said: §5.2 is explicit that one pose covers a creature that is never both moving
+and visible.
 
 ## Phase 9 — Interactables, Power & Objectives
 

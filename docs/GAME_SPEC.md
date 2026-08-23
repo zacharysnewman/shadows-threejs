@@ -367,7 +367,10 @@ A light tracks the monster's continuous dwell time inside its cone. Leaving the 
 resets the dwell to zero.
 
 1. **Strain (dwell ≥ 2.0 s):** the lamp begins to flicker, its intensity fluttering with
-   the same character as the flashlight interference (§5.2) and audibly buzzing.
+   the same character as the flashlight interference (§5.2) and audibly buzzing. It uses
+   that formula unchanged, with `flickerSeverity` ramping 0.1 → 0.95 across the 1.5 s of
+   strain, so the lamp is visibly worse the closer it is to going out and the player can
+   read how long they have left under it.
 2. **Failure (after 1.5 s of flicker):** the lamp goes out. Its safe zone is gone and the
    Shadow Monster's freeze (§5.2) releases the instant the cone dies.
 3. **Recovery (6.0 s later):** the lamp relights at full intensity, with the dwell timer
@@ -508,7 +511,11 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     it is standing still. The blink step is the one exception and wants no animation either:
     §5.2 calls for a jump-cut rather than a walk, so the pose simply arrives somewhere else.
     Nothing subtle would read anyway; what the player sees is a silhouette on the floor.
-  - **Audio:** heavy, slow, spatial footsteps.
+  - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
+    at its pursuit speed is a step a little under every second. Slower than the player's
+    own stride and carrying much further (§4.3), so the two are never confusable and a
+    step heard in the dark is information about where the monster is, not about where the
+    player just was.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
      Monster cannot move.
@@ -519,13 +526,32 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
        I(t) = I_base · (1.0 - flickerSeverity · |sin(f · t)| · random(0.7, 1.3))
        ```
 
-     - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus.
+     - `f` is 18 rad/s, so the beam dips a little under six times a second — fast enough
+       to read as a light struggling rather than as one being switched, and slow enough
+       that a dip lasts several simulation ticks and can therefore be acted on.
+     - `random(0.7, 1.3)` is re-rolled every simulation tick (§7). Re-rolling makes the
+       depth of each dip uneven, which is what stops the blink below from arriving on a
+       predictable beat — the player can see that a blink is *becoming likely* and never
+       when it will land.
+     - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus. Focus
+       is continuous in the same sense as §5.1's deterrence timer: the instant the monster
+       leaves the cone the beam is clean again and the ramp restarts from 0.1.
      - **The "Blink" Movement:** during extreme flickers (when light intensity drops below
        threshold for a few frames), the Shadow Monster breaks its freeze state and takes a
        rapid, lurching step toward the player. Threshold: intensity below 35% of
        `I_base` for 3 consecutive frames. The step covers up to 2.0 m toward the player
        over 0.15 s, stopping short at the first solid tile, and cannot retrigger for
        0.5 s. The step is instant enough to read as a jump-cut rather than a walk.
+
+       Those numbers interlock: the threshold is only reachable once `flickerSeverity`
+       passes 0.5, which is about 1.4 s into the ramp. So the first stretch of holding the
+       beam on the monster is safe, and the beam becoming unreliable is the warning that
+       the monster is about to close. Holding light on it is how you find out where it is,
+       and it is also how you let it approach.
+     - **Only the flashlight's interference blinks it.** An environmental light's flicker
+       (§4.2) does not, and a monster lit by an environmental light cannot blink at all,
+       whatever the beam is doing. §4.2 pins it under a lamp until the lamp fails, and a
+       blink that could carry it out of the pool would take that away.
   3. **Environmental Sabotage:** if the Shadow Monster enters the cone of an active
      environmental light, it disables the light source — by standing in it rather than by
      acting on it. Note that the cone also freezes the monster, so the frozen monster

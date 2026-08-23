@@ -34,6 +34,9 @@ npm test           # unit tests
 - `/?map=phase7-test` — a map for the spider: a long walled lane to be deterred up, a
   spider with a wall four metres behind it, a dead-end pocket with nowhere to run, open
   yard for the attack, and a lamp that deters without anyone aiming
+- `/?map=phase8-test` — a map for the Shadow Monster: a long open yard to sweep a beam
+  across, a pit that light crosses and walking does not, two lamps in two groups so one
+  can be sabotaged while the other stays as a control, and two spiders for the comparison
 
 `?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
 logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.

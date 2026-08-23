@@ -199,6 +199,30 @@ export const ENVIRONMENT_LIGHT = {
    */
   baseIntensity: 30,
   decay: 1.2,
+
+  /** §4.2's sabotage lifecycle — what a Shadow Monster standing under a lamp costs it. */
+  sabotage: {
+    /** Continuous dwell inside the pool before the lamp starts to struggle. */
+    strainAfterSeconds: 2.0,
+    /** How long it struggles before it goes out. */
+    failAfterStrainSeconds: 1.5,
+    /** Dark time before it comes back at full intensity, dwell reset. */
+    recoverySeconds: 6.0,
+    /** §4.2 — the strain's flicker ramp, over `failAfterStrainSeconds`. */
+    severity: { from: 0.1, to: 0.95 },
+  },
+} as const;
+
+/**
+ * §5.2 — the flicker curve, shared by the flashlight's interference and by a lamp under
+ * strain (§4.2). One formula, so a lamp about to fail and a beam about to blink read as
+ * the same thing happening to two different lights.
+ */
+export const FLICKER = {
+  /** `f` in `I(t) = I_base · (1 − severity · |sin(f·t)| · random(0.7, 1.3))`, in rad/s. */
+  frequency: 18,
+  /** The per-tick jitter multiplying the sine. */
+  jitter: { min: 0.7, max: 1.3 },
 } as const;
 
 /**
@@ -369,6 +393,34 @@ export const ENEMY = {
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
     detectRadius: Number.POSITIVE_INFINITY,
     loseRadius: Number.POSITIVE_INFINITY,
+
+    /** §5.2's light interference: the ramp, and the blink it eventually allows. */
+    flicker: {
+      /** `flickerSeverity` at the start and end of the ramp. */
+      severity: { from: 0.1, to: 0.95 },
+      /** Seconds of continuous focus the ramp takes. */
+      rampSeconds: 3.0,
+    },
+    blink: {
+      /** Fraction of `I_base` the beam must drop below to count as an extreme flicker. */
+      intensityThreshold: 0.35,
+      /** Consecutive ticks below it before the freeze breaks (§7 — ticks, not frames). */
+      consecutiveTicks: 3,
+      /** How far the lurch carries it, at most. */
+      distance: 2.0,
+      /** How long the lurch takes. Short enough to read as a jump-cut, not a walk. */
+      seconds: 0.15,
+      /** Dead time after a blink before another can trigger. */
+      cooldownSeconds: 0.5,
+      /**
+       * Resolution of the walkability march along the step, in metres. Not a spec value —
+       * as with §5.1's flee search, it only has to be finer than a tile so the step can
+       * never be placed across a wall it stepped over.
+       */
+      searchStep: 0.25,
+    },
+    /** §5.2 — ground covered between footsteps. Slower than the player's 0.95 m (§4.3). */
+    strideMetres: 1.6,
   },
 } as const;
 

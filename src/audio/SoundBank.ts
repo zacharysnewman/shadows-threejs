@@ -15,7 +15,13 @@
 
 import { mulberry32 } from '../core/rng';
 
-export const SOUND_NAMES = ['test_ping', 'footstep_light', 'footstep_heavy', 'chitter'] as const;
+export const SOUND_NAMES = [
+  'test_ping',
+  'footstep_light',
+  'footstep_heavy',
+  'chitter',
+  'lamp_buzz',
+] as const;
 
 export type SoundName = (typeof SOUND_NAMES)[number];
 
@@ -105,6 +111,31 @@ const RECIPES: Readonly<Record<SoundName, Recipe>> = {
         data[i] = thump + scuff;
       }
       lowPass(data, 0.18);
+    },
+  },
+
+  /**
+   * A lamp under strain (§4.2): mains hum with the rasp of a failing ballast over it.
+   * Looping, and only ever played by a lamp that is actually straining — §4.2 makes the
+   * buzz half of the tell, and a lamp that hummed all the time would be no tell at all.
+   */
+  lamp_buzz: {
+    seconds: 0.6,
+    loop: true,
+    seed: 11,
+    render(data, sampleRate, random) {
+      // 100 Hz — twice mains, which is what a magnetic ballast actually sings at — plus
+      // its harmonics, plus a little noise so it rasps rather than tones.
+      for (let i = 0; i < data.length; i += 1) {
+        const t = i / sampleRate;
+        const hum =
+          Math.sin(2 * Math.PI * 100 * t) * 0.6 +
+          Math.sin(2 * Math.PI * 200 * t) * 0.25 +
+          Math.sin(2 * Math.PI * 300 * t) * 0.12;
+        data[i] = hum + (random() * 2 - 1) * 0.18;
+      }
+      lowPass(data, 0.5);
+      normalise(data, 0.55);
     },
   },
 

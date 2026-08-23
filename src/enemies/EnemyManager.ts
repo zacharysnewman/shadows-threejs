@@ -20,12 +20,12 @@ import type { WalkabilityGrid } from '../map/WalkabilityGrid';
 import type { ColliderIndex } from '../player/collision';
 import {
   Enemy,
-  ENEMY_PROFILES,
   type EnemyContext,
   type EnemyKind,
   type IlluminationSampler,
   type PlayerActions,
 } from './Enemy';
+import { ShadowMonster } from './ShadowMonster';
 import { Spider } from './Spider';
 
 /** Fired for every enemy overlapping the player, every tick the overlap lasts (§5.3). */
@@ -64,13 +64,10 @@ export class EnemyManager {
     const spawn = (kind: EnemyKind): void => {
       for (const entity of registry.byType(kind)) {
         const stream = rng.stream(entity.key);
-        // The Shadow Monster has no subclass yet (Phase 8), so it runs on the shared enemy
-        // and reacts to nothing — visible in the readout as a spider-less lifecycle rather
-        // than as a monster that has quietly become immune to light.
         const enemy =
           kind === 'SpiderEnemy'
             ? new Spider(entity.key, entity.wx, entity.wz, stream)
-            : new Enemy(ENEMY_PROFILES[kind], entity.key, entity.wx, entity.wz, stream);
+            : new ShadowMonster(entity.key, entity.wx, entity.wz, stream);
         this.enemies.push(enemy);
         this.root.add(enemy.object);
       }
@@ -92,6 +89,27 @@ export class EnemyManager {
     return this.enemies.length;
   }
 
+  /** The Shadow Monsters, for the systems that only concern them (§4.2, §5.2). */
+  get monsters(): ShadowMonster[] {
+    return this.enemies.filter((enemy): enemy is ShadowMonster => enemy instanceof ShadowMonster);
+  }
+
+  /**
+   * §5.2 — what the flashlight's rendered intensity should be scaled by, 0–1. The *worst*
+   * of the monsters interfering with it: two of them in one beam is not two independent
+   * flickers multiplied into darkness, it is whichever is dipping the beam hardest.
+   */
+  get beamInterference(): number {
+    let worst = 1;
+    for (const monster of this.monsters) worst = Math.min(worst, monster.beamFraction);
+    return worst;
+  }
+
+  /** Where the monsters are, for §4.2's sabotage dwell. */
+  monsterPositions(): { x: number; z: number }[] {
+    return this.monsters.map((monster) => ({ x: monster.position.x, z: monster.position.y }));
+  }
+
   /** How many are hunting rather than drifting — the readout's headline number. */
   get engagedCount(): number {
     return this.enemies.filter((enemy) => enemy.engaged).length;
@@ -103,6 +121,11 @@ export class EnemyManager {
       counts.set(enemy.state, (counts.get(enemy.state) ?? 0) + 1);
     }
     return [...counts].map(([state, n]) => `${state}×${n}`).join(' ');
+  }
+
+  /** Whether the debug harness is currently drawing the bodies §5.2 keeps invisible. */
+  get bodiesShown(): boolean {
+    return this.bodiesRevealed;
   }
 
   /** Debug harness: draw the bodies §5.2 keeps invisible. Returns the new state. */

@@ -11,15 +11,38 @@
  * rather than an optimisation: the flashlight's shadows are the mechanic, and a map with
  * a dozen lit lamps must not spend the frame rendering shadow maps for lamps that are
  * off-screen or across the level.
+ *
+ * Each lamp also runs §4.2's sabotage lifecycle: a Shadow Monster standing in its pool
+ * strains it, then puts it out, then it comes back. Powered and working are kept as two
+ * separate facts here, because §4.2 is explicit that an outage is a rolling hazard and not
+ * lost progress — the group stays powered through a failure and the `PowerSwitch` never
+ * learns about it.
+ *
+ * The lifecycle lives on the lamp rather than on the monster for the same reason §5.3's
+ * contact check lives on the manager: several monsters can be under one lamp, one monster
+ * can cross several, and the dwell being the *lamp's* is what makes both of those behave.
  */
 
 import * as THREE from 'three';
 import { ENTITY_DEFAULTS, ENVIRONMENT_LIGHT, RENDER } from '../config';
 import type { EnvironmentLightEntity } from '../map/types';
+import { drawJitter, flickerFraction, severityAt } from './flicker';
+
+/** §4.2 — where a lamp is in the sabotage lifecycle. */
+export type SabotageState = 'steady' | 'strain' | 'failed';
 
 export interface EnvironmentLamp {
   entity: EnvironmentLightEntity;
   light: THREE.SpotLight;
+  /** §4.2 — the switch's answer. Untouched by a failure. */
+  powered: boolean;
+  sabotage: SabotageState;
+  /** Continuous seconds a Shadow Monster has stood in this pool. Leaving resets it. */
+  dwell: number;
+  /** Seconds in the current `strain` or `failed` phase. */
+  phaseFor: number;
+  /** Rendered intensity fraction, 1 unless it is straining (§5.2's curve). */
+  flicker: number;
 }
 
 /** What the shadow-budget choice needs to know about one lamp, and nothing more. */
@@ -95,7 +118,15 @@ export class EnvironmentLights {
       light.target.position.set(entity.wx, 0, entity.wz);
 
       this.root.add(light, light.target);
-      this.lamps.push({ entity, light });
+      this.lamps.push({
+        entity,
+        light,
+        powered: false,
+        sabotage: 'steady',
+        dwell: 0,
+        phaseFor: 0,
+        flicker: 1,
+      });
       if (!this.powered.has(entity.groupId)) this.powered.set(entity.groupId, false);
     }
   }
@@ -122,8 +153,112 @@ export class EnvironmentLights {
     if (!this.powered.has(groupId)) return;
     this.powered.set(groupId, on);
     for (const lamp of this.lamps) {
-      if (lamp.entity.groupId === groupId) lamp.light.visible = on;
+      if (lamp.entity.groupId !== groupId) continue;
+      lamp.powered = on;
+      // Switching a group off ends any sabotage in progress: there is nothing left to
+      // strain, and a lamp that comes back on should come back clean.
+      if (!on) this.resetSabotage(lamp);
+      this.applyLamp(lamp);
     }
+  }
+
+  /** How many lamps are dark because of a monster rather than because of a switch. */
+  get failedCount(): number {
+    return this.lamps.filter((lamp) => lamp.sabotage === 'failed').length;
+  }
+
+  get strainingCount(): number {
+    return this.lamps.filter((lamp) => lamp.sabotage === 'strain').length;
+  }
+
+  /**
+   * §4.2's sabotage lifecycle, one simulation tick (§7).
+   *
+   * `occupants` is where the Shadow Monsters are. A lamp is occupied when one stands
+   * inside the ground radius its cone pools to — the same disc §4.1 lights, and no
+   * occlusion test, because a lamp is four metres straight up and there is nothing between
+   * it and something standing under it.
+   */
+  tick(dt: number, occupants: readonly { x: number; z: number }[], random: () => number): void {
+    for (const lamp of this.lamps) {
+      if (lamp.sabotage === 'failed') {
+        lamp.phaseFor += dt;
+        if (lamp.phaseFor < ENVIRONMENT_LIGHT.sabotage.recoverySeconds) continue;
+        // §4.2 — back at full intensity with the dwell reset, and straight into another
+        // cycle if the monster never left.
+        this.resetSabotage(lamp);
+        this.applyLamp(lamp);
+        continue;
+      }
+
+      if (!lamp.powered) {
+        this.resetSabotage(lamp);
+        continue;
+      }
+
+      const occupied = occupants.some(
+        (occupant) =>
+          Math.hypot(occupant.x - lamp.entity.wx, occupant.z - lamp.entity.wz) <=
+          lamp.entity.radius,
+      );
+      if (!occupied) {
+        // §4.2 — leaving the cone resets the dwell to zero, so a monster passing through
+        // costs the lamp nothing and only one standing under it does.
+        this.resetSabotage(lamp);
+        this.applyLamp(lamp);
+        continue;
+      }
+
+      lamp.dwell += dt;
+      if (lamp.dwell < ENVIRONMENT_LIGHT.sabotage.strainAfterSeconds) {
+        lamp.flicker = 1;
+        this.applyLamp(lamp);
+        continue;
+      }
+
+      if (lamp.sabotage !== 'strain') {
+        lamp.sabotage = 'strain';
+        lamp.phaseFor = 0;
+      }
+      lamp.phaseFor += dt;
+
+      if (lamp.phaseFor >= ENVIRONMENT_LIGHT.sabotage.failAfterStrainSeconds) {
+        lamp.sabotage = 'failed';
+        lamp.phaseFor = 0;
+        lamp.flicker = 0;
+        this.applyLamp(lamp);
+        continue;
+      }
+
+      // §4.2 — the same curve as §5.2's beam interference, ramping across the strain so
+      // the lamp is visibly worse the closer it is to going out.
+      const severity = severityAt(
+        lamp.phaseFor,
+        ENVIRONMENT_LIGHT.sabotage.failAfterStrainSeconds,
+        ENVIRONMENT_LIGHT.sabotage.severity.from,
+        ENVIRONMENT_LIGHT.sabotage.severity.to,
+      );
+      lamp.flicker = flickerFraction(lamp.phaseFor, severity, drawJitter(random));
+      this.applyLamp(lamp);
+    }
+  }
+
+  private resetSabotage(lamp: EnvironmentLamp): void {
+    lamp.sabotage = 'steady';
+    lamp.dwell = 0;
+    lamp.phaseFor = 0;
+    lamp.flicker = 1;
+  }
+
+  /**
+   * Powered *and* working is what makes a lamp light anything. Kept in one place because
+   * §4.1's query reads `light.visible` to decide whether the lamp lights an entity at all,
+   * and a failed lamp has to stop freezing the monster on the tick it dies (§4.2, §5.2).
+   */
+  private applyLamp(lamp: EnvironmentLamp): void {
+    lamp.light.visible = lamp.powered && lamp.sabotage !== 'failed';
+    lamp.light.intensity =
+      ENVIRONMENT_LIGHT.baseIntensity * lamp.entity.intensity * lamp.flicker;
   }
 
   /** Debug stand-in for the switches that do not exist until Phase 9. */

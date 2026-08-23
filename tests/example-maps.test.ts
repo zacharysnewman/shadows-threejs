@@ -11,6 +11,7 @@ import { buildColliders, buildFloorGapColliders } from '../src/map/colliders';
 import { EntityRegistry } from '../src/map/EntityRegistry';
 import { parseMap, parseTileset } from '../src/map/validate';
 import { WalkabilityGrid } from '../src/map/WalkabilityGrid';
+import { findPath } from '../src/nav/AStar';
 
 function load(name: string) {
   const dir = resolve(__dirname, '../public/maps', name);
@@ -251,5 +252,64 @@ describe('maps/phase7-test', () => {
     // Its back is in the corner: north and east of it are both wall.
     expect(grid.isWalkable(spider.gx, spider.gy - 1)).toBe(false);
     expect(grid.isWalkable(spider.gx + 1, spider.gy)).toBe(false);
+  });
+});
+
+describe('maps/phase8-test', () => {
+  const { map, tileset, grid, entities } = load('phase8-test');
+
+  it('loads clean, with both enemies on it for the comparison (§5.2)', () => {
+    expect(map.warnings).toEqual([]);
+    expect(entities.byType('ShadowMonster')).toHaveLength(2);
+    expect(entities.byType('SpiderEnemy')).toHaveLength(2);
+    expect(entities.byType('EnvironmentLight')).toHaveLength(2);
+  });
+
+  it('has a pit that light crosses and walking does not (§4.1, §3.1)', () => {
+    const gaps = buildFloorGapColliders(map, tileset);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.kind).toBe('gap');
+    // Unwalkable, so §5.2's blink march has to stop at its edge...
+    expect(grid.isWalkable(16, 11)).toBe(false);
+    // ...but not an obstacle, so §4.1's occlusion test lets the beam over it and the
+    // monster on the far side is lit.
+    expect(buildColliders(map, tileset, () => 3).some((c) => c.kind === 'gap')).toBe(false);
+  });
+
+  it('puts a monster across the pit from the yard, and one at the far corner', () => {
+    // Picked by where they are rather than by entity order: the map file's order is not
+    // something a reader of this test should have to know.
+    const monsters = entities.byType('ShadowMonster');
+    const acrossThePit = monsters.find((m) => m.gx > 12 && m.gx < 21)!;
+    const farCorner = monsters.find((m) => m !== acrossThePit)!;
+
+    expect(grid.isWalkable(acrossThePit.gx, acrossThePit.gy)).toBe(true);
+    // North of the pit rows, with the yard and the hole between it and the player.
+    expect(acrossThePit.gy).toBeLessThan(10);
+    expect(farCorner.gx).toBeGreaterThan(map.width - 6);
+    expect(farCorner.gy).toBeLessThan(4);
+  });
+
+  it('puts one lamp on the monster\'s route and one away from it (§4.2)', () => {
+    const [route, control] = entities.byType('EnvironmentLight');
+    expect(route!.groupId).not.toBe(control!.groupId);
+    for (const light of [route, control]) {
+      expect(grid.isWalkable(light!.gx, light!.gy)).toBe(true);
+    }
+    // The control is in the player's corner, the far side of the map from the spawn the
+    // monster walks from — so a flicker there is never sabotage.
+    const monsters = entities.byType('ShadowMonster');
+    const farCorner = monsters.find((m) => m.gx > map.width - 6)!;
+    expect(Math.hypot(control!.wx - farCorner.wx, control!.wz - farCorner.wz)).toBeGreaterThan(
+      Math.hypot(route!.wx - farCorner.wx, route!.wz - farCorner.wz),
+    );
+  });
+
+  it('leaves a route round both ends of the pit, so the map is one space', () => {
+    // A path from the player's corner to the far monster exists at all.
+    const spawn = entities.playerSpawn;
+    for (const monster of entities.byType('ShadowMonster')) {
+      expect(findPath(grid, spawn.gx, spawn.gy, monster.gx, monster.gy)).not.toBeNull();
+    }
   });
 });

@@ -223,6 +223,17 @@ export class Player {
   }
 
   /**
+   * §5.3 — killed outright by the Shadow Monster, at any health.
+   *
+   * Its own verb rather than a very large `damage`, because it is not a big hit: there is
+   * no armour, no threshold and no amount of health that survives it. Disabling input and
+   * the jump-scare are the run lifecycle's (Phase 10); the pool reaching zero is this.
+   */
+  kill(): void {
+    this.health.set(0);
+  }
+
+  /**
    * §5.3 — shoved `metres` directly away from a point by a spider that landed a hit.
    *
    * A displacement, resolved against the same geometry walking is, so the shove slides
