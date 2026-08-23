@@ -114,6 +114,12 @@ which near a boundary they always do (§3.2). The last is the one worth reading:
 player in frame beats hiding off-map void, so the clamp gives way rather than parking the
 player at the screen edge.
 
+*Revised later.* §3.1 originally ruled out a sprint outright. It now has one, at 4.5 m/s,
+which locks the aim to the direction of travel while held — the speed is paid for with the
+twin-stick independence that lets a player back away with the beam on a threat. §5's speed
+table note was rewritten with it, since it had been resting on the player *not* having a
+sprint.
+
 *Known, unsolved.* At a 70°–75° pitch, a full-height wall standing between the camera and
 the player hides the player — visible on the example map today with placeholder 3 m walls.
 Recorded in §3.2 as a requirement on the art pass rather than papered over here.

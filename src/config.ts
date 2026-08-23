@@ -96,8 +96,21 @@ export const ENTITY_DEFAULTS = {
 
 /** §3.1 — player capsule and movement. */
 export const PLAYER = {
-  /** Walk speed in m/s. There is no sprint (§3.1). */
+  /** Walk speed in m/s (§3.1). */
   walkSpeed: 3.0,
+  /** Sprint speed in m/s, held rather than toggled (§3.1). */
+  sprintSpeed: 4.5,
+  /**
+   * Time constant for turning the aim onto the direction of travel when a sprint starts
+   * (§3.1). Fast enough to read as committing to a direction, slow enough that it is a
+   * turn rather than a cut.
+   */
+  sprintAimTurnTime: 0.08,
+  /**
+   * Movement intent below which a sprint does nothing. There is no sprinting in place, and
+   * a barely-touched stick should not spend the aim lock (§3.1).
+   */
+  sprintMinimumIntent: 0.35,
   /**
    * Time constant for the acceleration/deceleration smoothing, in seconds (§3.1). Velocity
    * approaches the input's target exponentially rather than snapping.
@@ -135,6 +148,8 @@ export const INPUT = {
   aimDeadzone: 0.35,
   /** Radius in CSS pixels at which a touch drag counts as full stick deflection. */
   touchStickRadius: 56,
+  /** Deflection at which the touch movement stick starts sprinting (§3.1). */
+  touchSprintDeflection: 0.95,
 } as const;
 
 /** §4.1 — the flashlight spotlight and its battery. */

@@ -157,8 +157,18 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   nothing.
 - The player faces their spawn's `rotation` (§2) until the first aim input arrives, so a
   run does not open with the character facing an arbitrary direction.
-- There is no sprint, jump, or crouch. Distance from a threat is bought with light and
-  route choice, not speed.
+- **Sprint** at 4.5 m/s while held, and **while sprinting the aim locks to the direction of
+  travel**: the beam points where the player is going, and the pointer or aim stick is
+  ignored until they let go. Aim turns onto the movement direction quickly rather than
+  snapping, so a sprint reads as the character committing rather than as the camera cutting.
+- The lock is the whole cost of the sprint, and it is a steep one. Independent aim is what
+  lets a player back away with the beam held on a threat (§3.1, first bullet); sprinting
+  spends exactly that. A sprinting player cannot hold a spider deterred (§5.1) or a Shadow
+  Monster frozen (§5.2) behind them — they have chosen to stop looking at whatever they are
+  running from. Speed buys distance; it costs the only thing that controls what is chasing.
+- Sprinting requires moving. There is no sprint in place, and no stamina meter: the aim
+  lock is the resource, not a bar.
+- There is no jump or crouch.
 
 ### 3.2 Camera Rig
 
@@ -249,8 +259,9 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
 
 ### 4.1 Flashlight Mechanics & Battery
 
-- **Type:** attached `THREE.SpotLight` bound to the player's position and directed towards
-  the mouse cursor / right analog position on the X/Z plane.
+- **Type:** attached `THREE.SpotLight` bound to the player's position and directed along the
+  player's aim on the X/Z plane — the mouse cursor or right analog position, except while
+  sprinting, when aim is the direction of travel (§3.1).
 - **Spotlight Properties:** angle ≈45° (the full cone), penumbra 0.3, cast shadow enabled,
   range 12 m along the ground.
 - **Mounting:** carried at chest height and emitted just clear of the player's capsule — a
@@ -355,9 +366,13 @@ Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
 | Pursuing player | 2.4 | 1.8 |
 | Fleeing | 3.6 (1.5× pursue) | — |
 
-Neither enemy outruns the player at a sprint they do not have: the spider is faster only
-while fleeing, and the Shadow Monster is always slower, so it threatens by never stopping
-and by taking routes the player cannot.
+Neither enemy outruns the player. A walking player is faster than a pursuing spider and
+half again as fast as the Shadow Monster; only a *fleeing* spider (3.6) beats a walk, and
+nothing beats a sprint (§3.1). That is deliberate: an enemy that catches a player in a
+straight line would make the map a reflex test. They threaten by never stopping, by taking
+routes the player cannot, and by the corners and dead ends they force — and by what running
+costs. A sprinting player has their light pointed the way they are going (§3.1), which means
+whatever they are running from is unlit, unfrozen and undeterred behind them.
 
 **Bodies.** The spider is a 0.5 m radius circle on the X/Z plane, the Shadow Monster 0.55 m,
 resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:

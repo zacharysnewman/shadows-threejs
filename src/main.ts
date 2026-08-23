@@ -178,8 +178,9 @@ async function main(): Promise<void> {
     // harness) — otherwise panning the debug view walks the player across the map.
     const moveX = freeCamera.enabled ? 0 : input.moveX;
     const moveZ = freeCamera.enabled ? 0 : input.moveZ;
+    const sprinting = !freeCamera.enabled && input.isHeld('sprint');
     const before = player.position.clone();
-    player.tick(dt, moveX, moveZ);
+    player.tick(dt, moveX, moveZ, sprinting);
     flashlight.tick(dt);
 
     // The pool's first customer: a step every stride of ground actually covered, so a
@@ -222,11 +223,13 @@ async function main(): Promise<void> {
     const { gx, gy } = loaded.grid.worldToGrid(player.position.x, player.position.y);
     return (
       `(${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}) tile (${gx}, ${gy}) · ` +
-      `${player.speed.toFixed(2)} m/s${player.touchingWall ? ' · wall' : ''}`
+      `${player.speed.toFixed(2)} m/s${player.sprinting ? ' · SPRINT' : ''}` +
+      `${player.touchingWall ? ' · wall' : ''}`
     );
   });
   overlay.addRow('aim', () =>
-    `(${player.aim.x.toFixed(2)}, ${player.aim.y.toFixed(2)}) · ${input.aimSource}`,
+    `(${player.aim.x.toFixed(2)}, ${player.aim.y.toFixed(2)}) · ` +
+    `${player.sprinting ? 'locked to movement (§3.1)' : input.aimSource}`,
   );
   overlay.addRow('health', () => {
     const { health } = player;
@@ -331,6 +334,7 @@ async function main(): Promise<void> {
 
   // --- Debug keys ---------------------------------------------------------
   overlay.addBinding('WASD', 'move · mouse aims');
+  overlay.addBinding('Shift', 'sprint — aim locks to the way you are going');
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
   overlay.addBinding('O', 'occluder fade');
   overlay.addBinding('Z', 'orbit a test emitter off-screen (audio)');

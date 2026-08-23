@@ -75,6 +75,7 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | Key | |
 | --- | --- |
 | `WASD` / arrows | move; the mouse aims |
+| `Shift` | sprint — the aim locks to the way you are going |
 | `V` | hand the camera to the debug free camera — `WASD` then pans, wheel zooms |
 | `F` | flashlight on/off |
 | `B` | drain the battery to 5%, to reach the cut-out and lockout without waiting 45 s |
@@ -94,10 +95,12 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `[` `]` | halve / double time scale |
 | `H` | hide the readout |
 
-A gamepad works without any setup — left stick moves, right stick aims, `A` interacts. On
+A gamepad works without any setup — left stick moves, right stick aims, `A` interacts,
+left stick click sprints. On
 touch, the left half of the screen is a floating movement stick and the right half a
-floating aim stick, with an on-screen action button; the touch chrome only appears once a
-touch is seen, so a desktop session never renders it.
+floating aim stick, with an on-screen action button; pushing the movement stick to its rim
+sprints. The touch chrome only appears once a touch is seen, so a desktop session never
+renders it.
 
 **Development builds** additionally expose `window.shadows` — the clock, player, camera
 rig, flashlight, lights, audio core and map, reachable from the console. Some behaviour can
@@ -119,7 +122,8 @@ Phases 0–5 are implemented:
   registry. Entities other than the player spawn are parsed and indexed but not yet spawned
   beyond debug markers.
 - **Phase 2** — the player: input abstraction over keyboard/mouse, gamepad and touch;
-  movement with the spec's speed and smoothing; the 0.4 m capsule sliding along contact
+  movement with the spec's speeds and smoothing, including the sprint that trades
+  independent aim for speed; the 0.4 m capsule sliding along contact
   normals against walls, floor holes and the map edge; the camera rig with its bounds
   clamp; and the health pool with its regeneration delay and refill, driven by a debug
   damage key until enemies exist.

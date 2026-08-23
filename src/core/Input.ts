@@ -20,17 +20,19 @@ import { INPUT } from '../config';
 export type AimSource = 'none' | 'pointer' | 'stick';
 
 /** Every action the game binds. Phase 2 consumes `interact` only through the debug harness. */
-export type ActionName = 'interact' | 'flashlight';
+export type ActionName = 'interact' | 'flashlight' | 'sprint';
 
 const ACTION_KEYS: Readonly<Record<ActionName, readonly string[]>> = {
   interact: ['KeyE'],
   flashlight: ['KeyF'],
+  sprint: ['ShiftLeft', 'ShiftRight'],
 };
 
 /** Standard-mapping gamepad button indices for the same actions. */
 const ACTION_BUTTONS: Readonly<Record<ActionName, readonly number[]>> = {
   interact: [0], // A / cross
   flashlight: [2], // X / square
+  sprint: [10], // left stick click, the usual place for it
 };
 
 const MOVE_KEYS: ReadonlyArray<{ codes: readonly string[]; x: number; z: number }> = [
@@ -155,7 +157,11 @@ export class Input {
 
   /** True while the action's key or button is down, as opposed to newly pressed. */
   isHeld(action: ActionName): boolean {
-    return this.actionHeld.has(action) || ACTION_KEYS[action].some((code) => this.held.has(code));
+    return this.actionHeld.has(action) || this.heldByKey(action);
+  }
+
+  private heldByKey(action: ActionName): boolean {
+    return ACTION_KEYS[action].some((code) => this.held.has(code));
   }
 
   /** True if the action was pressed during the frame just sampled. Cleared by `endFrame`. */
@@ -191,6 +197,10 @@ export class Input {
       const stick = applyDeadzone(this.moveStick.x, this.moveStick.y, INPUT.stickDeadzone);
       moveX += stick.x;
       moveZ += stick.y;
+      // Pushed to the rim: sprint (§3.1). The alternative is a second on-screen control
+      // for a thumb that is already holding the stick.
+      if (stick.magnitude >= INPUT.touchSprintDeflection) this.actionHeld.add('sprint');
+      else if (!this.heldByKey('sprint')) this.actionHeld.delete('sprint');
     }
 
     if (this.aimStick) {
