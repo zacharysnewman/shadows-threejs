@@ -51,6 +51,11 @@ export const RENDER = {
   flashlightShadowMapSize: 2048,
   /** Shadow map resolution for environmental lights (§7). */
   environmentShadowMapSize: 1024,
+  /**
+   * Shadow map resolution for the moon (§7). Larger than a lamp's because it covers the
+   * whole visible ground rather than one pool.
+   */
+  moonShadowMapSize: 2048,
   /** At most this many environmental lights cast shadows at once (§7). */
   maxShadowCastingEnvironmentLights: 2,
   /** Clamp for `devicePixelRatio`; mobile is a 30 fps floor (§7). */
@@ -101,11 +106,14 @@ export const PLAYER = {
   /** Sprint speed in m/s, held rather than toggled (§3.1). */
   sprintSpeed: 4.5,
   /**
-   * Time constant for turning the aim onto the direction of travel when a sprint starts
-   * (§3.1). Fast enough to read as committing to a direction, slow enough that it is a
-   * turn rather than a cut.
+   * Ceiling on how fast the beam swings, in degrees per second (§3.1) — a reversal takes a
+   * third of a second. A rate rather than a smoothing time constant because angular speed
+   * is what the player actually perceives, so it is the thing worth tuning.
+   *
+   * Applies to the turn onto the movement direction when a sprint starts and to the turn
+   * back onto the pointer when it ends. Ordinary aiming is direct.
    */
-  sprintAimTurnTime: 0.08,
+  aimTurnDegreesPerSecond: 540,
   /**
    * Movement intent below which a sprint does nothing. There is no sprinting in place, and
    * a barely-touched stick should not spend the aim lock (§3.1).
@@ -220,6 +228,29 @@ export const AMBIENT = {
    * enemies collapse into the same shape inside a cone.
    */
   intensity: 14,
+} as const;
+
+/**
+ * §4, §7 — the moon: one dim directional light, and the only shadow caster that reaches
+ * the whole map. It exists for the Shadow Monster (§5.2), which is otherwise not merely
+ * invisible in the gloom but absent — no body and no shadow until something lights it.
+ */
+export const MOON = {
+  color: 0x9fb6d8,
+  /** Dim enough to identify nothing by; it contributes shape and shadows, not visibility. */
+  intensity: 0.55,
+  /**
+   * Direction the light comes from, as a world offset. Steep, so shadows are long enough to
+   * read as a shape crossing the ground rather than as a smear at the caster's feet.
+   */
+  direction: { x: -0.45, y: 1, z: -0.35 },
+  /**
+   * Half-size of the shadow camera, in metres, and how far above the target it sits. Fitted
+   * to the camera's ground footprint (§3.2, §7) rather than to the map: a shadow map spread
+   * over a 100 m level has nothing left for the shadow the player is meant to be reading.
+   */
+  shadowExtent: 26,
+  shadowHeight: 40,
 } as const;
 
 /**

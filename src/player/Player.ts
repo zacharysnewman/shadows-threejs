@@ -16,6 +16,11 @@
  * sprinting the aim is driven onto the direction of travel and pointer input is ignored
  * (§3.1). That is the whole price of the speed — a sprinting player cannot hold a light on
  * what is behind them.
+ *
+ * Both ends of that are a bounded turn, not a snap. Releasing a sprint with the cursor
+ * behind you would otherwise whip the beam through 180° in one frame, which reads as a
+ * glitch rather than as looking back — so the aim keeps turning at the same rate until it
+ * catches up with where the player is pointing, and only then goes back to being direct.
  */
 
 import * as THREE from 'three';
@@ -52,6 +57,19 @@ export class Player {
   private _touchingWall = false;
   /** True while the player is sprinting, which is also what locks the aim (§3.1). */
   private _sprinting = false;
+  /**
+   * Where aim is being turned towards while it is rate-limited: the sprint's direction of
+   * travel, or the last aim the player asked for while it catches back up. Null once it has
+   * caught up and aiming is direct again.
+   */
+  private readonly aimGoal = new THREE.Vector2();
+  private turningAim = false;
+  /**
+   * Whether `aimGoal` holds anything to turn towards. False for the gap between releasing a
+   * sprint and the player's next aim input: the beam holds where the sprint left it rather
+   * than turning towards a goal nobody has given it yet.
+   */
+  private hasAimGoal = false;
 
   constructor(
     spawn: PlayerSpawnEntity,
@@ -92,6 +110,7 @@ export class Player {
     // §3.1 — no sprinting in place: a held key with no movement behind it is not a sprint,
     // and must not spend the aim lock.
     const intent = Math.hypot(moveX, moveZ);
+    const wasSprinting = this._sprinting;
     this._sprinting = sprintHeld && intent >= PLAYER.sprintMinimumIntent;
 
     const speed = this._sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
@@ -127,15 +146,22 @@ export class Player {
       }
     }
 
-    // §3.1 — the aim is dragged onto the direction of travel while sprinting. Turned
-    // rather than snapped, and driven off the *input* direction rather than the resolved
-    // velocity, so sliding along a wall does not swing the beam into it.
+    // §3.1 — while sprinting the goal is the direction of travel, taken from the *input*
+    // rather than from the resolved velocity so that sliding along a wall does not swing
+    // the beam into it.
     if (this._sprinting) {
-      const blendAim = 1 - Math.exp(-dt / PLAYER.sprintAimTurnTime);
-      this.aim.x += (moveX / intent - this.aim.x) * blendAim;
-      this.aim.y += (moveZ / intent - this.aim.y) * blendAim;
-      if (this.aim.lengthSq() > 1e-8) this.aim.normalize();
+      this.aimGoal.set(moveX / intent, moveZ / intent);
+      this.turningAim = true;
+      this.hasAimGoal = true;
+    } else if (wasSprinting) {
+      // Releasing arms the turn back, but with no goal yet: the beam holds where the sprint
+      // left it until the player points somewhere, and then sweeps. Without this the
+      // sprint's own turn completes, control returns to direct aiming, and the next pointer
+      // sample cuts the beam round in a single frame — the whip §3.1 rules out.
+      this.turningAim = true;
+      this.hasAimGoal = false;
     }
+    if (this.turningAim && this.hasAimGoal) this.turnAimTowardsGoal(dt);
 
     this.health.tick(dt);
   }
@@ -146,18 +172,46 @@ export class Player {
    * (§3.1), and letting the pointer fight it would make the lock a suggestion.
    */
   aimAt(worldX: number, worldZ: number): void {
-    if (this._sprinting) return;
-    const dx = worldX - this.position.x;
-    const dz = worldZ - this.position.y;
-    if (Math.hypot(dx, dz) < 1e-4) return;
-    this.aim.set(dx, dz).normalize();
+    this.aimTowards(worldX - this.position.x, worldZ - this.position.y);
   }
 
   /** Point the player along a direction — stick aim, which is already a direction. */
   aimTowards(x: number, z: number): void {
     if (this._sprinting) return;
     if (Math.hypot(x, z) < 1e-4) return;
+
+    if (this.turningAim) {
+      // Sprinting, or still recovering from one: this becomes the goal the turn is heading
+      // for rather than the aim itself, so the beam sweeps round instead of cutting.
+      this.aimGoal.set(x, z).normalize();
+      this.hasAimGoal = true;
+      return;
+    }
     this.aim.set(x, z).normalize();
+  }
+
+  /**
+   * Rotate the aim towards its goal at the spec's maximum turn rate (§3.1), and hand
+   * control back to direct aiming once it arrives.
+   */
+  private turnAimTowardsGoal(dt: number): void {
+    const maximum = THREE.MathUtils.degToRad(PLAYER.aimTurnDegreesPerSecond) * dt;
+    const current = Math.atan2(this.aim.x, this.aim.y);
+    const goal = Math.atan2(this.aimGoal.x, this.aimGoal.y);
+
+    // Shortest way round, so a turn never takes the long way for want of unwrapping.
+    let delta = goal - current;
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+
+    if (Math.abs(delta) <= maximum) {
+      this.aim.copy(this.aimGoal);
+      this.turningAim = false;
+      return;
+    }
+
+    const angle = current + Math.sign(delta) * maximum;
+    this.aim.set(Math.sin(angle), Math.cos(angle));
   }
 
   /** Teleport without smoothing; used by run start and the debug warp (Cross-Cutting). */

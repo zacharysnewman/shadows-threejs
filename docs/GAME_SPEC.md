@@ -159,8 +159,16 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   run does not open with the character facing an arbitrary direction.
 - **Sprint** at 4.5 m/s while held, and **while sprinting the aim locks to the direction of
   travel**: the beam points where the player is going, and the pointer or aim stick is
-  ignored until they let go. Aim turns onto the movement direction quickly rather than
-  snapping, so a sprint reads as the character committing rather than as the camera cutting.
+  ignored until they let go.
+- Aim turns at a **maximum of 540°/s** — a reversal takes a third of a second — both onto
+  the movement direction when a sprint starts and back onto the pointer when it ends. A
+  bounded turn rate rather than a smoothed one, because what the player perceives is the
+  beam's angular speed, and it is the thing to tune. The turn back matters as much as the
+  turn out: releasing sprint with the cursor behind you would otherwise whip the beam 180°
+  in a single frame, which reads as a glitch rather than as looking back.
+- Ordinary aiming is **direct**: outside a sprint and its recovery turn, the beam is at the
+  cursor, with no lag between where the player points and where the light is. The rate
+  limit exists for the transition, not for aiming.
 - The lock is the whole cost of the sprint, and it is a steep one. Independent aim is what
   lets a player back away with the beam held on a threat (§3.1, first bullet); sprinting
   spends exactly that. A sprinting player cannot hold a spider deterred (§5.1) or a Shadow
@@ -242,10 +250,24 @@ two read differently at range:
 
 - **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
   at range it is a silhouette crossing the gloom.
-- **The Shadow Monster is not there at all.** Near-invisible (§5.2) means near-invisible in
-  the gloom too. Its tells stay the ones §5 gives it: the hard shadow it throws when
-  something lights it, footsteps that carry further than anything else on the map (§4.3),
-  and the lamp it makes flicker from across the level (§4.2).
+- **The Shadow Monster is a shadow with nothing above it.** Near-invisible (§5.2) means
+  near-invisible in the gloom too, so what crosses the ground is its shadow alone, thrown by
+  the moon below. Its other tells stay the ones §5 gives it: a harder shadow when a beam or
+  a lamp catches it, footsteps that carry further than anything else on the map (§4.3), and
+  the lamp it makes flicker from across the level (§4.2).
+
+**A moon, and it casts shadows.** One dim directional light, steeply angled, is the only
+thing besides the flashlight and the lamps that casts a shadow. It is there for the Shadow
+Monster: without it the monster in the gloom is not merely invisible but *absent* — no body,
+no shadow, nothing until it is inside a beam — and a creature named for its shadow should
+throw one. Under the moon it does, everywhere on the map: **a shadow sliding across open
+ground with nothing casting it**, which is the whole idea of the thing and the strongest
+image the game has. It also gives the gloom a direction, so an unlit yard reads as a place
+rather than as a flat grey wash.
+
+The moon is dim enough to identify nothing by. It lights no interior the way a lamp does,
+and it never substitutes for the beam; what it contributes is shape and the shadows on the
+ground.
 
 The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
 mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
@@ -426,6 +448,9 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - **Visual Representation:**
   - **Material:** the mesh uses a custom material that is nearly invisible (e.g. a faint
     visual distortion) but casts a stark, hard shadow onto the floor (`castShadow = true`).
+    It casts under the moon as well as under beams and lamps (§4), so it is trackable at a
+    distance as a shadow moving across open ground with nothing above it. Under a beam or a
+    lamp the shadow is harder and shorter; the moon's is long, soft-edged and always there.
   - **Audio:** heavy, slow, spatial footsteps.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
@@ -525,9 +550,15 @@ constraint and not a polish-phase concern.
 
 - Target 60 fps on mid-range desktop hardware, 30 fps floor on recent mobile. The game is
   playable on touch, but the design target is desktop with mouse aim.
-- Exactly one shadow-casting `SpotLight` (the flashlight) plus at most two shadow-casting
-  environmental lights at a time, chosen each frame by proximity to the camera. Remaining
-  environmental lights illuminate without casting.
+- Exactly one shadow-casting `SpotLight` (the flashlight), one shadow-casting
+  `DirectionalLight` (the moon, §4), plus at most two shadow-casting environmental lights at
+  a time, chosen each frame by proximity to the camera. Remaining environmental lights
+  illuminate without casting.
+- The moon's shadow camera is fitted to the camera's ground footprint (§3.2) rather than to
+  the map, so its shadow map is spent on what is on screen. On the mobile tier its shadows
+  are the first thing dropped: the map stays lit by it, and the Shadow Monster loses its
+  long shadow, which is a real loss of information and so is the last quality setting to
+  reach for.
 - Shadow map 2048×2048 for the flashlight, 1024×1024 for environmental lights; PCF soft
   shadows; shadow camera near/far tightened to the light's range to keep depth precision.
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black

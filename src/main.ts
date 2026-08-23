@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   // §4.3 — the context starts suspended until the player touches something.
   audio.armGesture();
 
-  addNightAmbient(viewport.scene);
+  const night = addNightAmbient(viewport.scene);
 
   // Sounds are decoded up front, alongside the map: one that has to be fetched when it is
   // needed arrives after the thing it was meant to announce.
@@ -496,6 +496,10 @@ async function main(): Promise<void> {
       player.aim.x,
       player.aim.y,
     );
+    // §7 — the moon's shadow camera is fitted to what is on screen, so it travels with the
+    // player rather than trying to cover the level.
+    night.follow(player.object.position.x, player.object.position.z);
+
     // The listener rides the player, not the camera (§4.3): every distance in the spec is
     // measured from where the player stands, and the camera is 14 m away from that.
     audio.update(player.object.position.x, player.object.position.z);

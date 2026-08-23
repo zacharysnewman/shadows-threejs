@@ -118,7 +118,10 @@ player at the screen edge.
 which locks the aim to the direction of travel while held — the speed is paid for with the
 twin-stick independence that lets a player back away with the beam on a threat. §5's speed
 table note was rewritten with it, since it had been resting on the player *not* having a
-sprint.
+sprint. The turn was first written as a smoothing time constant and is now a bounded
+**540°/s**, because angular speed is what a player perceives and therefore what should be
+specified; the same rate turns the beam *back* onto the cursor when the sprint ends, since
+releasing with the cursor behind you would otherwise whip it through 180° in one frame.
 
 *Known, unsolved.* At a 70°–75° pitch, a full-height wall standing between the camera and
 the player hides the player — visible on the example map today with placeholder 3 m walls.
@@ -160,8 +163,17 @@ exit criterion needs a real GPU and is outstanding.
 in it (§4); the beam's mounting, its derived declination, and the input that toggles it
 (§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
 
-*Revised after Phase 5.* The ambient this phase chose was near-black, and that turned out to
-be a design mistake rather than a tuning one: with only the beam visible, a spider and the
+*Revised after Phase 5 — the moon.* §4 now calls for a dim, shadow-casting directional
+light. Without it the Shadow Monster in the gloom is not merely invisible but absent: no
+body, no shadow, nothing until it steps into a beam. Under the moon it is a shadow sliding
+across open ground with nothing above it, which is the creature's whole idea. Its shadow
+camera follows the player rather than covering the map (§7), since a directional shadow map
+spread over 100 m has nothing left for the one shadow the player is meant to read. **A note
+for Phase 8:** whatever near-invisible material the monster gets has to keep `castShadow`
+working — the shadow is now the thing it is seen by.
+
+*Revised after Phase 5 — the ambient.* The ambient this phase chose was near-black, and that
+turned out to be a design mistake rather than a tuning one: with only the beam visible, a spider and the
 Shadow Monster are the same shape inside a cone, and §5.2's entire design goes unseen. §4 now
 calls for a dim ambient plus fog — dark, not blacked out, with distance rather than darkness
 doing the hiding. The values live in `AMBIENT` and `FOG`.
