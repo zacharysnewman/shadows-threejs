@@ -4,7 +4,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { RENDER } from '../src/config';
+import { ENEMY, RENDER } from '../src/config';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildColliders, buildFloorGapColliders } from '../src/map/colliders';
@@ -191,5 +191,65 @@ describe('maps/phase3-test', () => {
       const nearest = Math.min(...lamps.map((l) => Math.hypot(l.wx - wx, l.wz - wz) - l.radius));
       expect(nearest).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('maps/phase7-test', () => {
+  const { map, grid, entities } = load('phase7-test');
+
+  it('loads clean, and is a spiders-only map (§5.1, §5.3)', () => {
+    expect(map.warnings).toEqual([]);
+    expect(entities.byType('PlayerSpawn')).toHaveLength(1);
+    expect(entities.byType('SpiderEnemy')).toHaveLength(4);
+    // Phase 8's kill is not written; an invisible thing that always knows where you are is
+    // not something to be debugging a spider next to.
+    expect(entities.byType('ShadowMonster')).toHaveLength(0);
+  });
+
+  it('opens on a wander: every spider starts beyond its detect radius (§5)', () => {
+    const spawn = entities.playerSpawn;
+    for (const spider of entities.byType('SpiderEnemy')) {
+      expect(Math.hypot(spider.wx - spawn.wx, spider.wz - spawn.wz)).toBeGreaterThan(
+        ENEMY.spider.detectRadius,
+      );
+    }
+  });
+
+  it('gives the flee lane more clear ground than §5.1 will use', () => {
+    // Straight north from the lane spider, walled either side the whole way.
+    const spider = entities.byType('SpiderEnemy')[0]!;
+    let clear = 0;
+    for (let y = spider.gy - 1; y >= 0; y -= 1) {
+      if (!grid.isWalkable(spider.gx, y)) break;
+      expect(grid.isWalkable(2, y)).toBe(false);
+      expect(grid.isWalkable(7, y)).toBe(false);
+      clear += 1;
+    }
+    expect(clear * map.tileSize).toBeGreaterThan(ENEMY.spider.light.fleeSearchDistance);
+  });
+
+  it('puts a wall in one spider\'s way out, with open ground behind it', () => {
+    // The search has to stop at row 9 rather than aiming through it at the yard beyond.
+    const spider = entities.byType('SpiderEnemy')[1]!;
+    expect(grid.isWalkable(spider.gx, spider.gy - 1)).toBe(true);
+    expect(grid.isWalkable(spider.gx, spider.gy - 2)).toBe(false);
+    expect(grid.isWalkable(spider.gx, spider.gy - 3)).toBe(true);
+  });
+
+  it('leaves the pocket a dead end, so its spider has nowhere to run (§5.1)', () => {
+    const mouths = [];
+    for (let x = 26; x <= 29; x += 1) {
+      for (const y of [2, 5]) if (grid.isWalkable(x, y)) mouths.push([x, y]);
+    }
+    for (let y = 2; y <= 5; y += 1) {
+      for (const x of [26, 29]) if (grid.isWalkable(x, y)) mouths.push([x, y]);
+    }
+    expect(mouths).toHaveLength(1);
+
+    const spider = entities.byType('SpiderEnemy')[2]!;
+    expect(grid.isWalkable(spider.gx, spider.gy)).toBe(true);
+    // Its back is in the corner: north and east of it are both wall.
+    expect(grid.isWalkable(spider.gx, spider.gy - 1)).toBe(false);
+    expect(grid.isWalkable(spider.gx + 1, spider.gy)).toBe(false);
   });
 });

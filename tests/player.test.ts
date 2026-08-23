@@ -330,3 +330,48 @@ describe('sprint (§3.1)', () => {
     expect(ENEMY.spider.fleeSpeed).toBeGreaterThan(PLAYER.walkSpeed);
   });
 });
+
+describe('knockback and damage (§5.3)', () => {
+  it('shoves the player directly away from the spider that hit them', () => {
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    // Spider due south: the shove is due north, a metre of it.
+    player.knockBack(9, 10, ENEMY.spider.attack.playerKnockback);
+
+    expect(player.position.x).toBeCloseTo(9);
+    expect(player.position.y).toBeCloseTo(9 - ENEMY.spider.attack.playerKnockback);
+  });
+
+  it('resolves the shove against geometry rather than through it', () => {
+    // A wall along the north edge; the player is pressed up against it already.
+    const index = indexFrom([
+      '##########',
+      '          ',
+      '          ',
+      '          ',
+      '          ',
+    ]);
+    const player = new Player(spawnAt(9, 2.5, 0), index);
+    player.knockBack(9, 6, 3);
+
+    // Pushed north, but stopped at the wall's face rather than posted through it.
+    expect(player.position.y).toBeGreaterThanOrEqual(2 + PLAYER.radius - 1e-6);
+  });
+
+  it('leaves velocity alone: it is a knockback, not a stagger (§5.3)', () => {
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    run(player, 1, 1, 0);
+    const speed = player.speed;
+    expect(speed).toBeGreaterThan(1);
+
+    player.knockBack(9, 10, 1);
+    expect(player.speed).toBeCloseTo(speed, 6);
+  });
+
+  it('deducts through the pool, and reports the deduction that kills', () => {
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    expect(player.damage(0.34)).toBe(false);
+    expect(player.damage(0.34)).toBe(false);
+    expect(player.damage(0.34)).toBe(true);
+    expect(player.health.dead).toBe(true);
+  });
+});

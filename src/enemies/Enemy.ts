@@ -1,16 +1,16 @@
 /**
  * The enemy both AIs are built on (§5).
  *
- * Phase 5 owns everything the two share: the state machine, the movement speeds from §5's
+ * This owns everything the two share: the state machine, the movement speeds from §5's
  * table, A\* with its repath interval, local avoidance, and the collision resolution that
  * keeps a body out of walls. What it deliberately does not own is *reacting to light* —
- * that is the whole of what makes each enemy itself (§5.1, §5.2), and it arrives in Phases
- * 7 and 8 on top of this.
+ * that is the whole of what makes each enemy itself (§5.1, §5.2), and it lives in the
+ * subclasses, which wrap `decide` and defer everything they do not claim back to it.
  *
- * The states are all declared here, including the ones nothing enters yet. A skeleton with
- * `flee` missing would mean Phase 7 changing this class rather than extending it, and the
- * movement rule for each state — flee runs at 1.5× pursue, frozen is velocity zero, recoil
- * is a hold — belongs with the speeds table rather than with the AI that triggers it.
+ * The states are all declared here, including the ones only one subclass ever enters. The
+ * movement rule for each — flee runs at 1.5× pursue, frozen and attack and recoil are
+ * velocity zero — belongs with the speeds table rather than with the AI that triggers it,
+ * so a held enemy is held identically whatever held it.
  *
  * Simulation only: `tick` is arithmetic over the grid and the collider index, and `render`
  * is the one method that touches the scene graph.
@@ -30,11 +30,15 @@ export type EnemyKind = 'SpiderEnemy' | 'ShadowMonster';
  *
  * - `wander` — no target; drifts between walkable points (§5.1).
  * - `pursue` — heading for the player, or for where they were last seen.
- * - `flee`   — running away at 1.5× pursue speed (§5.1, Phase 7).
- * - `frozen` — held still by light (§5.2, Phase 8).
- * - `recoil` — knocked back and holding after a hit (§5.3, Phase 7).
+ * - `flee`   — running away at 1.5× pursue speed (§5.1).
+ * - `frozen` — held still by light (§5.1, §5.2).
+ * - `attack` — committed to a lunge and no longer advancing (§5.3).
+ * - `recoil` — held after a strike, whether it landed or missed (§5.3).
+ *
+ * The last three are all "pinned": velocity is zero and nothing steers. What differs is
+ * who releases them — the light, the strike timer, or the hold.
  */
-export type EnemyState = 'wander' | 'pursue' | 'flee' | 'frozen' | 'recoil';
+export type EnemyState = 'wander' | 'pursue' | 'flee' | 'frozen' | 'attack' | 'recoil';
 
 export interface EnemyProfile {
   kind: EnemyKind;
@@ -74,6 +78,26 @@ export const ENEMY_PROFILES: Readonly<Record<EnemyKind, EnemyProfile>> = {
   },
 };
 
+/**
+ * The illumination query as an enemy sees it (§4.1) — narrowed to what the AIs actually
+ * ask, so a test can hand one an answer without a flashlight, a lamp or a scene.
+ */
+export interface IlluminationSampler {
+  sample(key: string, x: number, z: number): { lit: boolean; amount: number };
+}
+
+/**
+ * What an enemy can do *to* the player (§5.3). Behind an interface for the same reason:
+ * the spider's attack is arithmetic over distances and timers, and testing it should not
+ * require a Player, a collider index or a health bar on screen.
+ */
+export interface PlayerActions {
+  /** Deduct health. True when this deduction is what took the pool to zero. */
+  damage(amount: number): boolean;
+  /** Shove the player `metres` directly away from a point. */
+  knockBack(fromX: number, fromZ: number, metres: number): void;
+}
+
 /** What an enemy needs to know about the world on the tick it is updated. */
 export interface EnemyContext {
   playerX: number;
@@ -82,6 +106,15 @@ export interface EnemyContext {
   colliders: ColliderIndex;
   /** Every enemy, for local avoidance. Includes the one being ticked; it skips itself. */
   neighbours: readonly Enemy[];
+  /** §4.1 — the one light query both AIs consume. */
+  illumination: IlluminationSampler;
+  /** §5.3 — what contact resolves into. */
+  player: PlayerActions;
+}
+
+/** The states in which nothing steers and velocity is zero (§5.1, §5.3). */
+function pinned(state: EnemyState): boolean {
+  return state === 'frozen' || state === 'attack' || state === 'recoil';
 }
 
 export class Enemy {
@@ -107,7 +140,7 @@ export class Enemy {
     readonly key: string,
     spawnX: number,
     spawnZ: number,
-    private readonly rng: Rng,
+    protected readonly rng: Rng,
   ) {
     this.position.set(spawnX, spawnZ);
     this.previous.copy(this.position);
@@ -162,18 +195,53 @@ export class Enemy {
     if (state !== 'pursue') this.path = [];
   }
 
+  /**
+   * Resolve contact with the player (§5.3). The manager runs one distance check and each
+   * enemy says what it means; the base means nothing by it, so an enemy whose resolution
+   * has not been written yet is harmless rather than accidentally lethal.
+   */
+  onPlayerContact(_distance: number, _context: EnemyContext): void {}
+
+  /**
+   * Shove this enemy `metres` directly away from a point, resolved against the same
+   * geometry it walks through so a recoil cannot post it into a wall (§5.3). A
+   * displacement, not an impulse: the caller is putting it into a held state, and the
+   * velocity it had is not supposed to survive.
+   */
+  knockBack(colliders: ColliderIndex, fromX: number, fromZ: number, metres: number): void {
+    const dx = this.position.x - fromX;
+    const dz = this.position.y - fromZ;
+    const length = Math.hypot(dx, dz);
+    // Exactly co-located is not a direction. Nothing depends on which way it picks, only
+    // that it picks one and the shove still happens.
+    const ux = length < 1e-4 ? 0 : dx / length;
+    const uz = length < 1e-4 ? 1 : dz / length;
+
+    const result = moveCircle(
+      colliders,
+      this.position.x,
+      this.position.y,
+      ux * metres,
+      uz * metres,
+      this.profile.radius,
+    );
+    this.position.set(result.x, result.z);
+    this.velocity.set(0, 0);
+  }
+
   /** Advance one simulation tick (§7). */
   tick(dt: number, context: EnemyContext): void {
     this.previous.copy(this.position);
     this.sinceRepath += dt;
     if (this.holdTimer > 0) this.holdTimer = Math.max(0, this.holdTimer - dt);
 
-    this.think(dt, context);
+    this.decide(dt, context);
 
-    if (this._state === 'frozen' || this._state === 'recoil') {
+    if (pinned(this._state)) {
       // §5.1 is literal about this: the velocity *drops* to zero. Letting it decay over the
       // usual smoothing would carry a pursuing spider the better part of half a metre into
-      // the player after the beam has already caught it.
+      // the player after the beam has already caught it — and would let a committed lunge
+      // coast the last of the distance it is supposed to have given up.
       this.velocity.set(0, 0);
       return;
     }
@@ -214,11 +282,17 @@ export class Enemy {
     }
   }
 
-  /** Choose a state and keep the path fit for it. */
-  private think(dt: number, context: EnemyContext): void {
-    if (this._state === 'frozen' || this._state === 'recoil') {
-      // Held: the AI that put it here decides when it leaves. `recoil` releases itself
-      // once its hold expires (§5.3); `frozen` waits for the light to move (§5.2).
+  /**
+   * Choose a state and keep the path fit for it.
+   *
+   * `protected` and overridable: this is everything the two enemies share, and each
+   * subclass wraps it with the light reaction that makes it itself (§5.1, §5.2). A
+   * subclass handles the states it owns and defers the rest here.
+   */
+  protected decide(dt: number, context: EnemyContext): void {
+    if (pinned(this._state)) {
+      // Held: whatever put it here decides when it leaves. `recoil` releases itself once
+      // its hold expires (§5.3); `frozen` and `attack` wait on their own AI.
       if (this._state === 'recoil' && this.holdTimer === 0) this._state = 'pursue';
       return;
     }
@@ -280,7 +354,7 @@ export class Enemy {
     this.repath(context, context.playerX, context.playerZ);
   }
 
-  private updateWanderPath(dt: number, context: EnemyContext): void {
+  protected updateWanderPath(dt: number, context: EnemyContext): void {
     if (this.path.length > 0) {
       // A wander leg still has to notice the world changing under it (§2, §6).
       if (this.pathGridVersion !== context.grid.version) this.path = [];
@@ -309,7 +383,7 @@ export class Enemy {
     );
   }
 
-  private repath(context: EnemyContext, targetX: number, targetZ: number): boolean {
+  protected repath(context: EnemyContext, targetX: number, targetZ: number): boolean {
     const grid = context.grid;
     const from = grid.worldToGrid(this.position.x, this.position.y);
     const to = grid.worldToGrid(targetX, targetZ);
@@ -324,7 +398,7 @@ export class Enemy {
   /** Direction the enemy wants to move, before avoidance and before speed is applied. */
   private steer(context: EnemyContext): THREE.Vector2 {
     const steer = _steer.set(0, 0);
-    if (this._state === 'frozen' || this._state === 'recoil') return steer;
+    if (pinned(this._state)) return steer;
 
     if (this._state === 'pursue' && this.path.length === 0) {
       // Straight at them.
@@ -382,6 +456,7 @@ export class Enemy {
       case 'wander':
         return this.profile.wanderSpeed;
       case 'frozen':
+      case 'attack':
       case 'recoil':
         return 0;
       default:

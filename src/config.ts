@@ -325,6 +325,40 @@ export const ENEMY = {
      * distance stays inside it while the route around goes much further.
      */
     loseRadius: 26,
+
+    /** §5.1's light reaction lifecycle. */
+    light: {
+      /** `T_flee`, rolled afresh each time the beam catches an unlit spider. */
+      fleeDelaySeconds: { min: 1.0, max: 4.0 },
+      /** Delay before a spider that lost the light resumes approaching. */
+      resumeDelaySeconds: 0.2,
+      /** How long a flee leg lasts, whether or not it reaches its target. */
+      fleeSeconds: 3.0,
+      /** Furthest along the away vector a flee target is looked for. */
+      fleeSearchDistance: 18,
+      /**
+       * Resolution of that search, in metres. Not a spec value — it is how finely the
+       * away vector is sampled against the grid, and it only has to be smaller than a
+       * tile so a target can never be placed across a wall the search stepped over.
+       */
+      fleeSearchStep: 0.5,
+    },
+
+    /** §5.3's attack: a wind-up, a strike that re-checks range, and what follows. */
+    attack: {
+      /** Telegraph before the strike. The player's window, and a metre of walking (§3.1). */
+      windUpSeconds: 0.35,
+      /** From the strike, hit or miss, before this spider can attack again. */
+      cooldownSeconds: 1.5,
+      /** Hold after a hit lands, before pursuit resumes. */
+      hitHoldSeconds: 1.0,
+      /** Hold after a lunge misses. Shorter than a hit's, but dodging still costs it tempo. */
+      missHoldSeconds: 0.5,
+      /** How far a landed hit shoves the player away from the spider. */
+      playerKnockback: 1.0,
+      /** How far the spider throws itself back from the player after landing one. */
+      recoilDistance: 1.5,
+    },
   },
 
   shadowMonster: {

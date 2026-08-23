@@ -36,7 +36,7 @@ re-checked rather than taken on trust.
 | 4 — Audio Core | **Done** |
 | 5 — Navigation & Enemy Base | **Done** |
 | 6 — Illumination Detection Service | **Done** |
-| 7 — Spider AI | Not started |
+| 7 — Spider AI | **Done** |
 | 8 — Shadow Monster | Not started |
 | 9 — Interactables, Power & Objectives | Not started |
 | 10 — Run Lifecycle | Not started |
@@ -353,6 +353,60 @@ raycast never targets an unwalkable point; three contacts from full health kill;
 dodged during the wind-up deals nothing and still costs the spider tempo; a spider lit
 during its wind-up never strikes; one spider cannot land hits faster than its own cooldown,
 and two spiders converging both register inside the same second.
+
+**Status: done.**
+
+*Landed.* `src/enemies/Spider.ts` — §5.1's four steps and §5.3's attack, on top of the
+shared enemy. `Enemy.think` became a `protected decide`, so a subclass wraps the shared
+behaviour rather than the shared class growing a switch on kind; `EnemyContext` gained the
+illumination query and a two-method view of the player, both narrow enough that a test can
+supply them without a scene. `EnemyManager` builds `Spider`s for `SpiderEnemy` entities and
+hands its one contact check to whichever enemy tripped it. `Player` gained `damage` and
+`knockBack`. `attack` joined the state machine, alongside `frozen` and `recoil`, as a state
+in which velocity is zero. `src/enemies/SpiderVoices.ts` gives each spider §5.1's chitter.
+
+`maps/phase7-test` is the map for this phase, and every feature of it is one branch: a
+26 m walled lane to flee up, a spider with a wall four metres behind it, a dead-end pocket,
+open yard for the attack, and a lamp so deterrence can be watched happening to a spider
+nobody is aiming at. The `spider` readout row carries the lifecycle, which `state` alone
+does not show — stunned and about-to-flee are both `frozen`.
+
+*Verified.* 20 unit tests in `tests/spider.test.ts` over the lifecycle and the attack, plus
+`tests/player.test.ts` for the knockback. The rest was driven in a browser on
+`phase7-test`, through the debug handle, at seed `phase7` (`scripts/` has no runner for
+this; the script is reproduced in the PR):
+
+| Case | Measured |
+| --- | --- |
+| Beam held on a pursuing spider | froze on the tick it landed; broke at 3.17 s (T_flee 1.0–4.0) |
+| The flee leg | 3.02 s (spec 3.0) at up to 3.60 m/s (flee 3.6, pursue 2.4), 10.3 m directly north |
+| Where it ended | walkable tile, then back to `pursue` |
+| Spider with a wall two rows north, nine seconds of beam | closest row reached 10; the wall is row 9, open again at row 8 — never crossed |
+| Spider cornered in the pocket | `flee (cornered)`, 3.02 s, moved 0.00 m |
+| Contact | wind-up 0.37 s (0.35 plus the tick contact was reported on), health 1.00 → 0.66 |
+| Separation right after the strike | 3.40 m — 0.90 m gap + 1.0 m player knockback + 1.5 m recoil |
+| Standing still and taking it | 3 hits in 5.6 s → dead; mean gap 1.88 s against a 1.85 s floor |
+| Backing off during the wind-up | 0.00 damage, 0.52 s hold after the miss (spec 0.5), cooldown started |
+| Beam on during the wind-up | 0.00 damage, cooldown 0.00 s — a cancelled lunge starts none |
+| Spider standing in a powered lamp pool, torch off, player 34 m away | froze, then fled after 1.43 s |
+| Raycast budget with four spiders | 8–9/s against 10/s each |
+
+*Sent back to the spec.* §5.1 step 3 said "the furthest walkable point on that vector" and
+gave no distance: it is 18 m now, in the spec and in `config`. Two questions the step did
+not answer are answered there too — a spider whose away vector is blocked before the first
+step cowers for the 3 s rather than picking a different direction, and light does not
+re-stun a fleeing spider, because a held beam would otherwise pin it a metre from where the
+deterrence started and the flee it just earned would never happen. Step 4 now says the timer
+is *continuous* and re-rolls, so flicking a beam on and off deters nothing. §5.1's chitter
+now says it stops while the spider is held still: a stunned spider that kept chittering
+would be the one cue that gives away a spider holding in the dark.
+
+*Left to later phases.* The attack animation (§5.1) — the strike time is the simulation's
+and is already fixed at 0.35 s, so the animation is authored to it in Phase 11 rather than
+the other way round. Death (§5.3): health reaching 0.0 does nothing yet beyond reading
+`0.00 · DEAD` in the readout, because the jump-scare and the run's end are Phase 10's. The
+Shadow Monster's half of the contact check is still unresolved and still logs, which is why
+`phase7-test` has no monster on it.
 
 ## Phase 8 — Shadow Monster
 

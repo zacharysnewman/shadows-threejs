@@ -461,7 +461,9 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 ### 5.1 Enemy 1: Giant Spider (Dog-Sized)
 
 - **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
-  and light. Emits chittering/scuttling spatial audio.
+  and light. Emits chittering/scuttling spatial audio, and stops while it is held still —
+  the sound says where a spider is *moving*, so a stunned or recoiling one gives nothing
+  away, and a deterred one going quiet in the dark is not the same as a gone one.
 - **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
   driven by the spider's actual speed, so a wandering spider (1.2 m/s), a pursuing one
   (2.4 m/s) and a fleeing one (3.6 m/s) all place their legs on the ground instead of
@@ -472,11 +474,17 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
      velocity drops to `0`.
   2. **Deterrence Timer:** a timer `T_flee` randomized between 1.0 s and 4.0 s begins.
   3. **Flee Mode:** if illuminated for `T_flee`, the spider enters `Flee` state. It
-     calculates a vector directly away from the player, raycasts to find the furthest
-     walkable point on that vector, and sets that as its new target for 3 s, moving at
-     1.5× speed.
+     calculates a vector directly away from the player, raycasts along that vector for the
+     furthest walkable point within 18 m, and sets that as its new target for 3 s, moving
+     at 1.5× speed. A spider with nowhere to run — the away vector blocked before the
+     first step — cowers where it is for the 3 s instead. Light does not re-stun a fleeing
+     spider: freezing it again would let a held beam pin it where it started, and the flee
+     it just earned would never happen.
   4. **Interruption:** if light is removed before `T_flee` expires, it resumes approaching
-     after a 0.2 s delay.
+     after a 0.2 s delay, and the next beam to catch it rolls a fresh `T_flee`. The timer
+     measures *continuous* illumination, so sweeping a beam on and off a spider never
+     deters it — holding the beam is what costs it the ground, and the battery is what
+     that costs the player (§4.1).
 - **On contact:** the spider damages rather than kills, and recoils afterwards; see §5.3.
   It is a war of attrition the player can lose slowly, not a single mistake.
 

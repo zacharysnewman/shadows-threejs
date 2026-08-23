@@ -31,6 +31,9 @@ npm test           # unit tests
   at once), and a corridor no lamp reaches
 - `/?map=phase5-test` — a map for navigation: a central block with a route round either
   side, a wall with one doorway to shut mid-chase, and a dead end
+- `/?map=phase7-test` — a map for the spider: a long walled lane to be deterred up, a
+  spider with a wall four metres behind it, a dead-end pocket with nowhere to run, open
+  yard for the attack, and a lamp that deters without anyone aiming
 
 `?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
 logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.

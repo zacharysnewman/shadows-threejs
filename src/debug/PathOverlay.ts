@@ -17,6 +17,7 @@ const STATE_COLORS: Record<EnemyState, number> = {
   pursue: 0xff6b6b,
   flee: 0xffd166,
   frozen: 0xa0e7e5,
+  attack: 0xff2e2e,
   recoil: 0xd39bff,
 };
 
