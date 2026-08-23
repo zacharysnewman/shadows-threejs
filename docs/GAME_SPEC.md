@@ -27,6 +27,12 @@ The game takes place on a single, continuous map. Level maps are created on a 2D
 grid. Grid coordinates `(x, y)` map directly to 3D world space as
 `(x · tileSize, 0, y · tileSize)`.
 
+The maps checked into the repository are **prototypes, not the level**: one full-size
+example that exercises the pipeline, and a small purpose-built map per phase. The level
+itself is authored in the editor tooling during the content pass (§1). Nothing in a system's
+design should be shaped by what the prototype maps happen to contain — they exist to build
+systems against, and they will be replaced.
+
 ### Map Layers Structure
 
 1. **Layer 0 — Terrain/Floor:** dirt, concrete, grass, pathing tiles.
@@ -151,8 +157,18 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   nothing.
 - The player faces their spawn's `rotation` (§2) until the first aim input arrives, so a
   run does not open with the character facing an arbitrary direction.
-- There is no sprint, jump, or crouch. Distance from a threat is bought with light and
-  route choice, not speed.
+- **Sprint** at 4.5 m/s while held, and **while sprinting the aim locks to the direction of
+  travel**: the beam points where the player is going, and the pointer or aim stick is
+  ignored until they let go. Aim turns onto the movement direction quickly rather than
+  snapping, so a sprint reads as the character committing rather than as the camera cutting.
+- The lock is the whole cost of the sprint, and it is a steep one. Independent aim is what
+  lets a player back away with the beam held on a threat (§3.1, first bullet); sprinting
+  spends exactly that. A sprinting player cannot hold a spider deterred (§5.1) or a Shadow
+  Monster frozen (§5.2) behind them — they have chosen to stop looking at whatever they are
+  running from. Speed buys distance; it costs the only thing that controls what is chasing.
+- Sprinting requires moving. There is no sprint in place, and no stamina meter: the aim
+  lock is the resource, not a bar.
+- There is no jump or crouch.
 
 ### 3.2 Camera Rig
 
@@ -214,22 +230,38 @@ Health never mitigates it, so no amount of regeneration makes standing near it v
 Lighting is the primary mechanics driver, paired tightly with spatial audio and battery
 management.
 
-**The dark is not pure black.** Unlit ground carries a dim ambient: enough that walls and
-floor read as silhouettes, not enough to identify anything or to make the flashlight
-optional. At zero ambient an unlit room renders as a blank screen rather than as a dark
-one, and the Shadow Monster (§5.2) is trackable only as a shadow cast onto ground that has
-some light on it.
+**It is dark, not blacked out.** The map carries a dim ambient — enough that ground, walls
+and anything standing on them read as silhouettes near and mid-range. What hides things is
+*distance*: fog fades the scene out towards the edge of the camera's footprint (§3.2), so
+the world ends in gloom rather than at a hard black line.
+
+This is a mechanics decision, not an art one. If the only visible thing is whatever the beam
+is pointed at, both enemies look the same — a shape inside a cone — and the Shadow Monster's
+entire design (§5.2) is spent on a distinction the player never sees. With ambient gloom the
+two read differently at range:
+
+- **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
+  at range it is a silhouette crossing the gloom.
+- **The Shadow Monster is not there at all.** Near-invisible (§5.2) means near-invisible in
+  the gloom too. Its tells stay the ones §5 gives it: the hard shadow it throws when
+  something lights it, footsteps that carry further than anything else on the map (§4.3),
+  and the lamp it makes flicker from across the level (§4.2).
+
+The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
+mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
+route, and a note, a switch or a pick-up cannot be found without light on it. The beam is
+for knowing what something is; the ambient is only for knowing that something is there.
 
 **The player's own silhouette stays readable.** The character is legible in the dark as a
-dim shape. This is a rendering allowance, not a light source — it illuminates nothing,
-lights no surface, and no light-reactive enemy responds to it. A player who cannot see
-which of the shapes on screen is theirs is not playing a dark game, they are playing a
-broken one.
+dim shape. This is a rendering allowance, not a light source — it illuminates nothing, lights
+no surface, and no light-reactive enemy responds to it. A player who cannot see which of the
+shapes on screen is theirs is not playing a dark game, they are playing a broken one.
 
 ### 4.1 Flashlight Mechanics & Battery
 
-- **Type:** attached `THREE.SpotLight` bound to the player's position and directed towards
-  the mouse cursor / right analog position on the X/Z plane.
+- **Type:** attached `THREE.SpotLight` bound to the player's position and directed along the
+  player's aim on the X/Z plane — the mouse cursor or right analog position, except while
+  sprinting, when aim is the direction of travel (§3.1).
 - **Spotlight Properties:** angle ≈45° (the full cone), penumbra 0.3, cast shadow enabled,
   range 12 m along the ground.
 - **Mounting:** carried at chest height and emitted just clear of the player's capsule — a
@@ -297,15 +329,29 @@ readable at any distance, and worth reading before the pool goes dark.
 
 ### 4.3 Audio Core
 
-- Implement `THREE.AudioListener` attached to the camera/player.
+- Implement `THREE.AudioListener`, carried by the **player**, not the camera. Every distance
+  below is measured from where the player is standing, and the camera sits 14 m above and
+  behind them (§3.2) — hanging the listener off it would add that 14 m to every source and
+  quietly halve the map's audible radius.
+- The listener is never rotated, like the camera (§3.2), so world `+x` is screen-right and
+  what the player hears on their left is on the left of their screen. North and south of
+  the player pan alike; that is a real limit of stereo on a top-down map, and it is why
+  distance has to carry the rest of the information.
 - All entities utilize `THREE.PositionalAudio` with a defined rolloff/reference distance so
   the player can audibly locate unseen threats. Default `linear` distance model,
   `refDistance` 2 m, `maxDistance` 25 m, `rolloffFactor` 1.0.
 - The Shadow Monster's footsteps use `refDistance` 4 m and `maxDistance` 35 m — audible
   further out than anything else on the map, because hearing is the only way to track it
   before it is close enough to cast a readable shadow.
+- The player's own footsteps sound on a cadence driven by ground actually covered, not by a
+  timer: a player held against a wall makes no noise however hard they walk into it. They
+  are quieter and higher than the Shadow Monster's (§5.2) and always centred on the
+  listener, so they can never be mistaken for something approaching.
 - Browser autoplay policy requires a user gesture before audio starts; the title screen's
   first input resumes the `AudioContext`.
+- A paused simulation (§6) silences positional sources: a world that is not advancing must
+  not still be walking towards the player. The listener and the context stay alive, so
+  unpausing resumes rather than restarts.
 
 ## 5. Enemy Design & AI Specification
 
@@ -320,9 +366,42 @@ Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
 | Pursuing player | 2.4 | 1.8 |
 | Fleeing | 3.6 (1.5× pursue) | — |
 
-Neither enemy outruns the player at a sprint they do not have: the spider is faster only
-while fleeing, and the Shadow Monster is always slower, so it threatens by never stopping
-and by taking routes the player cannot.
+Neither enemy outruns the player. A walking player is faster than a pursuing spider and
+half again as fast as the Shadow Monster; only a *fleeing* spider (3.6) beats a walk, and
+nothing beats a sprint (§3.1). That is deliberate: an enemy that catches a player in a
+straight line would make the map a reflex test. They threaten by never stopping, by taking
+routes the player cannot, and by the corners and dead ends they force — and by what running
+costs. A sprinting player has their light pointed the way they are going (§3.1), which means
+whatever they are running from is unlit, unfrozen and undeterred behind them.
+
+**Bodies.** The spider is a 0.5 m radius circle on the X/Z plane, the Shadow Monster 0.55 m,
+resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
+spiders steer around each other with the local avoidance above, and the Shadow Monster
+ignores other entity colliders entirely — it walks through its own kind and through the
+spiders, which is part of taking routes the player cannot.
+
+**Acquiring the player.** Pursuit is decided by proximity, not by sight:
+
+| | Acquires within | Gives up beyond |
+| --- | --- | --- |
+| Spider | 16 m | 26 m |
+| Shadow Monster | always | never |
+
+The two radii differ so that a player at the edge of a spider's range cannot make it
+flicker between hunting and wandering. Sight is not part of acquiring — an enemy that had
+to see the player first could never begin a chase around a corner, and on a map of
+buildings that is most of what a chase is. What line of sight decides is only *how* an
+enemy comes: with a clear line it walks straight at the player, and without one it paths
+(§1) and repaths on the interval above. The Shadow Monster always knows where the player
+is; that is the whole of its threat, and it is why it is the slower of the two.
+
+**Wandering.** With no one to chase, an enemy picks a walkable point within about 8 tiles,
+walks to it, and pauses 0.6–2.4 s before choosing another. An enemy that cannot find a
+route — to a wander target or to the player — wanders rather than standing still or
+pressing into the wall between them.
+
+The radii and the wander numbers are first values, not tuned ones: they are exactly the
+kind of thing the tuning pass (§1, content) is expected to move once the game is playable.
 
 ### 5.1 Enemy 1: Giant Spider (Dog-Sized)
 
@@ -454,6 +533,10 @@ constraint and not a polish-phase concern.
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black
   (§4) — exactly the range that clips. Without a tone curve the middle of a light pool goes
   flat white and takes the detail with it, including the shadows the game is played by.
+- Exponential fog, coloured to the sky, tuned so the far edge of the camera's ground
+  footprint (§3.2) is most of the way faded out. It is what makes distance rather than
+  darkness the thing that hides the map (§4), and it applies to lit geometry too: a lamp
+  pool on the far side of the view is a glow, not a readable place.
 - Static Layer 0/1 geometry is merged or instanced per prefab at load time — a 50×50 map is
   2,500 floor tiles and must not be 2,500 draw calls.
 - Simulation runs on a fixed 60 Hz timestep decoupled from rendering, so AI timers (§4.1,

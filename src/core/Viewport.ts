@@ -8,7 +8,7 @@
  */
 
 import * as THREE from 'three';
-import { CAMERA, RENDER } from '../config';
+import { CAMERA, FOG, RENDER } from '../config';
 
 export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
@@ -32,7 +32,11 @@ export class Viewport {
     parent.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x05070a);
+    // §4 — the background is the colour the fog fades everything into, so the two match:
+    // geometry disappearing into a different colour than the sky reads as a rendering
+    // seam rather than as distance.
+    this.scene.background = new THREE.Color(FOG.color);
+    this.scene.fog = new THREE.FogExp2(FOG.color, FOG.density);
 
     this.camera = new THREE.PerspectiveCamera(CAMERA.fov, 1, CAMERA.near, CAMERA.far);
 

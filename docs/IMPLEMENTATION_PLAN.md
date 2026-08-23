@@ -33,8 +33,8 @@ re-checked rather than taken on trust.
 | 1 — Map Pipeline | **Done** |
 | 2 — Player Controller & Camera | **Done** |
 | 3 — Lighting Core & Flashlight | **Done** |
-| 4 — Audio Core | Not started |
-| 5 — Navigation & Enemy Base | Not started |
+| 4 — Audio Core | **Done** |
+| 5 — Navigation & Enemy Base | **Done** |
 | 6 — Illumination Detection Service | Not started |
 | 7 — Spider AI | Not started |
 | 8 — Shadow Monster | Not started |
@@ -114,6 +114,12 @@ which near a boundary they always do (§3.2). The last is the one worth reading:
 player in frame beats hiding off-map void, so the clamp gives way rather than parking the
 player at the screen edge.
 
+*Revised later.* §3.1 originally ruled out a sprint outright. It now has one, at 4.5 m/s,
+which locks the aim to the direction of travel while held — the speed is paid for with the
+twin-stick independence that lets a player back away with the beam on a threat. §5's speed
+table note was rewritten with it, since it had been resting on the player *not* having a
+sprint.
+
 *Known, unsolved.* At a 70°–75° pitch, a full-height wall standing between the camera and
 the player hides the player — visible on the example map today with placeholder 3 m walls.
 Recorded in §3.2 as a requirement on the art pass rather than papered over here.
@@ -154,6 +160,12 @@ exit criterion needs a real GPU and is outstanding.
 in it (§4); the beam's mounting, its derived declination, and the input that toggles it
 (§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
 
+*Revised after Phase 5.* The ambient this phase chose was near-black, and that turned out to
+be a design mistake rather than a tuning one: with only the beam visible, a spider and the
+Shadow Monster are the same shape inside a cone, and §5.2's entire design goes unseen. §4 now
+calls for a dim ambient plus fog — dark, not blacked out, with distance rather than darkness
+doing the hiding. The values live in `AMBIENT` and `FOG`.
+
 *Solved rather than deferred.* Phase 2 recorded camera-side occluders as a problem for the
 art pass. Turning the lights out promoted it: an unlit occluder is not a wall the player
 can see over, it is a black rectangle covering the player and their beam, and on the
@@ -175,6 +187,48 @@ Listener, positional source pooling, distance models (§4.3), and the autoplay-g
 
 **Exit:** a moving off-screen test emitter is locatable by ear alone.
 
+**Status: done.**
+
+*Landed.* `src/audio/` — `AudioCore.ts` (the listener, a fixed pool of positional sources,
+long-lived emitters for entities, and the autoplay-gesture gate), `profiles.ts` (§4.3's two
+distance models, plus the arithmetic the debug readout uses to say what the player *should*
+be hearing), `SoundBank.ts` (fetch a real file, fall back to seeded procedural synthesis —
+the same arrangement as the placeholder prefabs) and `Footsteps.ts` (a step per stride of
+ground actually covered). `Z` orbits a test emitter off-screen; the readout reports its
+distance, its side, and its expected gain.
+
+*Verified.* The exit criterion is about ears, which no test runner has, so the live audio
+graph was tapped in a browser instead — a channel splitter and two analysers on the
+listener's own output, measuring what actually comes out:
+
+| Source | Measured |
+| --- | --- |
+| 8 m east | bias **+0.59** (right) |
+| 8 m west | bias **−0.60** (left) |
+| 8 m north | bias **−0.00** — centred, exactly the limit §4.3 now records |
+| 3 → 8 → 16 → 24 m | level 1.00 → 0.77 → 0.40 → 0.042, against 1.00 → 0.77 → 0.41 → 0.045 predicted by the linear model |
+| 28 m and 33 m | default profile silent; monster profile still audible, 8× the default's level at 24 m |
+
+The gesture gate was watched going `suspended` → `running` on the first key, pausing was
+watched taking it back to `suspended` and unpausing returning it, and walking for three
+seconds at 3 m/s produced nine footsteps against a 0.95 m stride. Those measurements go
+through the development-only debug handle (Cross-Cutting), so they run against the dev
+server; a production bundle has no handle to reach.
+
+*Sent back to the spec.* The listener rides the player rather than the camera, and why
+(§4.3) — with the consequence that north and south of the player pan alike, so distance
+carries the rest. The player's own footsteps: driven by ground covered, centred, and
+distinct from the monster's. And what a paused simulation does to sound, which §6 implied
+and §4.3 did not say: positional sources go silent, the context stays alive, unpausing
+resumes rather than restarts. That last one is implemented here rather than deferred,
+since writing a rule into the spec and leaving the code disagreeing with it is worse than
+either alone.
+
+*Left to later phases.* Nothing on the map makes a sound of its own yet — the emitters an
+enemy holds are Phase 5's to create, and `footstep_heavy` and `chitter` are sitting in the
+bank waiting for them. Real audio files replace the synthesised placeholders in Phase 11,
+changing nothing above `SoundBank`.
+
 ## Phase 5 — Navigation & Enemy Base
 
 A\* over the Phase 1 grid with the repath interval and local avoidance (§5), a base enemy
@@ -184,6 +238,47 @@ resolves its own way in Phases 7 and 8. No light reactions yet.
 
 **Exit:** a placeholder enemy pursues the player around obstacles, repaths when the player
 breaks line of sight, and the grid rebuild on a walkability change is picked up mid-path.
+
+**Status: done.**
+
+*Landed.* `src/nav/AStar.ts` — eight-connected A\* on a binary heap, refusing the diagonal
+between two wall corners, with a line-of-sight test that both pulls paths straight and tells
+an enemy whether it can walk at the player instead of pathing to them. `src/enemies/` —
+the shared `Enemy` (state machine, §5's speeds, repath interval, local avoidance, collision
+against the same colliders the player uses) and `EnemyManager` (spawning from map entities,
+and the shared contact check). `src/core/rng.ts` gives the per-run seed the cross-cutting
+notes asked for, with a named sub-stream per system so one system's draws cannot re-roll
+another's; `?seed=` replays a run. `maps/phase5-test` is the map for this phase, `N` draws
+enemy paths coloured by state, `X` flips the hovered tile's walkability the way a gate
+would, and `Y` switches the enemies off.
+
+*Verified.* Driven in a browser on `phase5-test`, through the debug handle:
+
+| Criterion | What was watched |
+| --- | --- |
+| Pursues around obstacles | Spiders acquired the player beside a 16 m block, the player ducked round it, and the nearest spider came round to their side — x 42 → 21.6, arriving 10.9 m away. |
+| Repaths when line of sight breaks | With the block between them, pursuing spiders held `pursue` and carried a three-waypoint route instead of a straight line; on regaining sight the route emptied again. |
+| Grid rebuild picked up mid-path | Shutting the tile a spider was walking to — a gate closing in its face — changed its route from `19,16 10,16 9,11` to `20,17 18,17 10,16 9,11` within 0.7 s, without waiting for the repath timer. |
+
+The contact check also fired at 0.97 m and 0.99 m, against §5.3's 1.0 m threshold, logging
+that resolution belongs to Phases 7 and 8.
+
+*Sent back to the spec.* §5 said what enemies do and never said when they start: acquisition
+radii (16 m for the spider, 26 m to give up, always for the Shadow Monster) and the reasoning
+for deciding it by proximity rather than by sight — an enemy that has to see you first can
+never begin a chase around a corner. Also the collision radii the bodies needed, the wander
+rule, and what an enemy does when no route exists. The first radii were narrower; widening
+them came out of watching a chase die the moment the player stepped behind a building.
+
+*A spec-fidelity bug the tests caught.* §5.1's "velocity drops to `0`" is literal. The first
+implementation let a frozen enemy's velocity decay through the usual smoothing, which
+carried a pursuing spider 0.41 m further into the player after the beam had already caught
+it. `frozen` and `recoil` now zero the velocity outright.
+
+*Left to later phases.* No light reactions: the states are declared and their movement rules
+implemented, but nothing enters `flee` or `frozen` until Phases 7 and 8, which also own what
+a contact *means*. Enemies make no sound yet — `chitter` and `footstep_heavy` are in the
+bank and the emitters they need exist (§4.3).
 
 ## Phase 6 — Illumination Detection Service
 
@@ -252,6 +347,12 @@ here rather than treating the current values as final.
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit
   readout, free camera, and a time-scale control. Most of this spec's behaviour is a state
   machine reacting to light — without visualisation, tuning it is guesswork.
+- **A debug handle on `window`, in development builds only.** The overlay is for reading;
+  the handle is for reaching — the systems behind every row, addressable from a console or
+  an automated check. Some exit criteria cannot be met any other way: Phase 4's is about
+  what a player hears, and the only honest way to check it is to tap the live audio graph
+  and measure what comes out. It is compiled out of production builds, so verification that
+  uses it runs against the dev server rather than a preview of the bundle.
 - **Test maps per phase**, small and purpose-built, checked in beside the example map. The
   real map (Phase 11) is the worst possible place to first exercise a flee raycast.
 - **Determinism.** Every timer runs on the fixed sim clock (§7); seed the randomised values

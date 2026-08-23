@@ -96,8 +96,21 @@ export const ENTITY_DEFAULTS = {
 
 /** §3.1 — player capsule and movement. */
 export const PLAYER = {
-  /** Walk speed in m/s. There is no sprint (§3.1). */
+  /** Walk speed in m/s (§3.1). */
   walkSpeed: 3.0,
+  /** Sprint speed in m/s, held rather than toggled (§3.1). */
+  sprintSpeed: 4.5,
+  /**
+   * Time constant for turning the aim onto the direction of travel when a sprint starts
+   * (§3.1). Fast enough to read as committing to a direction, slow enough that it is a
+   * turn rather than a cut.
+   */
+  sprintAimTurnTime: 0.08,
+  /**
+   * Movement intent below which a sprint does nothing. There is no sprinting in place, and
+   * a barely-touched stick should not spend the aim lock (§3.1).
+   */
+  sprintMinimumIntent: 0.35,
   /**
    * Time constant for the acceleration/deceleration smoothing, in seconds (§3.1). Velocity
    * approaches the input's target exponentially rather than snapping.
@@ -135,6 +148,8 @@ export const INPUT = {
   aimDeadzone: 0.35,
   /** Radius in CSS pixels at which a touch drag counts as full stick deflection. */
   touchStickRadius: 56,
+  /** Deflection at which the touch movement stick starts sprinting (§3.1). */
+  touchSprintDeflection: 0.95,
 } as const;
 
 /** §4.1 — the flashlight spotlight and its battery. */
@@ -192,7 +207,115 @@ export const ENVIRONMENT_LIGHT = {
  * read as silhouettes.
  */
 export const AMBIENT = {
-  skyColor: 0x223044,
-  groundColor: 0x0a0c10,
-  intensity: 0.25,
+  skyColor: 0x2b3b54,
+  groundColor: 0x10141c,
+  /**
+   * In Three's hemisphere-light units, which are not the spotlights' candela — this was
+   * picked by looking at the scene, not by arithmetic.
+   *
+   * Bright enough to read a silhouette at mid-range, dim enough that identifying it, or
+   * reading the floor for a route, still needs the beam (§4). That ceiling is what the
+   * flashlight's value as a mechanic rests on: at roughly half again this value the tile
+   * seams come up and the floor becomes readable without light; back near zero and both
+   * enemies collapse into the same shape inside a cone.
+   */
+  intensity: 14,
+} as const;
+
+/**
+ * §4, §7 — the fog that makes *distance* the thing which hides the map, rather than
+ * darkness. Exponential-squared, coloured to the sky so the world fades into the
+ * background rather than towards a different colour.
+ */
+export const FOG = {
+  color: 0x0a0f18,
+  /**
+   * Chosen against the camera's ground footprint (§3.2): visibility holds across the ~20 m
+   * the player is acting in and is most of the way gone by the far edge, so the view ends
+   * in gloom instead of at the edge of the geometry.
+   */
+  density: 0.035,
+} as const;
+
+/**
+ * §4.3 — spatial audio. The distance model is the mechanic here: an unseen threat has to
+ * be locatable by ear, which is a question of how loudness falls off with distance and of
+ * nothing else.
+ */
+export const AUDIO = {
+  /** Master gain. A mix level, not a spec value; the options UI (Phase 10) will own it. */
+  masterVolume: 0.8,
+  /**
+   * Pooled positional sources for one-shots. Enemies hold their own long-lived emitters,
+   * so this only has to cover footsteps, interactions and the like happening at once.
+   */
+  poolSize: 16,
+  /** §4.3 — every source unless it names another profile. */
+  defaultProfile: {
+    model: 'linear',
+    refDistance: 2,
+    maxDistance: 25,
+    rolloffFactor: 1.0,
+  },
+  /**
+   * §4.3 — the Shadow Monster's footsteps carry further than anything else on the map,
+   * because hearing is the only way to track it before it is close enough to read.
+   */
+  monsterFootstepProfile: {
+    model: 'linear',
+    refDistance: 4,
+    maxDistance: 35,
+    rolloffFactor: 1.0,
+  },
+} as const;
+
+/**
+ * §5 — enemies. The speeds are the spec's table; the rest are the values §5 needed and did
+ * not have, now written into the spec beside them.
+ */
+export const ENEMY = {
+  /** §5 — how often a pursuing enemy recomputes its path. */
+  repathSeconds: 0.5,
+  /** §5.3 — contact threshold, measured centre to centre against the player's capsule. */
+  contactDistance: 1.0,
+  /** Velocity smoothing, as for the player (§3.1) — enemies should not snap to speed. */
+  accelerationTime: 0.18,
+  /**
+   * How hard enemies push out of each other (§1, §5: "simple local avoidance"). Steering,
+   * not physics: it nudges the direction of travel, and the collider resolution behind it
+   * is what actually stops anything overlapping.
+   */
+  avoidanceStrength: 1.6,
+  /** Wander leg length, in tiles, and the pause between legs (§5). */
+  wanderRadiusTiles: 8,
+  wanderPauseSeconds: { min: 0.6, max: 2.4 },
+  /** Distance from a waypoint at which it counts as reached, in metres. */
+  waypointRadius: 0.45,
+
+  spider: {
+    /** Dog-sized (§5.1). */
+    radius: 0.5,
+    height: 0.7,
+    wanderSpeed: 1.2,
+    pursueSpeed: 2.4,
+    fleeSpeed: 3.6,
+    /** §5 — acquires the player inside this range, whether or not it can see them. */
+    detectRadius: 16,
+    /**
+     * §5 — gives up beyond this. Wider than `detectRadius` so acquisition cannot flicker,
+     * and wide enough that ducking behind a building does not end a chase: the straight-line
+     * distance stays inside it while the route around goes much further.
+     */
+    loseRadius: 26,
+  },
+
+  shadowMonster: {
+    radius: 0.55,
+    height: 2.2,
+    wanderSpeed: 1.4,
+    pursueSpeed: 1.8,
+    /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
+    detectRadius: Number.POSITIVE_INFINITY,
+    loseRadius: Number.POSITIVE_INFINITY,
+  },
 } as const;

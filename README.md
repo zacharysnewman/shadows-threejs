@@ -29,6 +29,11 @@ npm test           # unit tests
 - `/?map=phase3-test` — a map for the lighting: a field of free-standing props to throw
   beam shadows from, seven lamps in three groups (more than the two that may cast shadows
   at once), and a corridor no lamp reaches
+- `/?map=phase5-test` — a map for navigation: a central block with a route round either
+  side, a wall with one doorway to shut mid-chase, and a dead end
+
+`?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
+logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
 
 The `scripts/gen-*-map.mjs` generators regenerate those maps' layer data.
 
@@ -70,11 +75,16 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | Key | |
 | --- | --- |
 | `WASD` / arrows | move; the mouse aims |
+| `Shift` | sprint — the aim locks to the way you are going |
 | `V` | hand the camera to the debug free camera — `WASD` then pans, wheel zooms |
 | `F` | flashlight on/off |
 | `B` | drain the battery to 5%, to reach the cut-out and lockout without waiting 45 s |
 | `L` | power every light group — Phase 9 replaces this with the switches |
 | `O` | occluder fade (geometry between the camera and the player) |
+| `Z` | orbit a test emitter off-screen — audio only, nothing to see |
+| `N` | enemy paths, coloured by state |
+| `X` | block/unblock the hovered tile — walkability only, the way a gate does |
+| `Y` | switch the enemies off |
 | `K` | debug damage: one spider contact's worth (0.34) |
 | `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |
@@ -85,16 +95,26 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `[` `]` | halve / double time scale |
 | `H` | hide the readout |
 
-A gamepad works without any setup — left stick moves, right stick aims, `A` interacts. On
+A gamepad works without any setup — left stick moves, right stick aims, `A` interacts,
+left stick click sprints. On
 touch, the left half of the screen is a floating movement stick and the right half a
-floating aim stick, with an on-screen action button; the touch chrome only appears once a
-touch is seen, so a desktop session never renders it.
+floating aim stick, with an on-screen action button; pushing the movement stick to its rim
+sprints. The touch chrome only appears once a touch is seen, so a desktop session never
+renders it.
+
+**Development builds** additionally expose `window.shadows` — the clock, player, camera
+rig, flashlight, lights, audio core and map, reachable from the console. Some behaviour can
+only be checked through it: "a moving off-screen emitter is locatable by ear" (§4.3) is not
+something a test runner can assert, but the live audio graph can be tapped from the handle
+and measured. It is compiled out of production builds, so anything driving it — a console
+session, a Playwright check — has to run against `npm run dev` rather than `npm run
+preview`.
 
 Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–3 are implemented:
+Phases 0–5 are implemented:
 
 - **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
 - **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
@@ -102,7 +122,8 @@ Phases 0–3 are implemented:
   registry. Entities other than the player spawn are parsed and indexed but not yet spawned
   beyond debug markers.
 - **Phase 2** — the player: input abstraction over keyboard/mouse, gamepad and touch;
-  movement with the spec's speed and smoothing; the 0.4 m capsule sliding along contact
+  movement with the spec's speeds and smoothing, including the sprint that trades
+  independent aim for speed; the 0.4 m capsule sliding along contact
   normals against walls, floor holes and the map edge; the camera rig with its bounds
   clamp; and the health pool with its regeneration delay and refill, driven by a debug
   damage key until enemies exist.
@@ -112,9 +133,17 @@ Phases 0–3 are implemented:
   lockout — plus environmental lamps that light in groups, of which at most two cast
   shadows at a time.
 
-Not yet built: audio (Phase 4), enemies (Phases 5, 7, 8), interaction and objectives
-(Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently logs and
-nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
+- **Phase 4** — spatial audio: the listener rides the player, sources come from a pool,
+  §4.3's two distance models are in place, and the `AudioContext` waits for a gesture.
+  Sounds are synthesised placeholders until real files exist.
+
+- **Phase 5** — navigation and the enemy base: grid A\* with line-of-sight straightening,
+  the state machine both AIs are built on, §5's movement speeds, local avoidance, spawning
+  from map entities, and the shared contact check. No light reactions yet.
+
+Not yet built: the light reactions that make each enemy itself (Phases 7 and 8), interaction
+and objectives (Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently
+logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
 Prefab `.glb` assets do not exist yet, so the asset loader stands in coloured placeholder
 boxes sized by prefab name prefix.
 
@@ -129,6 +158,9 @@ src/core/         sim clock, viewport, asset loader, input, occluder fade
 src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
 src/lighting/     flashlight, battery, environmental lights, night ambient
+src/audio/        listener, source pool, distance profiles, sound bank
+src/nav/          grid A*, line of sight
+src/enemies/      shared enemy, state machine, spawning, contact check
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map
 scripts/          map generators for the checked-in maps

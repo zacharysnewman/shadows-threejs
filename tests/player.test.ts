@@ -1,7 +1,7 @@
 /** Player movement, wall sliding and the spawn facing (§3.1, §3.4). */
 
 import { describe, expect, it } from 'vitest';
-import { PLAYER } from '../src/config';
+import { ENEMY, PLAYER } from '../src/config';
 import { buildColliders } from '../src/map/colliders';
 import { parseMap, parseTileset } from '../src/map/validate';
 import type { PlayerSpawnEntity } from '../src/map/types';
@@ -65,9 +65,15 @@ function openField(): ColliderIndex {
   return indexFrom(Array.from({ length: 10 }, () => '          '));
 }
 
-function run(player: Player, seconds: number, moveX: number, moveZ: number): void {
+function run(
+  player: Player,
+  seconds: number,
+  moveX: number,
+  moveZ: number,
+  sprint = false,
+): void {
   const ticks = Math.round(seconds / TICK);
-  for (let i = 0; i < ticks; i += 1) player.tick(TICK, moveX, moveZ);
+  for (let i = 0; i < ticks; i += 1) player.tick(TICK, moveX, moveZ, sprint);
 }
 
 describe('directionFromRotation', () => {
@@ -191,5 +197,86 @@ describe('Player', () => {
     expect(atTickStart).toBeLessThan(simX);
     expect(player.object.position.x).toBeCloseTo(simX);
     expect(player.position.x).toBe(simX);
+  });
+});
+
+describe('sprint (§3.1)', () => {
+  it('runs at sprint speed while it is held', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 1.5, 1, 0, true);
+
+    expect(player.sprinting).toBe(true);
+    expect(player.speed).toBeCloseTo(PLAYER.sprintSpeed, 1);
+    expect(PLAYER.sprintSpeed).toBeGreaterThan(PLAYER.walkSpeed);
+  });
+
+  it('drops back to a walk the moment it is released', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 1.5, 1, 0, true);
+    run(player, 1.5, 1, 0, false);
+
+    expect(player.sprinting).toBe(false);
+    expect(player.speed).toBeCloseTo(PLAYER.walkSpeed, 1);
+  });
+
+  it('does nothing when the player is not moving — there is no sprint in place', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 1, 0, 0, true);
+
+    expect(player.sprinting).toBe(false);
+    expect(player.speed).toBeLessThan(0.05);
+  });
+
+  it('does not sprint on a barely-touched stick', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 1, 0.2, 0, true);
+
+    expect(player.sprinting).toBe(false);
+    // Still walking at its share of walk speed, not of sprint speed.
+    expect(player.speed).toBeCloseTo(PLAYER.walkSpeed * 0.2, 1);
+  });
+
+  it('turns the aim onto the direction of travel, which is the price of the speed', () => {
+    const player = new Player(spawnAt(9, 9, 90), openField()); // facing east
+    expect(player.aim.x).toBeCloseTo(1);
+
+    // Sprint north: the beam has to come round with the player.
+    run(player, 0.5, 0, -1, true);
+    expect(player.aim.y).toBeCloseTo(-1, 1);
+    expect(Math.abs(player.aim.x)).toBeLessThan(0.1);
+  });
+
+  it('turns rather than snapping', () => {
+    const player = new Player(spawnAt(9, 9, 90), openField());
+    // One tick in, it has begun to come round but is nowhere near arrived.
+    player.tick(TICK, 0, -1, true);
+
+    expect(player.aim.y).toBeLessThan(0);
+    expect(player.aim.y).toBeGreaterThan(-0.5);
+  });
+
+  it('refuses pointer and stick aim while sprinting (§3.1)', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 0.5, 1, 0, true);
+    const locked = player.aim.clone();
+
+    // Both aim paths are ignored: the lock is not a suggestion.
+    player.aimAt(9, 0);
+    player.aimTowards(0, -1);
+    expect(player.aim.x).toBeCloseTo(locked.x);
+    expect(player.aim.y).toBeCloseTo(locked.y);
+
+    // Released, aim answers again.
+    player.tick(TICK, 0, 0, false);
+    player.aimTowards(0, -1);
+    expect(player.aim.y).toBeCloseTo(-1);
+  });
+
+  it('outruns everything on the map, and a walk outruns everything but a fleeing spider (§5)', () => {
+    // The interlock §5 depends on: speed is never what makes an enemy dangerous.
+    expect(PLAYER.sprintSpeed).toBeGreaterThan(ENEMY.spider.fleeSpeed);
+    expect(PLAYER.walkSpeed).toBeGreaterThan(ENEMY.spider.pursueSpeed);
+    expect(PLAYER.walkSpeed).toBeGreaterThan(ENEMY.shadowMonster.pursueSpeed);
+    expect(ENEMY.spider.fleeSpeed).toBeGreaterThan(PLAYER.walkSpeed);
   });
 });

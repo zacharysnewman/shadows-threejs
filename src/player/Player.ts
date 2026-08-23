@@ -11,6 +11,11 @@
  * Aim is a field rather than an argument because it changes with the pointer at frame
  * rate, independently of movement (§3.1: the two are independent, so the player can back
  * away while keeping the beam on a threat). Phase 3 reads it to point the flashlight.
+ *
+ * Sprinting is the one thing that breaks that independence, and deliberately: while
+ * sprinting the aim is driven onto the direction of travel and pointer input is ignored
+ * (§3.1). That is the whole price of the speed — a sprinting player cannot hold a light on
+ * what is behind them.
  */
 
 import * as THREE from 'three';
@@ -45,6 +50,8 @@ export class Player {
 
   /** True while the last resolved move ended in contact with a collider. Debug readout. */
   private _touchingWall = false;
+  /** True while the player is sprinting, which is also what locks the aim (§3.1). */
+  private _sprinting = false;
 
   constructor(
     spawn: PlayerSpawnEntity,
@@ -64,6 +71,11 @@ export class Player {
     return this._touchingWall;
   }
 
+  /** While true, aim follows movement and pointer input is refused (§3.1). */
+  get sprinting(): boolean {
+    return this._sprinting;
+  }
+
   get speed(): number {
     return this.velocity.length();
   }
@@ -74,11 +86,17 @@ export class Player {
    * `moveX` / `moveZ` are the input's movement intent in world axes with magnitude ≤ 1;
    * the player has one speed and no sprint (§3.1), so intent scales it and nothing else.
    */
-  tick(dt: number, moveX: number, moveZ: number): void {
+  tick(dt: number, moveX: number, moveZ: number, sprintHeld = false): void {
     this.previous.copy(this.position);
 
-    const targetX = moveX * PLAYER.walkSpeed;
-    const targetZ = moveZ * PLAYER.walkSpeed;
+    // §3.1 — no sprinting in place: a held key with no movement behind it is not a sprint,
+    // and must not spend the aim lock.
+    const intent = Math.hypot(moveX, moveZ);
+    this._sprinting = sprintHeld && intent >= PLAYER.sprintMinimumIntent;
+
+    const speed = this._sprinting ? PLAYER.sprintSpeed : PLAYER.walkSpeed;
+    const targetX = moveX * speed;
+    const targetZ = moveZ * speed;
 
     // §3.1 — acceleration and deceleration smoothed over 0.1 s, so input neither snaps the
     // player to full speed nor stops them dead. Exponential approach, so the time constant
@@ -109,11 +127,26 @@ export class Player {
       }
     }
 
+    // §3.1 — the aim is dragged onto the direction of travel while sprinting. Turned
+    // rather than snapped, and driven off the *input* direction rather than the resolved
+    // velocity, so sliding along a wall does not swing the beam into it.
+    if (this._sprinting) {
+      const blendAim = 1 - Math.exp(-dt / PLAYER.sprintAimTurnTime);
+      this.aim.x += (moveX / intent - this.aim.x) * blendAim;
+      this.aim.y += (moveZ / intent - this.aim.y) * blendAim;
+      if (this.aim.lengthSq() > 1e-8) this.aim.normalize();
+    }
+
     this.health.tick(dt);
   }
 
-  /** Point the player at a world position — pointer aim, once projected to the ground. */
+  /**
+   * Point the player at a world position — pointer aim, once projected to the ground.
+   * Refused while sprinting: the direction of travel owns the aim until the sprint ends
+   * (§3.1), and letting the pointer fight it would make the lock a suggestion.
+   */
   aimAt(worldX: number, worldZ: number): void {
+    if (this._sprinting) return;
     const dx = worldX - this.position.x;
     const dz = worldZ - this.position.y;
     if (Math.hypot(dx, dz) < 1e-4) return;
@@ -122,6 +155,7 @@ export class Player {
 
   /** Point the player along a direction — stick aim, which is already a direction. */
   aimTowards(x: number, z: number): void {
+    if (this._sprinting) return;
     if (Math.hypot(x, z) < 1e-4) return;
     this.aim.set(x, z).normalize();
   }
