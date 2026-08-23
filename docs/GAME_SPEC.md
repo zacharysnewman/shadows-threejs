@@ -250,24 +250,29 @@ two read differently at range:
 
 - **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
   at range it is a silhouette crossing the gloom.
-- **The Shadow Monster is a shadow with nothing above it.** Near-invisible (§5.2) means
-  near-invisible in the gloom too, so what crosses the ground is its shadow alone, thrown by
-  the moon below. Its other tells stay the ones §5 gives it: a harder shadow when a beam or
-  a lamp catches it, footsteps that carry further than anything else on the map (§4.3), and
-  the lamp it makes flicker from across the level (§4.2).
+- **The Shadow Monster is nothing at all.** The ambient reveals ordinary things; it reveals
+  the monster not one bit. Its body is near-invisible (§5.2) and the gloom casts no shadows,
+  so in the dark it has no presence of any kind — not a silhouette, not a shadow, nothing.
+  **It is visible only where a directed light falls on it**, as the hard shadow that light
+  throws, and it goes back to nothing the moment the light leaves.
 
-**A moon, and it casts shadows.** One dim directional light, steeply angled, is the only
-thing besides the flashlight and the lamps that casts a shadow. It is there for the Shadow
-Monster: without it the monster in the gloom is not merely invisible but *absent* — no body,
-no shadow, nothing until it is inside a beam — and a creature named for its shadow should
-throw one. Under the moon it does, everywhere on the map: **a shadow sliding across open
-ground with nothing casting it**, which is the whole idea of the thing and the strongest
-image the game has. It also gives the gloom a direction, so an unlit yard reads as a place
-rather than as a flat grey wash.
+  That asymmetry is the whole point, and it only works because the map *is* lit enough to see
+  ordinary things by. On a blacked-out map nothing is visible outside the beam, so the
+  monster's invisibility distinguishes it from nothing — everything is equally unseen. Against
+  a gloom where a spider is a shape crossing open ground, a creature that never appears there
+  is a different kind of thing entirely. Its other tells stay the ones §5 gives it: footsteps
+  that carry further than anything else on the map (§4.3), and the lamp it makes flicker from
+  across the level (§4.2).
 
-The moon is dim enough to identify nothing by. It lights no interior the way a lamp does,
-and it never substitutes for the beam; what it contributes is shape and the shadows on the
-ground.
+**A moon, and it casts nothing.** One dim directional light, steeply angled, gives the gloom
+a direction so an unlit yard reads as a place rather than as a flat grey wash. It is
+deliberately **not** a shadow caster, and that is a rule about the Shadow Monster rather
+than a saving.
+
+**Shadows exist only where a directed light does.** The flashlight and the environmental
+lamps cast; the ambient and the moon do not. So a shadow on the ground is itself
+information: something is being lit. This is the rule the Shadow Monster is built on — see
+below.
 
 The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
 mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
@@ -479,9 +484,11 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - **Visual Representation:**
   - **Material:** the mesh uses a custom material that is nearly invisible (e.g. a faint
     visual distortion) but casts a stark, hard shadow onto the floor (`castShadow = true`).
-    It casts under the moon as well as under beams and lamps (§4), so it is trackable at a
-    distance as a shadow moving across open ground with nothing above it. Under a beam or a
-    lamp the shadow is harder and shorter; the moon's is long, soft-edged and always there.
+    It casts under the flashlight and under environmental lamps, and under nothing else —
+    the ambient and the moon throw no shadows at all (§4). The consequence is the creature's
+    defining property: **it is visible only inside a light**, as the shadow that light throws,
+    and outside one it has no presence whatsoever. Sweeping a beam across empty ground and
+    finding a shadow in it is the only way to see the thing at all.
   - **Audio:** heavy, slow, spatial footsteps.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
@@ -581,15 +588,11 @@ constraint and not a polish-phase concern.
 
 - Target 60 fps on mid-range desktop hardware, 30 fps floor on recent mobile. The game is
   playable on touch, but the design target is desktop with mouse aim.
-- Exactly one shadow-casting `SpotLight` (the flashlight), one shadow-casting
-  `DirectionalLight` (the moon, §4), plus at most two shadow-casting environmental lights at
-  a time, chosen each frame by proximity to the camera. Remaining environmental lights
-  illuminate without casting.
-- The moon's shadow camera is fitted to the camera's ground footprint (§3.2) rather than to
-  the map, so its shadow map is spent on what is on screen. On the mobile tier its shadows
-  are the first thing dropped: the map stays lit by it, and the Shadow Monster loses its
-  long shadow, which is a real loss of information and so is the last quality setting to
-  reach for.
+- Exactly one shadow-casting `SpotLight` (the flashlight) plus at most two shadow-casting
+  environmental lights at a time, chosen each frame by proximity to the camera. Remaining
+  environmental lights illuminate without casting. The ambient and the moon (§4) cast
+  nothing — a design rule first and a saving second, since a shadow on the ground has to
+  mean a light is on something.
 - Shadow map 2048×2048 for the flashlight, 1024×1024 for environmental lights; PCF soft
   shadows; shadow camera near/far tightened to the light's range to keep depth precision.
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black

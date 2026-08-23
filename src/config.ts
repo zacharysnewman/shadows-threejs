@@ -51,11 +51,6 @@ export const RENDER = {
   flashlightShadowMapSize: 2048,
   /** Shadow map resolution for environmental lights (§7). */
   environmentShadowMapSize: 1024,
-  /**
-   * Shadow map resolution for the moon (§7). Larger than a lamp's because it covers the
-   * whole visible ground rather than one pool.
-   */
-  moonShadowMapSize: 2048,
   /** At most this many environmental lights cast shadows at once (§7). */
   maxShadowCastingEnvironmentLights: 2,
   /** Clamp for `devicePixelRatio`; mobile is a 30 fps floor (§7). */
@@ -231,26 +226,18 @@ export const AMBIENT = {
 } as const;
 
 /**
- * §4, §7 — the moon: one dim directional light, and the only shadow caster that reaches
- * the whole map. It exists for the Shadow Monster (§5.2), which is otherwise not merely
- * invisible in the gloom but absent — no body and no shadow until something lights it.
+ * §4 — the moon: one dim directional light that gives the gloom a direction. It casts no
+ * shadow, deliberately: shadows exist only where a directed light does, which is what makes
+ * the Shadow Monster (§5.2) visible inside a beam and absent outside one.
  */
 export const MOON = {
   color: 0x9fb6d8,
-  /** Dim enough to identify nothing by; it contributes shape and shadows, not visibility. */
+  /** Dim enough to identify nothing by; it contributes shape, not visibility. */
   intensity: 0.55,
-  /**
-   * Direction the light comes from, as a world offset. Steep, so shadows are long enough to
-   * read as a shape crossing the ground rather than as a smear at the caster's feet.
-   */
+  /** Direction the light comes from, as a world offset. Steep, like a high moon. */
   direction: { x: -0.45, y: 1, z: -0.35 },
-  /**
-   * Half-size of the shadow camera, in metres, and how far above the target it sits. Fitted
-   * to the camera's ground footprint (§3.2, §7) rather than to the map: a shadow map spread
-   * over a 100 m level has nothing left for the shadow the player is meant to be reading.
-   */
-  shadowExtent: 26,
-  shadowHeight: 40,
+  /** How far from the player it is placed. Only its direction matters; it casts nothing. */
+  distance: 40,
 } as const;
 
 /**

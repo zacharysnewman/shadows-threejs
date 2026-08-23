@@ -163,14 +163,22 @@ exit criterion needs a real GPU and is outstanding.
 in it (§4); the beam's mounting, its derived declination, and the input that toggles it
 (§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
 
-*Revised after Phase 5 — the moon.* §4 now calls for a dim, shadow-casting directional
-light. Without it the Shadow Monster in the gloom is not merely invisible but absent: no
-body, no shadow, nothing until it steps into a beam. Under the moon it is a shadow sliding
-across open ground with nothing above it, which is the creature's whole idea. Its shadow
-camera follows the player rather than covering the map (§7), since a directional shadow map
-spread over 100 m has nothing left for the one shadow the player is meant to read. **A note
-for Phase 8:** whatever near-invisible material the monster gets has to keep `castShadow`
-working — the shadow is now the thing it is seen by.
+*Revised after Phase 5 — the moon, and then the moon again.* §4 gained a dim directional
+light. It was first specced as a shadow caster, on the reasoning that the Shadow Monster in
+the gloom was otherwise absent — no body, no shadow, nothing until it stepped into a beam —
+and a creature named for its shadow ought to throw one.
+
+That reasoning was backwards, and the spec now says the opposite. Being absent from the
+gloom **is** the creature: the ambient exists so that *ordinary* things are visible in it,
+and what makes the monster a different kind of thing is that it never appears there. A moon
+shadow handed it exactly the presence it is defined by not having. The rule §4 now carries
+is simpler and stronger — **shadows exist only where a directed light does** — so a shadow
+on the ground always means something is being lit, and the monster is visible inside a beam
+or a lamp pool and nowhere else. The moon stays as shading only, casting nothing, and §7's
+shadow budget went back to the flashlight plus two lamps.
+
+**A note for Phase 8:** the near-invisible material has to keep `castShadow` working. The
+shadow a beam throws is now the *only* way the monster is ever seen.
 
 *Revised after Phase 5 — the ambient.* The ambient this phase chose was near-black, and that
 turned out to be a design mistake rather than a tuning one: with only the beam visible, a spider and the

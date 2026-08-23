@@ -12,12 +12,15 @@
  */
 
 import * as THREE from 'three';
-import { AMBIENT, MOON, RENDER } from '../config';
+import { AMBIENT, MOON } from '../config';
 
 export interface NightRig {
   ambient: THREE.HemisphereLight;
   moon: THREE.DirectionalLight;
-  /** Keeps the moon's shadow camera over the player. Called per rendered frame. */
+  /**
+   * Keeps the moon over the player. It casts no shadows, so this is only about keeping its
+   * direction consistent as the player crosses the map. Called per rendered frame.
+   */
   follow(x: number, z: number): void;
   dispose(): void;
 }
@@ -32,26 +35,15 @@ export function addNightAmbient(scene: THREE.Scene): NightRig {
 
   const moon = new THREE.DirectionalLight(MOON.color, MOON.intensity);
   moon.name = 'Moon';
-  moon.castShadow = true;
-  moon.shadow.mapSize.set(RENDER.moonShadowMapSize, RENDER.moonShadowMapSize);
-
-  const camera = moon.shadow.camera;
-  camera.left = -MOON.shadowExtent;
-  camera.right = MOON.shadowExtent;
-  camera.top = MOON.shadowExtent;
-  camera.bottom = -MOON.shadowExtent;
-  camera.near = 1;
-  camera.far = MOON.shadowHeight * 2;
-  // A directional light's shadows come from far away and graze the ground, which is where
-  // acne lives; the normal bias costs a little contact fidelity and buys a clean floor.
-  moon.shadow.bias = -0.0005;
-  moon.shadow.normalBias = 0.08;
+  // §4, §7 — shading only. See the note above: a moon that cast shadows would hand the
+  // Shadow Monster a silhouette everywhere on the map.
+  moon.castShadow = false;
 
   scene.add(ambient, moon, moon.target);
 
   const offset = new THREE.Vector3(MOON.direction.x, MOON.direction.y, MOON.direction.z)
     .normalize()
-    .multiplyScalar(MOON.shadowHeight);
+    .multiplyScalar(MOON.distance);
 
   return {
     ambient,
