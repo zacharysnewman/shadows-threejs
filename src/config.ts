@@ -36,6 +36,11 @@ export const CAMERA = {
   distance: 14,
   /** Critically damped follow time constant, in seconds (§3.2). */
   smoothingTime: 0.15,
+  /**
+   * Metres of ground the bounds clamp must leave between the player and the edge of the
+   * view (§3.2). Where hiding off-map void would cost more than this, the void wins.
+   */
+  playerMargin: 2.0,
   near: 0.1,
   far: 200,
 } as const;
@@ -85,4 +90,47 @@ export const ENTITY_DEFAULTS = {
   gateLocked: true,
   /** `ExitGate.requiredSwitches` (§6). */
   exitRequiredSwitches: 3,
+} as const;
+
+/** §3.1 — player capsule and movement. */
+export const PLAYER = {
+  /** Walk speed in m/s. There is no sprint (§3.1). */
+  walkSpeed: 3.0,
+  /**
+   * Time constant for the acceleration/deceleration smoothing, in seconds (§3.1). Velocity
+   * approaches the input's target exponentially rather than snapping.
+   */
+  accelerationTime: 0.1,
+  /** Capsule radius in metres (§3.1); the collision query is this circle on the X/Z plane. */
+  radius: 0.4,
+  /** Capsule height in metres (§3.1). Visual and, later, the flashlight mount height. */
+  height: 1.8,
+} as const;
+
+/** §3.4 — the health pool. A buffer against the spider only; the monster ignores it. */
+export const HEALTH = {
+  /** The pool is a 0.0–1.0 fraction; there is no numeric HUD (§3.4). */
+  max: 1.0,
+  /** Damage per spider contact — three hits from full kill (§3.4, §5.3). */
+  spiderDamage: 0.34,
+  /** Seconds after the last damage before regeneration starts; damage resets it (§3.4). */
+  regenDelay: 6.0,
+  /** Regeneration rate per second once the delay has elapsed (§3.4). */
+  regenRate: 0.12,
+  /** Below this, the heartbeat quickens (§3.4). Phase 10 renders it; the value lives here. */
+  lowThreshold: 0.34,
+} as const;
+
+/**
+ * Input feel. Unlike everything above, the spec does not fix these — §3.1 requires
+ * keyboard, gamepad and touch but not their dead zones — so they are tuning values that
+ * belong here rather than literals inside the input layer.
+ */
+export const INPUT = {
+  /** Radial dead zone for both analog sticks, as a fraction of full deflection. */
+  stickDeadzone: 0.22,
+  /** Aim stick deflection below which the stick is not treated as aiming at all. */
+  aimDeadzone: 0.35,
+  /** Radius in CSS pixels at which a touch drag counts as full stick deflection. */
+  touchStickRadius: 56,
 } as const;

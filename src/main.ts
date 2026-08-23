@@ -1,10 +1,13 @@
 /**
  * Entry point.
  *
- * Phase 1 wires the map pipeline to the render loop: load and validate a map, build its
- * static geometry, colliders, walkability grid and entity registry, and expose all of it
- * through the debug harness. There is no player yet (Phase 2) and no real lighting
- * (Phase 3) — the scene is flat-lit so the geometry is legible.
+ * Phase 2 puts a player in the map the Phase 1 pipeline builds: the input abstraction, the
+ * capsule resolved against Layer 1 colliders, the camera rig, and the health pool driven by
+ * a debug damage key until real enemies exist (§3). The debug free camera is still here but
+ * hands the camera to the player rig by default.
+ *
+ * There is still no real lighting (Phase 3) — the scene is flat-lit so the geometry is
+ * legible — and no enemies (Phase 5).
  *
  * `?map=<directory>` selects which map under `maps/` to load, so the per-phase test maps
  * are reachable without a rebuild.
@@ -12,6 +15,7 @@
 
 import * as THREE from 'three';
 import { AssetLoader } from './core/AssetLoader';
+import { Input } from './core/Input';
 import { SimClock } from './core/SimClock';
 import { Viewport } from './core/Viewport';
 import { ColliderOverlay } from './debug/ColliderOverlay';
@@ -21,6 +25,10 @@ import { FreeCamera } from './debug/FreeCamera';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
 import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
+import { CameraRig } from './player/CameraRig';
+import { ColliderIndex } from './player/collision';
+import { Player } from './player/Player';
+import { HEALTH } from './config';
 
 const DEFAULT_MAP = 'example';
 
@@ -65,6 +73,7 @@ async function main(): Promise<void> {
   const overlay = new DebugOverlay();
   const clock = new SimClock();
   const assets = new AssetLoader();
+  const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
 
   addPlaceholderLighting(viewport.scene);
@@ -86,14 +95,30 @@ async function main(): Promise<void> {
   const markers = new EntityMarkers(loaded.entities);
   viewport.scene.add(walkability.object, colliders.object, markers.object);
 
-  // Open on the whole map: Phase 1 is about seeing the level as data made geometry, and
-  // the debug camera can be panned to the spawn from there.
-  const extent = Math.max(loaded.data.width, loaded.data.height) * loaded.data.tileSize;
-  freeCamera.lookAt(
-    (loaded.data.width * loaded.data.tileSize) / 2,
-    (loaded.data.height * loaded.data.tileSize) / 2,
-    FreeCamera.fitDistance(extent),
+  // --- Player -------------------------------------------------------------
+  const colliderIndex = new ColliderIndex(
+    loaded.colliders,
+    loaded.data.width,
+    loaded.data.height,
+    loaded.data.tileSize,
   );
+  const player = new Player(loaded.entities.playerSpawn, colliderIndex);
+  viewport.scene.add(player.object);
+
+  const rig = new CameraRig(viewport, loaded.bounds);
+  rig.snapTo(player.position.x, player.position.y);
+  // The free camera starts where the player is, so toggling to it does not jump the view.
+  freeCamera.lookAt(player.position.x, player.position.y, FreeCamera.fitDistance(40));
+
+  // §7 — everything with a timer runs on the fixed clock, movement included, so the
+  // distance covered in a second does not depend on the frame rate.
+  clock.onTick((dt) => {
+    // While the free camera has the keys, the player gets no movement intent (§ debug
+    // harness) — otherwise panning the debug view walks the player across the map.
+    const moveX = freeCamera.enabled ? 0 : input.moveX;
+    const moveZ = freeCamera.enabled ? 0 : input.moveZ;
+    player.tick(dt, moveX, moveZ);
+  });
 
   // --- Debug readout ------------------------------------------------------
   const tileCount = loaded.data.width * loaded.data.height;
@@ -111,12 +136,38 @@ async function main(): Promise<void> {
     const pct = ((walkable / tileCount) * 100).toFixed(0);
     return `${walkable}/${tileCount} walkable (${pct}%) · v${loaded.grid.version}`;
   });
-  overlay.addRow('colliders', () => `${loaded.colliders.length} boxes`);
+  overlay.addRow('colliders', () => {
+    const gaps = loaded.colliders.filter((collider) => collider.kind === 'gap').length;
+    return `${loaded.colliders.length} boxes (${gaps} floor gap${gaps === 1 ? '' : 's'})`;
+  });
   overlay.addRow('entities', () =>
     `${loaded.entities.count} · ${loaded.entities
       .countsByType()
       .map(([type, n]) => `${type}×${n}`)
       .join(' ')}`,
+  );
+  overlay.addRow('player', () => {
+    const { gx, gy } = loaded.grid.worldToGrid(player.position.x, player.position.y);
+    return (
+      `(${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}) tile (${gx}, ${gy}) · ` +
+      `${player.speed.toFixed(2)} m/s${player.touchingWall ? ' · wall' : ''}`
+    );
+  });
+  overlay.addRow('aim', () =>
+    `(${player.aim.x.toFixed(2)}, ${player.aim.y.toFixed(2)}) · ${input.aimSource}`,
+  );
+  overlay.addRow('health', () => {
+    const { health } = player;
+    if (health.dead) return '0.00 · DEAD';
+    const state = health.regenerating
+      ? `regen +${HEALTH.regenRate.toFixed(2)}/s`
+      : health.value >= HEALTH.max
+        ? 'full'
+        : `regen in ${health.regenDelayRemaining.toFixed(1)}s`;
+    return `${health.value.toFixed(2)} · ${state}${health.critical ? ' · CRITICAL' : ''}`;
+  });
+  overlay.addRow('camera', () =>
+    `(${rig.targetX.toFixed(1)}, ${rig.targetZ.toFixed(1)})${freeCamera.enabled ? ' · FREE' : ''}`,
   );
   if (loaded.data.warnings.length > 0) {
     overlay.addRow('warnings', () => `${loaded.data.warnings.length} (see console)`);
@@ -148,8 +199,28 @@ async function main(): Promise<void> {
   });
   overlay.addRow('hover', () => hovered);
 
+  /**
+   * Resolve aim intent to a world direction (§3.1). A pointer names a screen position, so
+   * it has to be projected onto the ground plane through the current camera; a stick
+   * already names a direction. Run per rendered frame so aim tracks the cursor at display
+   * rate rather than at the 60 Hz tick.
+   */
+  function updateAim(): void {
+    if (input.aimSource === 'stick') {
+      player.aimTowards(input.aimX, input.aimZ);
+      return;
+    }
+    if (input.aimSource !== 'pointer') return;
+    pointer.set(input.pointerNdcX, input.pointerNdcY);
+    raycaster.setFromCamera(pointer, viewport.camera);
+    if (raycaster.ray.intersectPlane(groundPlane, hit)) player.aimAt(hit.x, hit.z);
+  }
+
   // --- Debug keys ---------------------------------------------------------
-  overlay.addBinding('WASD', 'pan camera · wheel zoom');
+  overlay.addBinding('WASD', 'move · mouse aims');
+  overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
+  overlay.addBinding('K', `debug damage (${HEALTH.spiderDamage})`);
+  overlay.addBinding('J', 'heal to full');
   overlay.addBinding('G', 'walkability overlay');
   overlay.addBinding('C', 'collider overlay');
   overlay.addBinding('M', 'entity markers');
@@ -161,6 +232,23 @@ async function main(): Promise<void> {
   window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
     switch (event.code) {
+      case 'KeyV':
+        freeCamera.enabled = !freeCamera.enabled;
+        if (freeCamera.enabled) {
+          freeCamera.lookAt(player.position.x, player.position.y);
+        } else {
+          // Snap rather than smooth: returning from the far side of the map would
+          // otherwise sail the camera across it.
+          rig.snapTo(player.position.x, player.position.y);
+        }
+        break;
+      case 'KeyK':
+        // §3.4 — one spider's worth of damage, the only damage source until Phase 7.
+        if (player.health.damage()) console.info('[player] health reached 0 (Phase 10 owns death)');
+        break;
+      case 'KeyJ':
+        player.health.reset();
+        break;
       case 'KeyG':
         walkability.toggle();
         break;
@@ -190,20 +278,33 @@ async function main(): Promise<void> {
     }
   });
 
-  // Walkability on by default in Phase 1: it is the phase's exit criterion.
-  walkability.toggle();
-
   // --- Render loop --------------------------------------------------------
   let previous = performance.now();
   const frame = (now: number): void => {
     const realDelta = (now - previous) / 1000;
     previous = now;
 
+    // Sampled once per frame, before the ticks: a frame that runs three ticks applies the
+    // same input snapshot to all three rather than three different reads of the hardware.
+    input.update();
+    updateAim();
+
     // §7 — the simulation advances in fixed ticks; rendering is whatever the display gives.
     clock.advance(realDelta);
-    freeCamera.update(realDelta);
+
+    player.render(clock.alpha);
+    if (freeCamera.enabled) {
+      freeCamera.update(realDelta);
+    } else {
+      // Follows the *interpolated* position for the same reason it runs on the render
+      // delta: both are presentation, and following the tick position would reintroduce
+      // the 60 Hz staircase the interpolation just removed.
+      rig.update(realDelta, player.object.position.x, player.object.position.z);
+    }
+
     overlay.update(realDelta);
     viewport.render();
+    input.endFrame();
 
     requestAnimationFrame(frame);
   };

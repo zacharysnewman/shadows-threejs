@@ -4,6 +4,10 @@
  * Drawn as wireframe boxes so the greedy merge is inspectable: a long wall should be one
  * box, not one per tile, and Phase 2's capsule sliding is much easier to reason about when
  * the actual collision volumes are visible rather than inferred from the art.
+ *
+ * Holes in the floor are barriers with no geometry behind them (§2, §3.1), so they are
+ * drawn in a second colour — a box the player bounces off with nothing visibly there is
+ * otherwise the most confusing thing the overlay can show.
  */
 
 import * as THREE from 'three';
@@ -13,7 +17,7 @@ export class ColliderOverlay {
   readonly object: THREE.Object3D;
 
   private readonly geometry: THREE.BufferGeometry;
-  private readonly material: THREE.LineBasicMaterial;
+  private readonly materials: Record<BoxCollider['kind'], THREE.LineBasicMaterial>;
 
   constructor(colliders: readonly BoxCollider[]) {
     const group = new THREE.Group();
@@ -21,11 +25,14 @@ export class ColliderOverlay {
     group.visible = false;
 
     this.geometry = new THREE.BoxGeometry(1, 1, 1);
-    this.material = new THREE.LineBasicMaterial({ color: 0xffc857, depthTest: false });
+    this.materials = {
+      obstacle: new THREE.LineBasicMaterial({ color: 0xffc857, depthTest: false }),
+      gap: new THREE.LineBasicMaterial({ color: 0x57b6ff, depthTest: false }),
+    };
     const edges = new THREE.EdgesGeometry(this.geometry);
 
     for (const collider of colliders) {
-      const lines = new THREE.LineSegments(edges, this.material);
+      const lines = new THREE.LineSegments(edges, this.materials[collider.kind]);
       lines.position.set(collider.cx, collider.height / 2, collider.cz);
       lines.scale.set(collider.hx * 2, collider.height, collider.hz * 2);
       lines.renderOrder = 3;
@@ -48,7 +55,7 @@ export class ColliderOverlay {
       if (node instanceof THREE.LineSegments) node.geometry.dispose();
     });
     this.geometry.dispose();
-    this.material.dispose();
+    for (const material of Object.values(this.materials)) material.dispose();
     this.object.removeFromParent();
   }
 }

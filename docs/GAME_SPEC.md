@@ -129,6 +129,11 @@ Multiple `EnvironmentLight` entities may share a `groupId`; a `PowerSwitch` togg
 whole group at once. Entity `x`/`y` are grid coordinates and are converted to world space
 by the mapping above, offset to the tile centre.
 
+Rotations are degrees clockwise from north, where north is `-Z` — screen-up under the
+un-rotated camera (§3.2) — so `90` faces east. The convention has to be written down
+somewhere: a spawn rotation is the player's facing before they have aimed at anything
+(§3.1), and an editor exporting degrees says nothing about which way zero points.
+
 ## 3. Player Controller, Camera & Interaction
 
 ### 3.1 Movement
@@ -137,8 +142,15 @@ by the mapping above, offset to the tile centre.
   mouse position or right analog for aim (§4.1). The two are independent — the player can
   back away while keeping the beam on a threat.
 - Walk speed 3.0 m/s, with acceleration/deceleration smoothed over 0.1 s to avoid snapping.
-- The player is a 0.4 m radius capsule resolved against Layer 1 colliders by sliding along
-  contact normals, so grazing a wall does not halt movement.
+- The player is a 0.4 m radius, 1.8 m tall capsule resolved by sliding along contact
+  normals, so grazing a wall does not halt movement.
+- What stops the capsule is everything the walkability grid calls unwalkable (§2), not
+  only Layer 1 colliders: a tile with no floor blocks the player exactly as a wall does,
+  and so does the map's outer edge whether or not the author walled it. A hole the player
+  can walk out over is ground no enemy can follow them onto, and reads as standing on
+  nothing.
+- The player faces their spawn's `rotation` (§2) until the first aim input arrives, so a
+  run does not open with the character facing an arbitrary direction.
 - There is no sprint, jump, or crouch. Distance from a threat is bought with light and
   route choice, not speed.
 
@@ -148,7 +160,19 @@ by the mapping above, offset to the tile centre.
   the player along the pitch vector.
 - Follows the player with critically damped smoothing (≈0.15 s time constant); no rotation
   — the map's north stays screen-up so learned routes stay legible in the dark.
-- The rig clamps to map bounds so the camera never frames off-map void.
+- The rig clamps to map bounds so the camera never frames off-map void. What is clamped is
+  the frustum's ground footprint, not the camera position: under a pitched camera that
+  footprint is a trapezoid, wider at its far edge than it is where the player stands.
+- Framing the player outranks hiding void. The clamp never pushes the player within 2 m of
+  the edge of the view, and on an axis where the map is too small to satisfy both rules the
+  camera centres that axis rather than pinning the player to one side. Close to a boundary
+  the far corners of the footprint will show void; that is the accepted cost, because a
+  camera that hides the void by losing the player has failed at the more important half of
+  its job.
+- Static geometry between the camera and the player must not hide the player. At a 70°–75°
+  pitch a full-height wall on the camera side of the player does exactly that, so the art
+  pass (§1) owns the treatment — low walls, cutaways, or fading the occluder. No camera
+  setting rescues it.
 
 ### 3.3 Interaction
 

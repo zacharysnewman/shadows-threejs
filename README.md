@@ -23,8 +23,12 @@ npm test           # unit tests
 - `/` — the 50×50 example map (default)
 - `/?map=phase1-test` — a small map that deliberately contains authoring errors, to
   exercise the loader's skip-and-warn paths
+- `/?map=phase2-test` — a small map built to catch the player capsule out: a diagonal
+  pillar staircase, one-tile doorways, a fence run, a pit with no floor, a dead-end
+  alcove, and walkable ground against every map edge for the camera clamp
 
-`node scripts/gen-example-map.mjs` regenerates the example map's layer data.
+`node scripts/gen-example-map.mjs` and `node scripts/gen-phase2-map.mjs` regenerate those
+maps' layer data.
 
 ## CI
 
@@ -63,36 +67,57 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 
 | Key | |
 | --- | --- |
-| `WASD` / arrows | pan the free camera; mouse wheel zooms |
+| `WASD` / arrows | move; the mouse aims |
+| `V` | hand the camera to the debug free camera — `WASD` then pans, wheel zooms |
+| `K` | debug damage: one spider contact's worth (0.34) |
+| `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |
-| `C` | collider overlay — the merged Layer 1 boxes |
+| `C` | collider overlay — obstacles in amber, floor gaps in blue |
 | `M` | entity markers |
 | `P` | pause the simulation clock |
 | `.` | step one simulation tick |
 | `[` `]` | halve / double time scale |
 | `H` | hide the readout |
 
+A gamepad works without any setup — left stick moves, right stick aims, `A` interacts. On
+touch, the left half of the screen is a floating movement stick and the right half a
+floating aim stick, with an on-screen action button; the touch chrome only appears once a
+touch is seen, so a desktop session never renders it.
+
 Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0 and 1 are implemented: the fixed-timestep simulation clock and render loop, and
-the map pipeline — `map.json` / `tileset.json` loading and validation, instanced prefab
-geometry, merged box colliders, the walkability grid, and a typed entity registry. Entities
-are parsed and indexed but not yet spawned beyond debug markers.
+Phases 0–2 are implemented:
 
-Not yet built: the player controller (Phase 2), the flashlight and lighting (Phase 3),
-audio (Phase 4), enemies (Phases 5, 7, 8), and objectives (Phase 9). Prefab `.glb` assets
-do not exist yet, so the asset loader stands in coloured placeholder boxes sized by prefab
-name prefix.
+- **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
+- **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
+  instanced prefab geometry, merged box colliders, the walkability grid, and a typed entity
+  registry. Entities other than the player spawn are parsed and indexed but not yet spawned
+  beyond debug markers.
+- **Phase 2** — the player: input abstraction over keyboard/mouse, gamepad and touch;
+  movement with the spec's speed and smoothing; the 0.4 m capsule sliding along contact
+  normals against walls, floor holes and the map edge; the camera rig with its bounds
+  clamp; and the health pool with its regeneration delay and refill, driven by a debug
+  damage key until enemies exist.
+
+Not yet built: the flashlight and lighting (Phase 3), audio (Phase 4), enemies (Phases 5,
+7, 8), interaction and objectives (Phase 9), and the run lifecycle (Phase 10) — health
+reaching zero currently logs and nothing more. Prefab `.glb` assets do not exist yet, so
+the asset loader stands in coloured placeholder boxes sized by prefab name prefix.
+
+`docs/IMPLEMENTATION_PLAN.md` carries the per-phase detail, including what each finished
+phase deliberately left for later.
 
 ## Layout
 
 ```
 src/config.ts     constants mirroring the spec — tuning happens here, not in systems
-src/core/         sim clock, viewport, asset loader
+src/core/         sim clock, viewport, asset loader, input
 src/map/          validation, geometry, colliders, walkability, entity registry
+src/player/       movement, collision, camera rig, health
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map
+scripts/          map generators for the checked-in maps
 tests/            unit tests, including fixture tests over the checked-in maps
 ```
