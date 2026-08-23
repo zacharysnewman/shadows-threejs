@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildColliders } from '../src/map/colliders';
+import { buildColliders, buildFloorGapColliders } from '../src/map/colliders';
 import { EntityRegistry } from '../src/map/EntityRegistry';
 import { parseMap, parseTileset } from '../src/map/validate';
 import { WalkabilityGrid } from '../src/map/WalkabilityGrid';
@@ -92,5 +92,50 @@ describe('maps/phase1-test', () => {
   it('defaults an omitted switch mode to toggle', () => {
     const sw = entities.byType('PowerSwitch').find((s) => s.gx === 3 && s.gy === 5)!;
     expect(sw.mode).toBe('toggle');
+  });
+});
+
+describe('maps/phase2-test', () => {
+  const { map, tileset, grid, entities } = load('phase2-test');
+
+  it('loads clean, with no warnings', () => {
+    expect(map.warnings).toEqual([]);
+    expect(entities.byType('PlayerSpawn')).toHaveLength(1);
+  });
+
+  it('gives the player capsule the shapes it has to survive (§3.1)', () => {
+    const colliders = buildColliders(map, tileset, () => 3);
+
+    // The pillar staircase: five single-tile boxes on a diagonal, each unmerged, which is
+    // the arrangement that catches a per-axis resolver.
+    const pillars = colliders.filter((c) => c.gx0 === c.gx1 && c.gy0 === c.gy1);
+    expect(pillars.length).toBeGreaterThanOrEqual(5);
+
+    // A fence run at a different tile id to the brick, so the merge cannot swallow it.
+    const fence = colliders.filter((c) => c.gy0 === 13 && c.gy1 === 13);
+    expect(fence.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('has a hole in the floor for the player to be stopped by (§2, §3.1)', () => {
+    const gaps = buildFloorGapColliders(map, tileset);
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0]!.kind).toBe('gap');
+    expect(grid.isWalkable(gaps[0]!.gx0, gaps[0]!.gy0)).toBe(false);
+  });
+
+  it('keeps its doorways passable, so the map is one connected space', () => {
+    // The two dividers each carry exactly one gap; without them the west room is a box.
+    for (const x of [8, 16]) {
+      const openings = [];
+      for (let y = 1; y < map.height - 1; y += 1) if (grid.isWalkable(x, y)) openings.push(y);
+      expect(openings).toHaveLength(1);
+    }
+  });
+
+  it('puts walkable floor against every map edge, so every camera clamp is reachable', () => {
+    expect(grid.isWalkable(1, 1)).toBe(true);
+    expect(grid.isWalkable(map.width - 2, 1)).toBe(true);
+    expect(grid.isWalkable(1, map.height - 2)).toBe(true);
+    expect(grid.isWalkable(map.width - 2, map.height - 2)).toBe(true);
   });
 });

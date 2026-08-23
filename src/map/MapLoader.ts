@@ -8,7 +8,7 @@
 
 import * as THREE from 'three';
 import { AssetLoader } from '../core/AssetLoader';
-import { buildColliders } from './colliders';
+import { buildColliders, buildFloorGapColliders } from './colliders';
 import { EntityRegistry } from './EntityRegistry';
 import { buildMapGeometry, type MapGeometry } from './MapGeometry';
 import { parseMap, parseTileset } from './validate';
@@ -21,6 +21,7 @@ export interface LoadedMap {
   data: GameMap;
   tileset: Tileset;
   geometry: MapGeometry;
+  /** Everything that blocks movement: Layer 1 obstacles and Layer 0 holes (§3.1). */
   colliders: readonly BoxCollider[];
   grid: WalkabilityGrid;
   entities: EntityRegistry;
@@ -56,8 +57,13 @@ export async function loadMap(directory: string, loader: AssetLoader): Promise<L
 
   const geometry = await buildMapGeometry(data, tileset, loader);
   // Colliders take their height from the prefab that was actually instanced, so a debug
-  // box always matches the geometry the player will hit.
-  const colliders = buildColliders(data, tileset, (id) => geometry.tileHeights.get(id) ?? 3);
+  // box always matches the geometry the player will hit. Holes in the floor get barriers
+  // of their own (§2, §3.1): they are unwalkable, and what is unwalkable for pathfinding
+  // has to stop the player too, or the player can cross ground no enemy can follow onto.
+  const colliders = [
+    ...buildColliders(data, tileset, (id) => geometry.tileHeights.get(id) ?? 3),
+    ...buildFloorGapColliders(data, tileset),
+  ];
   const grid = new WalkabilityGrid(data, tileset);
   const entities = new EntityRegistry(data.entities);
 

@@ -171,8 +171,16 @@ export interface GameMap {
   warnings: string[];
 }
 
-/** Axis-aligned box collider generated from Layer 1 (§2, §3.1). */
+/**
+ * What a collider is standing in for. Both block movement identically; they are
+ * distinguished so the debug overlay can draw them apart and so a later phase can treat
+ * them differently if it ever needs to (a gap is a hole, not a surface to hug).
+ */
+export type ColliderKind = 'obstacle' | 'gap';
+
+/** Axis-aligned box collider generated from Layer 1, or from a hole in Layer 0 (§2, §3.1). */
 export interface BoxCollider {
+  kind: ColliderKind;
   /** Centre in world space. */
   cx: number;
   cz: number;

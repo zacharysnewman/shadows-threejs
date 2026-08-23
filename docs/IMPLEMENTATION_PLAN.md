@@ -20,6 +20,28 @@ constraints drive it:
 Phases 1–6 are strictly sequential. Phases 7 and 8 are independent of each other and can be
 parallelised. Phase 9 depends on 6 but not on the enemies.
 
+## Progress
+
+Where a phase is done, its section carries a **Status** note saying what landed, what was
+deliberately left to a later phase, and what it forced back into the spec. A phase is only
+"done" when its exit criteria are demonstrable — the notes say how, so the claim can be
+re-checked rather than taken on trust.
+
+| Phase | Status |
+| --- | --- |
+| 0 — Scaffold | **Done** |
+| 1 — Map Pipeline | **Done** |
+| 2 — Player Controller & Camera | **Done** |
+| 3 — Lighting Core & Flashlight | Not started |
+| 4 — Audio Core | Not started |
+| 5 — Navigation & Enemy Base | Not started |
+| 6 — Illumination Detection Service | Not started |
+| 7 — Spider AI | Not started |
+| 8 — Shadow Monster | Not started |
+| 9 — Interactables, Power & Objectives | Not started |
+| 10 — Run Lifecycle | Not started |
+| 11 — Content & Tuning | Not started |
+
 ## Phase 0 — Scaffold
 
 Vite + TypeScript project, Three.js render loop with the fixed-timestep simulation clock
@@ -28,6 +50,11 @@ loader for `.glb` prefabs.
 
 **Exit:** an empty lit scene renders at target frame rate; the sim clock is independently
 steppable and pauseable, since every later phase's timers depend on it.
+
+**Status: done.** `src/core/` — `SimClock` (fixed 60 Hz, pauseable, steppable, time-scaled,
+with a render interpolation `alpha`), `Viewport` (renderer, pitched camera, resize, shadow
+settings from §7) and the placeholder `AssetLoader`; `src/debug/DebugOverlay` carries the
+readout every later phase hangs rows off. Covered by `tests/simclock.test.ts`.
 
 ## Phase 1 — Map Pipeline
 
@@ -40,6 +67,12 @@ not yet spawned beyond placeholder markers.
 queryable and visualisable as a debug overlay; an unknown entity type logs and skips
 without throwing.
 
+**Status: done.** `src/map/` — validator, prefab instancing, greedy collider merge,
+walkability grid with runtime overrides, typed entity registry. `maps/phase1-test` is the
+deliberately broken map that exercises every skip-and-warn path, asserted in
+`tests/example-maps.test.ts`. Prefabs are still placeholder boxes: no `.glb` art exists
+yet, and the loader falls back by name prefix.
+
 ## Phase 2 — Player Controller & Camera
 
 Movement, capsule collision against Phase 1 colliders, and the camera rig (§3.1–3.2),
@@ -51,6 +84,39 @@ implementation is the expensive version of this.
 **Exit:** the player traverses the example map, slides along walls without catching, the
 camera tracks smoothly and clamps at map bounds, and debug damage produces the correct
 regeneration delay and refill curve.
+
+**Status: done.**
+
+*Landed.* `src/core/Input.ts` — one snapshot of movement, aim and actions fed by keyboard
+and mouse, gamepad, and touch (floating twin sticks plus an on-screen action button), all
+three wired from the start rather than retrofitted. `src/player/` — `collision.ts`
+(tile-bucketed broad phase and circle-versus-box resolution along contact normals),
+`Player.ts` (movement smoothing, aim, render interpolation off the sim clock's `alpha`),
+`Health.ts` (§3.4's pool, delay and refill) and `CameraRig.ts` (frustum ground footprint,
+bounds clamp, critically damped follow). `maps/phase2-test` is the purpose-built map for
+this phase: pillar staircase, doorways, a fence run, a pit, a dead-end alcove, and walkable
+floor against all four edges so every camera clamp is reachable. Debug harness gained `V`
+(free camera, now off by default), `K` (one spider's damage) and `J` (heal), plus player,
+aim, health and camera readouts. Tests: `collision`, `player`, `health`, `camera`, `input`,
+and phase2-test fixture assertions — 104 in total.
+
+*Left to later phases.* Interaction (§3.3) waits for Phase 9, which owns the things there
+are to interact with; the input layer already carries the `interact` action so nothing has
+to be re-plumbed. Health reaching zero logs and stops there — death resolution, the
+jump-scare and the damage feedback effects are Phase 10.
+
+*Sent back to the spec.* Four gaps this phase turned up, all now written into
+`GAME_SPEC.md` rather than decided in code: the capsule's height (§3.1); that a hole in
+Layer 0 stops the player rather than only stopping pathfinding, and that the map edge does
+too (§3.1); the rotation convention — degrees clockwise from north, `-Z` — that a spawn
+facing is expressed in (§2); and what the camera clamp does when its two rules conflict,
+which near a boundary they always do (§3.2). The last is the one worth reading: keeping the
+player in frame beats hiding off-map void, so the clamp gives way rather than parking the
+player at the screen edge.
+
+*Known, unsolved.* At a 70°–75° pitch, a full-height wall standing between the camera and
+the player hides the player — visible on the example map today with placeholder 3 m walls.
+Recorded in §3.2 as a requirement on the art pass rather than papered over here.
 
 ## Phase 3 — Lighting Core & Flashlight
 

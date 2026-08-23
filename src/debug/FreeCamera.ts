@@ -3,8 +3,11 @@
  *
  * Keeps the spec's fixed pitch and no-yaw rule (§3.2) and only moves the point the rig
  * looks at, so what the debug camera shows is what the real camera will show — just from
- * further out or somewhere else on the map. Phase 2 hands control back to the player rig
- * and this becomes a toggle.
+ * further out or somewhere else on the map.
+ *
+ * From Phase 2 on it is off by default and shares its keys with the player: the player rig
+ * owns the camera, and enabling this takes it away — including `WASD`, which is why the
+ * caller stops feeding movement to the player while it is enabled.
  */
 
 import * as THREE from 'three';
@@ -20,11 +23,15 @@ export class FreeCamera {
   target = new THREE.Vector2();
   distance: number = CAMERA.distance;
 
+  /** Off by default from Phase 2 on: the player rig drives the camera unless asked. */
+  enabled = false;
+
   private readonly held = new Set<string>();
   private readonly onKeyDown = (event: KeyboardEvent) => this.held.add(event.code);
   private readonly onKeyUp = (event: KeyboardEvent) => this.held.delete(event.code);
   private readonly onBlur = () => this.held.clear();
   private readonly onWheel = (event: WheelEvent) => {
+    if (!this.enabled) return;
     event.preventDefault();
     this.distance = THREE.MathUtils.clamp(
       this.distance * (event.deltaY > 0 ? ZOOM_STEP : 1 / ZOOM_STEP),
@@ -56,6 +63,8 @@ export class FreeCamera {
    * keep working while the simulation is paused or stepped.
    */
   update(realDeltaSeconds: number): void {
+    if (!this.enabled) return;
+
     let dx = 0;
     let dz = 0;
     if (this.held.has('KeyA') || this.held.has('ArrowLeft')) dx -= 1;
