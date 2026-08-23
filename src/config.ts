@@ -253,3 +253,54 @@ export const AUDIO = {
     rolloffFactor: 1.0,
   },
 } as const;
+
+/**
+ * §5 — enemies. The speeds are the spec's table; the rest are the values §5 needed and did
+ * not have, now written into the spec beside them.
+ */
+export const ENEMY = {
+  /** §5 — how often a pursuing enemy recomputes its path. */
+  repathSeconds: 0.5,
+  /** §5.3 — contact threshold, measured centre to centre against the player's capsule. */
+  contactDistance: 1.0,
+  /** Velocity smoothing, as for the player (§3.1) — enemies should not snap to speed. */
+  accelerationTime: 0.18,
+  /**
+   * How hard enemies push out of each other (§1, §5: "simple local avoidance"). Steering,
+   * not physics: it nudges the direction of travel, and the collider resolution behind it
+   * is what actually stops anything overlapping.
+   */
+  avoidanceStrength: 1.6,
+  /** Wander leg length, in tiles, and the pause between legs (§5). */
+  wanderRadiusTiles: 8,
+  wanderPauseSeconds: { min: 0.6, max: 2.4 },
+  /** Distance from a waypoint at which it counts as reached, in metres. */
+  waypointRadius: 0.45,
+
+  spider: {
+    /** Dog-sized (§5.1). */
+    radius: 0.5,
+    height: 0.7,
+    wanderSpeed: 1.2,
+    pursueSpeed: 2.4,
+    fleeSpeed: 3.6,
+    /** §5 — acquires the player inside this range, whether or not it can see them. */
+    detectRadius: 16,
+    /**
+     * §5 — gives up beyond this. Wider than `detectRadius` so acquisition cannot flicker,
+     * and wide enough that ducking behind a building does not end a chase: the straight-line
+     * distance stays inside it while the route around goes much further.
+     */
+    loseRadius: 26,
+  },
+
+  shadowMonster: {
+    radius: 0.55,
+    height: 2.2,
+    wanderSpeed: 1.4,
+    pursueSpeed: 1.8,
+    /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
+    detectRadius: Number.POSITIVE_INFINITY,
+    loseRadius: Number.POSITIVE_INFINITY,
+  },
+} as const;

@@ -358,6 +358,36 @@ Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
 Neither enemy outruns the player at a sprint they do not have: the spider is faster only
 while fleeing, and the Shadow Monster is always slower, so it threatens by never stopping
 and by taking routes the player cannot.
+
+**Bodies.** The spider is a 0.5 m radius circle on the X/Z plane, the Shadow Monster 0.55 m,
+resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
+spiders steer around each other with the local avoidance above, and the Shadow Monster
+ignores other entity colliders entirely — it walks through its own kind and through the
+spiders, which is part of taking routes the player cannot.
+
+**Acquiring the player.** Pursuit is decided by proximity, not by sight:
+
+| | Acquires within | Gives up beyond |
+| --- | --- | --- |
+| Spider | 16 m | 26 m |
+| Shadow Monster | always | never |
+
+The two radii differ so that a player at the edge of a spider's range cannot make it
+flicker between hunting and wandering. Sight is not part of acquiring — an enemy that had
+to see the player first could never begin a chase around a corner, and on a map of
+buildings that is most of what a chase is. What line of sight decides is only *how* an
+enemy comes: with a clear line it walks straight at the player, and without one it paths
+(§1) and repaths on the interval above. The Shadow Monster always knows where the player
+is; that is the whole of its threat, and it is why it is the slower of the two.
+
+**Wandering.** With no one to chase, an enemy picks a walkable point within about 8 tiles,
+walks to it, and pauses 0.6–2.4 s before choosing another. An enemy that cannot find a
+route — to a wander target or to the player — wanders rather than standing still or
+pressing into the wall between them.
+
+The radii and the wander numbers are first values, not tuned ones: they are exactly the
+kind of thing the tuning pass (§1, content) is expected to move once the game is playable.
+
 ### 5.1 Enemy 1: Giant Spider (Dog-Sized)
 
 - **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark

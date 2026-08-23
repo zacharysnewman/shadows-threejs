@@ -29,6 +29,11 @@ npm test           # unit tests
 - `/?map=phase3-test` — a map for the lighting: a field of free-standing props to throw
   beam shadows from, seven lamps in three groups (more than the two that may cast shadows
   at once), and a corridor no lamp reaches
+- `/?map=phase5-test` — a map for navigation: a central block with a route round either
+  side, a wall with one doorway to shut mid-chase, and a dead end
+
+`?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
+logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
 
 The `scripts/gen-*-map.mjs` generators regenerate those maps' layer data.
 
@@ -76,6 +81,9 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `L` | power every light group — Phase 9 replaces this with the switches |
 | `O` | occluder fade (geometry between the camera and the player) |
 | `Z` | orbit a test emitter off-screen — audio only, nothing to see |
+| `N` | enemy paths, coloured by state |
+| `X` | block/unblock the hovered tile — walkability only, the way a gate does |
+| `Y` | switch the enemies off |
 | `K` | debug damage: one spider contact's worth (0.34) |
 | `J` | heal to full |
 | `G` | walkability overlay (green walkable, red blocked) |
@@ -95,7 +103,7 @@ Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–4 are implemented:
+Phases 0–5 are implemented:
 
 - **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
 - **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
@@ -117,8 +125,13 @@ Phases 0–4 are implemented:
   §4.3's two distance models are in place, and the `AudioContext` waits for a gesture.
   Sounds are synthesised placeholders until real files exist.
 
-Not yet built: enemies (Phases 5, 7, 8), interaction and objectives (Phase 9), and the run
-lifecycle (Phase 10) — health reaching zero currently logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
+- **Phase 5** — navigation and the enemy base: grid A\* with line-of-sight straightening,
+  the state machine both AIs are built on, §5's movement speeds, local avoidance, spawning
+  from map entities, and the shared contact check. No light reactions yet.
+
+Not yet built: the light reactions that make each enemy itself (Phases 7 and 8), interaction
+and objectives (Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently
+logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
 Prefab `.glb` assets do not exist yet, so the asset loader stands in coloured placeholder
 boxes sized by prefab name prefix.
 
@@ -134,6 +147,8 @@ src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
 src/lighting/     flashlight, battery, environmental lights, night ambient
 src/audio/        listener, source pool, distance profiles, sound bank
+src/nav/          grid A*, line of sight
+src/enemies/      shared enemy, state machine, spawning, contact check
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map
 scripts/          map generators for the checked-in maps

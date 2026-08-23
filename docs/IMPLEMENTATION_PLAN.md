@@ -34,7 +34,7 @@ re-checked rather than taken on trust.
 | 2 — Player Controller & Camera | **Done** |
 | 3 — Lighting Core & Flashlight | **Done** |
 | 4 — Audio Core | **Done** |
-| 5 — Navigation & Enemy Base | Not started |
+| 5 — Navigation & Enemy Base | **Done** |
 | 6 — Illumination Detection Service | Not started |
 | 7 — Spider AI | Not started |
 | 8 — Shadow Monster | Not started |
@@ -154,6 +154,12 @@ exit criterion needs a real GPU and is outstanding.
 in it (§4); the beam's mounting, its derived declination, and the input that toggles it
 (§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
 
+*Revised after Phase 5.* The ambient this phase chose was near-black, and that turned out to
+be a design mistake rather than a tuning one: with only the beam visible, a spider and the
+Shadow Monster are the same shape inside a cone, and §5.2's entire design goes unseen. §4 now
+calls for a dim ambient plus fog — dark, not blacked out, with distance rather than darkness
+doing the hiding. The values live in `AMBIENT` and `FOG`.
+
 *Solved rather than deferred.* Phase 2 recorded camera-side occluders as a problem for the
 art pass. Turning the lights out promoted it: an unlit occluder is not a wall the player
 can see over, it is a black rectangle covering the player and their beam, and on the
@@ -224,6 +230,47 @@ resolves its own way in Phases 7 and 8. No light reactions yet.
 
 **Exit:** a placeholder enemy pursues the player around obstacles, repaths when the player
 breaks line of sight, and the grid rebuild on a walkability change is picked up mid-path.
+
+**Status: done.**
+
+*Landed.* `src/nav/AStar.ts` — eight-connected A\* on a binary heap, refusing the diagonal
+between two wall corners, with a line-of-sight test that both pulls paths straight and tells
+an enemy whether it can walk at the player instead of pathing to them. `src/enemies/` —
+the shared `Enemy` (state machine, §5's speeds, repath interval, local avoidance, collision
+against the same colliders the player uses) and `EnemyManager` (spawning from map entities,
+and the shared contact check). `src/core/rng.ts` gives the per-run seed the cross-cutting
+notes asked for, with a named sub-stream per system so one system's draws cannot re-roll
+another's; `?seed=` replays a run. `maps/phase5-test` is the map for this phase, `N` draws
+enemy paths coloured by state, `X` flips the hovered tile's walkability the way a gate
+would, and `Y` switches the enemies off.
+
+*Verified.* Driven in a browser on `phase5-test`, through the debug handle:
+
+| Criterion | What was watched |
+| --- | --- |
+| Pursues around obstacles | Spiders acquired the player beside a 16 m block, the player ducked round it, and the nearest spider came round to their side — x 42 → 21.6, arriving 10.9 m away. |
+| Repaths when line of sight breaks | With the block between them, pursuing spiders held `pursue` and carried a three-waypoint route instead of a straight line; on regaining sight the route emptied again. |
+| Grid rebuild picked up mid-path | Shutting the tile a spider was walking to — a gate closing in its face — changed its route from `19,16 10,16 9,11` to `20,17 18,17 10,16 9,11` within 0.7 s, without waiting for the repath timer. |
+
+The contact check also fired at 0.97 m and 0.99 m, against §5.3's 1.0 m threshold, logging
+that resolution belongs to Phases 7 and 8.
+
+*Sent back to the spec.* §5 said what enemies do and never said when they start: acquisition
+radii (16 m for the spider, 26 m to give up, always for the Shadow Monster) and the reasoning
+for deciding it by proximity rather than by sight — an enemy that has to see you first can
+never begin a chase around a corner. Also the collision radii the bodies needed, the wander
+rule, and what an enemy does when no route exists. The first radii were narrower; widening
+them came out of watching a chase die the moment the player stepped behind a building.
+
+*A spec-fidelity bug the tests caught.* §5.1's "velocity drops to `0`" is literal. The first
+implementation let a frozen enemy's velocity decay through the usual smoothing, which
+carried a pursuing spider 0.41 m further into the player after the beam had already caught
+it. `frozen` and `recoil` now zero the velocity outright.
+
+*Left to later phases.* No light reactions: the states are declared and their movement rules
+implemented, but nothing enters `flee` or `frozen` until Phases 7 and 8, which also own what
+a contact *means*. Enemies make no sound yet — `chitter` and `footstep_heavy` are in the
+bank and the emitters they need exist (§4.3).
 
 ## Phase 6 — Illumination Detection Service
 

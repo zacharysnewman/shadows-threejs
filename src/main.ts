@@ -1,7 +1,12 @@
 /**
  * Entry point.
  *
- * Phase 4 adds ears. Phase 3 turned the lights out; The map the Phase 1 pipeline builds and the player Phase 2
+ * Phase 5 puts enemies on the map: A\* over the walkability grid, the state machine both
+ * AIs are built on, and the shared contact check (§5). They pursue and they wander; they do
+ * not yet react to light, which is the whole of what makes each of them itself (Phases 7
+ * and 8).
+ *
+ * Phase 4 added ears. Phase 3 turned the lights out; The map the Phase 1 pipeline builds and the player Phase 2
  * drives are now lit only by the flashlight bound to the player's aim and by environmental
  * lights whose groups have been powered (§4) — the debug harness stands in for the switches
  * that arrive in Phase 9, and hands the player the flashlight the pick-up will hand them.
@@ -20,9 +25,11 @@
 import * as THREE from 'three';
 import { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
+import { EnemyManager } from './enemies/EnemyManager';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
 import { OccluderFade } from './core/OccluderFade';
+import { Rng } from './core/rng';
 import { SimClock } from './core/SimClock';
 import { Viewport } from './core/Viewport';
 import { ColliderOverlay } from './debug/ColliderOverlay';
@@ -30,6 +37,7 @@ import { DebugOverlay } from './debug/DebugOverlay';
 import { EntityMarkers } from './debug/EntityMarkers';
 import { FreeCamera } from './debug/FreeCamera';
 import { AudioTestEmitter } from './debug/AudioTestEmitter';
+import { PathOverlay } from './debug/PathOverlay';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
 import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
@@ -51,6 +59,15 @@ function selectedMap(): string {
   // subpath on GitHub Pages, and a relative URL would resolve against whatever path the
   // page happens to be on.
   return `${import.meta.env.BASE_URL}maps/${safe}/`;
+}
+
+/**
+ * The run's seed (Cross-Cutting: determinism). `?seed=<word or number>` replays a run's
+ * randomised values — wander targets now, deterrence timers and flicker later (§5.1, §5.2).
+ * Without one a seed is picked and reported, so a run that goes wrong can be repeated.
+ */
+function selectedSeed(): Rng {
+  return Rng.from(new URLSearchParams(window.location.search).get('seed'));
 }
 
 function showFatal(message: string): void {
@@ -78,6 +95,7 @@ async function main(): Promise<void> {
   const assets = new AssetLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
+  const rng = selectedSeed();
   const audio = new AudioCore(viewport.scene);
   // §4.3 — the context starts suspended until the player touches something.
   audio.armGesture();
@@ -125,6 +143,25 @@ async function main(): Promise<void> {
   const environment = new EnvironmentLights(loaded.entities.byType('EnvironmentLight'));
   viewport.scene.add(environment.root);
 
+  // §5 — enemies spawn from the map's entities, on the grid the Phase 1 pipeline derived.
+  const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
+  viewport.scene.add(enemies.root);
+
+  const paths = new PathOverlay(enemies, loaded.grid);
+  viewport.scene.add(paths.object);
+
+  // §5.3 — the check reports contact; each AI resolves it its own way in Phases 7 and 8.
+  // Until they exist, the first touch from each enemy is logged and nothing happens.
+  const contacted = new Set<string>();
+  enemies.onContact((enemy, distance) => {
+    if (contacted.has(enemy.key)) return;
+    contacted.add(enemy.key);
+    console.info(
+      `[contact] ${enemy.profile.kind} ${enemy.key} at ${distance.toFixed(2)}m — ` +
+        `resolution is Phase ${enemy.profile.kind === 'SpiderEnemy' ? '7' : '8'}'s (§5.3)`,
+    );
+  });
+
   await audioReady;
   const footsteps = new FootstepCadence();
   const testEmitter = new AudioTestEmitter(audio);
@@ -151,6 +188,7 @@ async function main(): Promise<void> {
       audio.playAt('footstep_light', player.position.x, player.position.y);
     }
 
+    enemies.tick(dt, player.position.x, player.position.y);
     testEmitter.tick(dt, player.position.x, player.position.y);
   });
 
@@ -200,6 +238,22 @@ async function main(): Promise<void> {
         : `regen in ${health.regenDelayRemaining.toFixed(1)}s`;
     return `${health.value.toFixed(2)} · ${state}${health.critical ? ' · CRITICAL' : ''}`;
   });
+  overlay.addRow('enemies', () =>
+    enemies.count === 0
+      ? 'none on this map'
+      : `${enemies.count} · ${enemies.countsByState()}${enemies.enabled ? '' : ' · DISABLED'}`,
+  );
+  overlay.addRow('nearest', () => {
+    const nearest = enemies.enemies
+      .map((enemy) => ({ enemy, distance: enemy.distanceTo(player.position.x, player.position.y) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!nearest) return '—';
+    return (
+      `${nearest.enemy.profile.kind} ${nearest.distance.toFixed(1)}m · ${nearest.enemy.state}` +
+      ` · ${nearest.enemy.speed.toFixed(1)} m/s · ${nearest.enemy.waypoints.length} waypoints`
+    );
+  });
+  overlay.addRow('seed', () => `${rng.seed}`);
   overlay.addRow('torch', () => {
     const { battery } = flashlight;
     const charge = `${(battery.charge * 100).toFixed(0)}%`;
@@ -237,6 +291,7 @@ async function main(): Promise<void> {
   const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   const hit = new THREE.Vector3();
   let hovered = '—';
+  let hoveredTile: { gx: number; gy: number } | null = null;
   viewport.renderer.domElement.addEventListener('pointermove', (event) => {
     pointer.set(
       (event.clientX / window.innerWidth) * 2 - 1,
@@ -245,10 +300,13 @@ async function main(): Promise<void> {
     raycaster.setFromCamera(pointer, viewport.camera);
     if (!raycaster.ray.intersectPlane(groundPlane, hit)) {
       hovered = '—';
+      hoveredTile = null;
       return;
     }
     const { gx, gy } = loaded.grid.worldToGrid(hit.x, hit.z);
-    hovered = loaded.grid.inBounds(gx, gy)
+    const inside = loaded.grid.inBounds(gx, gy);
+    hoveredTile = inside ? { gx, gy } : null;
+    hovered = inside
       ? `(${gx}, ${gy}) ${loaded.grid.isWalkable(gx, gy) ? 'walkable' : 'blocked'}`
       : 'off-map';
   });
@@ -276,6 +334,9 @@ async function main(): Promise<void> {
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
   overlay.addBinding('O', 'occluder fade');
   overlay.addBinding('Z', 'orbit a test emitter off-screen (audio)');
+  overlay.addBinding('N', 'enemy paths');
+  overlay.addBinding('X', 'block/unblock the hovered tile (walkability only)');
+  overlay.addBinding('Y', 'disable the enemies');
   overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
   overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
@@ -302,6 +363,23 @@ async function main(): Promise<void> {
           rig.snapTo(player.position.x, player.position.y);
         }
         break;
+      case 'KeyN':
+        paths.toggle();
+        break;
+      case 'KeyY':
+        enemies.enabled = !enemies.enabled;
+        break;
+      case 'KeyX': {
+        // Flips walkability under the cursor without touching geometry, which is what a
+        // gate does when it opens (§6) — and the cheapest way to watch enemies pick up a
+        // grid rebuild mid-path (§2).
+        if (!hoveredTile) break;
+        const { gx, gy } = hoveredTile;
+        const blocked = !loaded.grid.isWalkable(gx, gy);
+        loaded.grid.setOverride(gx, gy, blocked ? null : false);
+        console.info(`[grid] (${gx}, ${gy}) ${blocked ? 'restored' : 'blocked'} · v${loaded.grid.version}`);
+        break;
+      }
       case 'KeyZ':
         testEmitter.toggle(player.position.x, player.position.y);
         break;
@@ -378,6 +456,8 @@ async function main(): Promise<void> {
     audio,
     testEmitter,
     occluders,
+    enemies,
+    rng,
   };
 
   // --- Render loop --------------------------------------------------------
@@ -395,6 +475,8 @@ async function main(): Promise<void> {
     clock.advance(realDelta);
 
     player.render(clock.alpha);
+    enemies.render(clock.alpha);
+    paths.update();
     // Bound to the interpolated position, not the tick position: a beam that stepped at
     // 60 Hz while the player moved smoothly would visibly swim around them.
     flashlight.update(
@@ -434,6 +516,7 @@ async function main(): Promise<void> {
   };
   requestAnimationFrame(frame);
 
+  console.info(`[run] seed ${rng.seed} — replay with ?seed=${rng.seed}`);
   console.info(
     `[map] loaded ${directory}: ${loaded.data.width}×${loaded.data.height}, ` +
       `${loaded.entities.count} entities, ${loaded.colliders.length} colliders, ` +
