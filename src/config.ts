@@ -192,9 +192,34 @@ export const ENVIRONMENT_LIGHT = {
  * read as silhouettes.
  */
 export const AMBIENT = {
-  skyColor: 0x223044,
-  groundColor: 0x0a0c10,
-  intensity: 0.25,
+  skyColor: 0x2b3b54,
+  groundColor: 0x10141c,
+  /**
+   * In Three's hemisphere-light units, which are not the spotlights' candela — this was
+   * picked by looking at the scene, not by arithmetic.
+   *
+   * Bright enough to read a silhouette at mid-range, dim enough that identifying it, or
+   * reading the floor for a route, still needs the beam (§4). That ceiling is what the
+   * flashlight's value as a mechanic rests on: at roughly half again this value the tile
+   * seams come up and the floor becomes readable without light; back near zero and both
+   * enemies collapse into the same shape inside a cone.
+   */
+  intensity: 14,
+} as const;
+
+/**
+ * §4, §7 — the fog that makes *distance* the thing which hides the map, rather than
+ * darkness. Exponential-squared, coloured to the sky so the world fades into the
+ * background rather than towards a different colour.
+ */
+export const FOG = {
+  color: 0x0a0f18,
+  /**
+   * Chosen against the camera's ground footprint (§3.2): visibility holds across the ~20 m
+   * the player is acting in and is most of the way gone by the far edge, so the view ends
+   * in gloom instead of at the edge of the geometry.
+   */
+  density: 0.035,
 } as const;
 
 /**

@@ -27,6 +27,12 @@ The game takes place on a single, continuous map. Level maps are created on a 2D
 grid. Grid coordinates `(x, y)` map directly to 3D world space as
 `(x · tileSize, 0, y · tileSize)`.
 
+The maps checked into the repository are **prototypes, not the level**: one full-size
+example that exercises the pipeline, and a small purpose-built map per phase. The level
+itself is authored in the editor tooling during the content pass (§1). Nothing in a system's
+design should be shaped by what the prototype maps happen to contain — they exist to build
+systems against, and they will be replaced.
+
 ### Map Layers Structure
 
 1. **Layer 0 — Terrain/Floor:** dirt, concrete, grass, pathing tiles.
@@ -214,17 +220,32 @@ Health never mitigates it, so no amount of regeneration makes standing near it v
 Lighting is the primary mechanics driver, paired tightly with spatial audio and battery
 management.
 
-**The dark is not pure black.** Unlit ground carries a dim ambient: enough that walls and
-floor read as silhouettes, not enough to identify anything or to make the flashlight
-optional. At zero ambient an unlit room renders as a blank screen rather than as a dark
-one, and the Shadow Monster (§5.2) is trackable only as a shadow cast onto ground that has
-some light on it.
+**It is dark, not blacked out.** The map carries a dim ambient — enough that ground, walls
+and anything standing on them read as silhouettes near and mid-range. What hides things is
+*distance*: fog fades the scene out towards the edge of the camera's footprint (§3.2), so
+the world ends in gloom rather than at a hard black line.
+
+This is a mechanics decision, not an art one. If the only visible thing is whatever the beam
+is pointed at, both enemies look the same — a shape inside a cone — and the Shadow Monster's
+entire design (§5.2) is spent on a distinction the player never sees. With ambient gloom the
+two read differently at range:
+
+- **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
+  at range it is a silhouette crossing the gloom.
+- **The Shadow Monster is not there at all.** Near-invisible (§5.2) means near-invisible in
+  the gloom too. Its tells stay the ones §5 gives it: the hard shadow it throws when
+  something lights it, footsteps that carry further than anything else on the map (§4.3),
+  and the lamp it makes flicker from across the level (§4.2).
+
+The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
+mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
+route, and a note, a switch or a pick-up cannot be found without light on it. The beam is
+for knowing what something is; the ambient is only for knowing that something is there.
 
 **The player's own silhouette stays readable.** The character is legible in the dark as a
-dim shape. This is a rendering allowance, not a light source — it illuminates nothing,
-lights no surface, and no light-reactive enemy responds to it. A player who cannot see
-which of the shapes on screen is theirs is not playing a dark game, they are playing a
-broken one.
+dim shape. This is a rendering allowance, not a light source — it illuminates nothing, lights
+no surface, and no light-reactive enemy responds to it. A player who cannot see which of the
+shapes on screen is theirs is not playing a dark game, they are playing a broken one.
 
 ### 4.1 Flashlight Mechanics & Battery
 
@@ -337,7 +358,6 @@ Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
 Neither enemy outruns the player at a sprint they do not have: the spider is faster only
 while fleeing, and the Shadow Monster is always slower, so it threatens by never stopping
 and by taking routes the player cannot.
-
 ### 5.1 Enemy 1: Giant Spider (Dog-Sized)
 
 - **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
@@ -468,6 +488,10 @@ constraint and not a polish-phase concern.
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black
   (§4) — exactly the range that clips. Without a tone curve the middle of a light pool goes
   flat white and takes the detail with it, including the shadows the game is played by.
+- Exponential fog, coloured to the sky, tuned so the far edge of the camera's ground
+  footprint (§3.2) is most of the way faded out. It is what makes distance rather than
+  darkness the thing that hides the map (§4), and it applies to lit geometry too: a lamp
+  pool on the far side of the view is a glow, not a readable place.
 - Static Layer 0/1 geometry is merged or instanced per prefab at load time — a 50×50 map is
   2,500 floor tiles and must not be 2,500 draw calls.
 - Simulation runs on a fixed 60 Hz timestep decoupled from rendering, so AI timers (§4.1,
