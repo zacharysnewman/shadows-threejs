@@ -101,11 +101,14 @@ export const PLAYER = {
   /** Sprint speed in m/s, held rather than toggled (§3.1). */
   sprintSpeed: 4.5,
   /**
-   * Time constant for turning the aim onto the direction of travel when a sprint starts
-   * (§3.1). Fast enough to read as committing to a direction, slow enough that it is a
-   * turn rather than a cut.
+   * Ceiling on how fast the beam swings, in degrees per second (§3.1) — a reversal takes a
+   * third of a second. A rate rather than a smoothing time constant because angular speed
+   * is what the player actually perceives, so it is the thing worth tuning.
+   *
+   * Applies to the turn onto the movement direction when a sprint starts and to the turn
+   * back onto the pointer when it ends. Ordinary aiming is direct.
    */
-  sprintAimTurnTime: 0.08,
+  aimTurnDegreesPerSecond: 540,
   /**
    * Movement intent below which a sprint does nothing. There is no sprinting in place, and
    * a barely-touched stick should not spend the aim lock (§3.1).
@@ -223,6 +226,21 @@ export const AMBIENT = {
 } as const;
 
 /**
+ * §4 — the moon: one dim directional light that gives the gloom a direction. It casts no
+ * shadow, deliberately: shadows exist only where a directed light does, which is what makes
+ * the Shadow Monster (§5.2) visible inside a beam and absent outside one.
+ */
+export const MOON = {
+  color: 0x9fb6d8,
+  /** Dim enough to identify nothing by; it contributes shape, not visibility. */
+  intensity: 0.55,
+  /** Direction the light comes from, as a world offset. Steep, like a high moon. */
+  direction: { x: -0.45, y: 1, z: -0.35 },
+  /** How far from the player it is placed. Only its direction matters; it casts nothing. */
+  distance: 40,
+} as const;
+
+/**
  * §4, §7 — the fog that makes *distance* the thing which hides the map, rather than
  * darkness. Exponential-squared, coloured to the sky so the world fades into the
  * background rather than towards a different colour.
@@ -318,4 +336,18 @@ export const ENEMY = {
     detectRadius: Number.POSITIVE_INFINITY,
     loseRadius: Number.POSITIVE_INFINITY,
   },
+} as const;
+
+/**
+ * §4.1 — the shared illumination query. Both AIs ask this and neither implements its own,
+ * so its budget is the budget for light detection on the whole map.
+ */
+export const ILLUMINATION = {
+  /** §4.1 — line-of-sight confirmations per second, per entity. */
+  raycastHz: 10,
+  /**
+   * Amount below which a source contributes nothing worth reporting. Not what decides
+   * *lit* — §4.1 makes that geometric — only a floor on the number reported beside it.
+   */
+  amountFloor: 0.01,
 } as const;

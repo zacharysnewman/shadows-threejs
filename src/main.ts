@@ -1,7 +1,12 @@
 /**
  * Entry point.
  *
- * Phase 5 puts enemies on the map: A\* over the walkability grid, the state machine both
+ * Phase 6 adds the one query both AIs will ask: *is this entity lit, and by how much*
+ * (§4.1). Nothing acts on the answer yet — the reactions are what make each enemy itself,
+ * and they are Phases 7 and 8 — but the readout reports it per entity, which is how the
+ * query is checked before anything depends on it.
+ *
+ * Phase 5 put enemies on the map: A\* over the walkability grid, the state machine both
  * AIs are built on, and the shared contact check (§5). They pursue and they wander; they do
  * not yet react to light, which is the whole of what makes each of them itself (Phases 7
  * and 8).
@@ -43,11 +48,12 @@ import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
 import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
+import { IlluminationService } from './lighting/Illumination';
 import { Flashlight } from './lighting/Flashlight';
 import { CameraRig } from './player/CameraRig';
 import { ColliderIndex } from './player/collision';
 import { Player } from './player/Player';
-import { FLASHLIGHT, HEALTH, PLAYER } from './config';
+import { FLASHLIGHT, HEALTH, ILLUMINATION, PLAYER } from './config';
 
 const DEFAULT_MAP = 'example';
 
@@ -100,7 +106,7 @@ async function main(): Promise<void> {
   // §4.3 — the context starts suspended until the player touches something.
   audio.armGesture();
 
-  addNightAmbient(viewport.scene);
+  const night = addNightAmbient(viewport.scene);
 
   // Sounds are decoded up front, alongside the map: one that has to be fetched when it is
   // needed arrives after the thing it was meant to announce.
@@ -147,6 +153,10 @@ async function main(): Promise<void> {
   const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
   viewport.scene.add(enemies.root);
 
+  // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
+  // that what blocks light is exactly what blocks walking.
+  const illumination = new IlluminationService(flashlight, environment, colliderIndex);
+
   const paths = new PathOverlay(enemies, loaded.grid);
   viewport.scene.add(paths.object);
 
@@ -189,6 +199,7 @@ async function main(): Promise<void> {
       audio.playAt('footstep_light', player.position.x, player.position.y);
     }
 
+    illumination.tick(dt);
     enemies.tick(dt, player.position.x, player.position.y);
     testEmitter.tick(dt, player.position.x, player.position.y);
   });
@@ -256,6 +267,22 @@ async function main(): Promise<void> {
       ` · ${nearest.enemy.speed.toFixed(1)} m/s · ${nearest.enemy.waypoints.length} waypoints`
     );
   });
+  // §4.1's exit criterion is this readout: lit/unlit per entity, and the raycast budget it
+  // costs. Sampled here rather than in the tick because reading it must not change it.
+  overlay.addRow('lit', () => {
+    if (enemies.count === 0) return 'no entities to light';
+    const parts = enemies.enemies.slice(0, 4).map((enemy) => {
+      const sample = illumination.sample(enemy.key, enemy.position.x, enemy.position.y);
+      const tag = enemy.profile.kind === 'SpiderEnemy' ? 'spider' : 'MONSTER';
+      if (!sample.lit) return `${tag}:dark`;
+      return `${tag}:${sample.source === 'flashlight' ? 'beam' : 'lamp'} ${(sample.amount * 100).toFixed(0)}%`;
+    });
+    return parts.join(' · ');
+  });
+  overlay.addRow('rays', () =>
+    `${illumination.raycastsPerSecond}/s across ${illumination.subjectCount} subject(s)` +
+    ` · budget ${ILLUMINATION.raycastHz}/s each`,
+  );
   overlay.addRow('seed', () => `${rng.seed}`);
   overlay.addRow('torch', () => {
     const { battery } = flashlight;
@@ -341,6 +368,7 @@ async function main(): Promise<void> {
   overlay.addBinding('N', 'enemy paths');
   overlay.addBinding('X', 'block/unblock the hovered tile (walkability only)');
   overlay.addBinding('Y', 'disable the enemies');
+  overlay.addBinding('I', 'draw the Shadow Monster\'s body (§5.2 says never)');
   overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
   overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
@@ -372,6 +400,11 @@ async function main(): Promise<void> {
         break;
       case 'KeyY':
         enemies.enabled = !enemies.enabled;
+        break;
+      case 'KeyI':
+        // §5.2 — the Shadow Monster's body is never drawn. This draws it anyway, because
+        // the harness cannot debug a thing by staring at where it is not.
+        console.info(`[debug] invisible bodies ${enemies.toggleRevealBodies() ? 'shown' : 'hidden'}`);
         break;
       case 'KeyX': {
         // Flips walkability under the cursor without touching geometry, which is what a
@@ -468,6 +501,7 @@ async function main(): Promise<void> {
       occluders,
       enemies,
       rng,
+      illumination,
     };
   }
 
@@ -496,6 +530,10 @@ async function main(): Promise<void> {
       player.aim.x,
       player.aim.y,
     );
+    // §7 — the moon's shadow camera is fitted to what is on screen, so it travels with the
+    // player rather than trying to cover the level.
+    night.follow(player.object.position.x, player.object.position.z);
+
     // The listener rides the player, not the camera (§4.3): every distance in the spec is
     // measured from where the player stands, and the camera is 14 m away from that.
     audio.update(player.object.position.x, player.object.position.z);

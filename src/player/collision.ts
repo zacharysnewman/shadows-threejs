@@ -86,6 +86,35 @@ export class ColliderIndex {
   }
 
   /**
+   * Every collider whose tiles intersect a world-space rectangle, without repeats. Used by
+   * the illumination raycast (§4.1), which tests a segment rather than a circle.
+   */
+  queryBox(
+    minX: number,
+    minZ: number,
+    maxX: number,
+    maxZ: number,
+    out: BoxCollider[] = [],
+  ): BoxCollider[] {
+    out.length = 0;
+    const gx0 = Math.max(0, Math.floor(minX / this.tileSize));
+    const gy0 = Math.max(0, Math.floor(minZ / this.tileSize));
+    const gx1 = Math.min(this.width - 1, Math.floor(maxX / this.tileSize));
+    const gy1 = Math.min(this.height - 1, Math.floor(maxZ / this.tileSize));
+
+    for (let gy = gy0; gy <= gy1; gy += 1) {
+      for (let gx = gx0; gx <= gx1; gx += 1) {
+        const bucket = this.buckets[gy * this.width + gx];
+        if (!bucket) continue;
+        for (const collider of bucket) {
+          if (!out.includes(collider)) out.push(collider);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
    * Hold a circle inside the tile grid. The map's outer edge stops the player whether or
    * not the author walled it: off-map tiles are unwalkable by definition (§2), and the
    * camera clamps to the same bounds (§3.2), so walking past them would put the player

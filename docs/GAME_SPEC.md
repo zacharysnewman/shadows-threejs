@@ -159,8 +159,16 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   run does not open with the character facing an arbitrary direction.
 - **Sprint** at 4.5 m/s while held, and **while sprinting the aim locks to the direction of
   travel**: the beam points where the player is going, and the pointer or aim stick is
-  ignored until they let go. Aim turns onto the movement direction quickly rather than
-  snapping, so a sprint reads as the character committing rather than as the camera cutting.
+  ignored until they let go.
+- Aim turns at a **maximum of 540°/s** — a reversal takes a third of a second — both onto
+  the movement direction when a sprint starts and back onto the pointer when it ends. A
+  bounded turn rate rather than a smoothed one, because what the player perceives is the
+  beam's angular speed, and it is the thing to tune. The turn back matters as much as the
+  turn out: releasing sprint with the cursor behind you would otherwise whip the beam 180°
+  in a single frame, which reads as a glitch rather than as looking back.
+- Ordinary aiming is **direct**: outside a sprint and its recovery turn, the beam is at the
+  cursor, with no lag between where the player points and where the light is. The rate
+  limit exists for the transition, not for aiming.
 - The lock is the whole cost of the sprint, and it is a steep one. Independent aim is what
   lets a player back away with the beam held on a threat (§3.1, first bullet); sprinting
   spends exactly that. A sprinting player cannot hold a spider deterred (§5.1) or a Shadow
@@ -242,10 +250,26 @@ two read differently at range:
 
 - **The spider is a shape you can see moving.** Fully visible in dark and light (§5.1), so
   at range it is a silhouette crossing the gloom.
-- **The Shadow Monster is not there at all.** Near-invisible (§5.2) means near-invisible in
-  the gloom too. Its tells stay the ones §5 gives it: the hard shadow it throws when
-  something lights it, footsteps that carry further than anything else on the map (§4.3),
-  and the lamp it makes flicker from across the level (§4.2).
+- **The Shadow Monster is nothing at all.** The ambient reveals ordinary things; it reveals
+  the monster not one bit. Its body is never drawn (§5.2) and the gloom casts no shadows, so
+  outside a light it has no presence of any kind — not a silhouette, not a shadow, nothing.
+  **It is visible only where a directed light falls on it**, as the hard shadow that light
+  throws, and it is nothing again the moment the light leaves.
+
+  That asymmetry only works because the map *is* lit enough to see ordinary things by. Where
+  nothing is visible outside the beam, an invisible monster is distinguishable from nothing —
+  everything is equally unseen. Against a gloom in which a spider is a shape crossing open
+  ground, a creature that never appears there at all is a different kind of thing. Its other
+  tells stay the ones §5 gives it: footsteps that carry further than anything else on the map
+  (§4.3), and the lamp it makes flicker from across the level (§4.2).
+
+**A moon for shape.** One dim directional light, steeply angled, gives the gloom a direction
+so an unlit yard reads as a place rather than as a flat grey wash. It casts no shadow.
+
+**Shadows exist only where a directed light does.** The flashlight casts and the
+environmental lamps cast; the ambient and the moon do not. A shadow on the ground is
+therefore information in itself — something is being lit — and it is what the Shadow Monster
+is built on (§5.2).
 
 The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
 mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
@@ -289,6 +313,37 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
     angle `θ ≤ spotlightAngle / 2`.
   - Raycasts to confirm line-of-sight are only performed at a fixed interval
     (e.g. every 100 ms / 10 Hz).
+
+#### The illumination query
+
+One service answers *is this entity lit, and by how much*, and **both AIs consume it;
+neither has its own**. A spider that decided it was lit on different terms than the Shadow
+Monster would be a bug nobody could see, only feel.
+
+- **Lit is geometric, not photometric.** An entity is lit when it is inside a light's reach
+  with a clear line to it: within the beam's range *and* half-angle for the flashlight
+  (above), or within a lamp's ground radius for an environmental light (§4.2). §5.1 says
+  the spider stuns "the instant the beam hits" it, so a dim beam still counts — brightness
+  never decides, only geometry. A beam that is off and a lamp that is unpowered light
+  nothing.
+- **The amount** is reported beside it: 0–1, the strongest single source's strength at that
+  point, falling off with distance and towards the edge of a cone, scaled by the beam's
+  battery falloff (§4.1) or the lamp's authored intensity (§4.2). Nothing in §5 keys off it
+  yet — it is there for tuning, for the HUD, and so that a later behaviour that *should*
+  care about strength has something honest to ask.
+- **Occlusion is shared with movement.** Light is blocked by the same obstacles that block
+  walking (§3.1), and by nothing else: a hole in the floor does not cast a shadow. The test
+  is a segment against those obstacles on the X/Z plane, which is an approximation — it
+  ignores height, so a beam that would pass over a low crate is treated as stopping at it.
+  It errs towards *shadowed*, which matches the shadow the player can see on the ground.
+- **The confirming raycast is throttled to the interval above and staggered across
+  entities**, so the cost is spread rather than landing on one tick. What is throttled is
+  the *repeat*: an entity entering a light's reach is confirmed on that same tick, because
+  §5.1 stuns "the instant the beam hits" and a tenth of a second is not an instant. Leaving
+  the cone is instant too — the geometry is re-tested every tick, and losing the light has
+  to be immediate or §5.2's freeze could be held with a beam no longer on the monster.
+  What can lag by up to one interval is the middle case: an entity that stays inside the
+  cone while a wall comes between them.
 
 ### 4.2 Environmental Lighting (Dynamic Sabotage)
 
@@ -407,6 +462,10 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 
 - **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
   and light. Emits chittering/scuttling spatial audio.
+- **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
+  driven by the spider's actual speed, so a wandering spider (1.2 m/s), a pursuing one
+  (2.4 m/s) and a fleeing one (3.6 m/s) all place their legs on the ground instead of
+  skating. The attack animation is authored *to* the strike time in §5.3 — see there.
 - **Base Behavior:** wanders, or uses A\* pathfinding to approach the player.
 - **Light Reaction Lifecycle:**
   1. **Instant Stun:** the instant the flashlight beam hits the spider's bounding box, its
@@ -424,8 +483,23 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 ### 5.2 Enemy 2: Shadow Monster
 
 - **Visual Representation:**
-  - **Material:** the mesh uses a custom material that is nearly invisible (e.g. a faint
-    visual distortion) but casts a stark, hard shadow onto the floor (`castShadow = true`).
+  - **Material: the body is never drawn.** Not faint, not a distortion, not a shimmer —
+    the mesh contributes nothing to the image at all. It exists in the scene solely to cast
+    a stark, hard shadow onto the floor (`castShadow = true`), and it casts under the
+    flashlight and the environmental lamps and under nothing else, because the ambient and
+    the moon throw no shadows (§4).
+    
+    So **the shadow is the creature**. Sweeping a beam across apparently empty ground and
+    finding a shadow lying in it is the only way to see the thing, and the moment the light
+    leaves it there is nothing there again. A faint visible body would be strictly worse: it
+    would give the player a second, easier way to find the monster, and the whole design is
+    that there is only the one hard way.
+  - **Animation: none.** A single pose is enough, because the monster is never both moving
+    and visible. It is invisible unless a light is on it, and a light on it freezes it
+    (below) — so every frame in which the player can see anything of it is a frame in which
+    it is standing still. The blink step is the one exception and wants no animation either:
+    §5.2 calls for a jump-cut rather than a walk, so the pose simply arrives somewhere else.
+    Nothing subtle would read anyway; what the player sees is a silhouette on the floor.
   - **Audio:** heavy, slow, spatial footsteps.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
@@ -457,17 +531,46 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - If `distance(player, enemy) < 1.0m` (radius overlap), the outcome depends on which
   enemy made contact:
 
-**Spider contact — damaging.** Deducts 0.34 health (§3.4). The player is knocked back
-1.0 m from the spider, and the spider itself recoils 1.5 m, holds for 1.0 s, then resumes
-pursuit (§5.1). That spider cannot damage again for 1.5 s from the moment it lands the
-hit; the cooldown is tracked on the spider, not on the player, so other spiders are
-unaffected and can land their own hits in the same second. Without the recoil and cooldown
-a spider that reaches the player would deal its whole pool in consecutive ticks; with them,
-being caught by one spider is survivable and being caught by three is not. The run
-continues; if the deduction takes health to 0.0, it resolves as death below.
+**Spider contact — an attack, not a touch.** Closing to 1.0 m does not deal damage; it
+starts an attack, and the damage lands partway through it:
 
-**Shadow Monster contact — fatal.** Kills outright at any health. There is no chip damage,
-no partial hit, and no survivable brush — reaching the player is the whole of its threat.
+1. **Wind-up (0.35 s).** The spider commits: it stops advancing and plays its attack
+   animation. This is a telegraph, and it is the player's window — 0.35 s is a metre of
+   walking (§3.1), so a player who reacts to the lunge gets out of reach of it.
+2. **Strike (at 0.35 s).** The 1.0 m check is taken *again*, at this instant.
+   - **In reach:** deducts 0.34 health (§3.4). The player is knocked back 1.0 m from the
+     spider, and the spider recoils 1.5 m, holds for 1.0 s, then resumes pursuit (§5.1).
+   - **Out of reach:** the lunge misses. No damage, no knockback, and the spider holds for
+     0.5 s before it can do anything else. Missing has to cost it tempo, or dodging buys
+     the player nothing.
+3. **Cooldown (1.5 s from the strike),** whether it hit or missed. Tracked on the spider,
+   not on the player, so other spiders are unaffected and can land their own hits in the
+   same second.
+
+**Light cancels an attack outright.** A spider lit during its wind-up stops where it is
+(§5.1's stun is immediate and literal); the strike never happens and no cooldown starts.
+Cancelling a lunge with the beam is one of the few things the flashlight does *directly* to
+a spider rather than through the deterrence timer, and the battery is what it costs.
+
+**The strike time belongs to the simulation, not to the animation.** Damage resolves at
+0.35 s into the attack whatever the art does; an attack animation whose contact frame lands
+somewhere else is the thing that gets re-timed. Tying the damage to an animation event
+instead would make a gameplay constant editable in an art file, and would change how much
+health a mistake costs whenever the animation is re-exported.
+
+Without the recoil and the cooldown, a spider that reached the player would deal its whole
+pool in consecutive ticks; with them, being caught by one spider is survivable and being
+caught by three is not. The run continues; if the deduction takes health to 0.0, it resolves
+as death below.
+
+The wind-up and miss-recovery durations above are first values, expected to move in the
+tuning pass (§1, content): they set how reactive a spider feels, and that is not knowable
+until it is played.
+
+**Shadow Monster contact — fatal.** Kills outright at any health, on contact, with no
+wind-up and no animation. There is no chip damage, no partial hit, and no survivable brush —
+reaching the player is the whole of its threat, and giving it a telegraph would hand the
+player a reaction where the design gives them none.
 
 **On death:**
 
@@ -527,7 +630,9 @@ constraint and not a polish-phase concern.
   playable on touch, but the design target is desktop with mouse aim.
 - Exactly one shadow-casting `SpotLight` (the flashlight) plus at most two shadow-casting
   environmental lights at a time, chosen each frame by proximity to the camera. Remaining
-  environmental lights illuminate without casting.
+  environmental lights illuminate without casting. The ambient and the moon (§4) cast
+  nothing — a design rule first and a saving second, since a shadow on the ground has to
+  mean a light is on something.
 - Shadow map 2048×2048 for the flashlight, 1024×1024 for environmental lights; PCF soft
   shadows; shadow camera near/far tightened to the light's range to keep depth precision.
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black

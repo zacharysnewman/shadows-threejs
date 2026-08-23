@@ -1,5 +1,6 @@
 /** Player movement, wall sliding and the spawn facing (§3.1, §3.4). */
 
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ENEMY, PLAYER } from '../src/config';
 import { buildColliders } from '../src/map/colliders';
@@ -246,13 +247,53 @@ describe('sprint (§3.1)', () => {
     expect(Math.abs(player.aim.x)).toBeLessThan(0.1);
   });
 
-  it('turns rather than snapping', () => {
-    const player = new Player(spawnAt(9, 9, 90), openField());
-    // One tick in, it has begun to come round but is nowhere near arrived.
+  it('turns at the specified rate rather than snapping (§3.1)', () => {
+    const player = new Player(spawnAt(9, 9, 90), openField()); // facing east
+    // One tick of a 540°/s turn is 9°, so the beam has barely moved off east.
     player.tick(TICK, 0, -1, true);
 
-    expect(player.aim.y).toBeLessThan(0);
-    expect(player.aim.y).toBeGreaterThan(-0.5);
+    const turned = Math.abs(THREE.MathUtils.radToDeg(Math.atan2(player.aim.x, player.aim.y)) - 90);
+    expect(turned).toBeGreaterThan(PLAYER.aimTurnDegreesPerSecond * TICK * 0.8);
+    expect(turned).toBeLessThan(PLAYER.aimTurnDegreesPerSecond * TICK * 1.2);
+  });
+
+  it('takes a third of a second to reverse, and no longer', () => {
+    const player = new Player(spawnAt(9, 9, 90), openField());
+    // East to west is 180°; at 540°/s that is a third of a second.
+    run(player, 0.34, -1, 0, true);
+    expect(player.aim.x).toBeCloseTo(-1, 1);
+  });
+
+  it('turns back onto the pointer after a sprint instead of whipping round', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 0.5, 1, 0, true); // sprinting east, aim locked east
+    expect(player.aim.x).toBeCloseTo(1);
+
+    // Release with the cursor behind: the beam sweeps back rather than cutting.
+    player.tick(TICK, 0, 0, false);
+    player.aimTowards(-1, 0);
+    player.tick(TICK, 0, 0, false);
+    expect(player.aim.x).toBeGreaterThan(0.9);
+
+    // ...and gets there under its own steam.
+    for (let i = 0; i < 30; i += 1) {
+      player.aimTowards(-1, 0);
+      player.tick(TICK, 0, 0, false);
+    }
+    expect(player.aim.x).toBeCloseTo(-1, 1);
+  });
+
+  it('goes back to direct aiming once the turn has caught up', () => {
+    const player = new Player(spawnAt(9, 9), openField());
+    run(player, 0.5, 1, 0, true);
+    for (let i = 0; i < 60; i += 1) {
+      player.aimTowards(1, 0);
+      player.tick(TICK, 0, 0, false);
+    }
+
+    // Caught up: aiming is immediate again, with no lag between cursor and beam.
+    player.aimTowards(0, -1);
+    expect(player.aim.y).toBeCloseTo(-1);
   });
 
   it('refuses pointer and stick aim while sprinting (§3.1)', () => {
@@ -266,10 +307,19 @@ describe('sprint (§3.1)', () => {
     expect(player.aim.x).toBeCloseTo(locked.x);
     expect(player.aim.y).toBeCloseTo(locked.y);
 
-    // Released, aim answers again.
+    // Released, aim answers again — by turning towards the request rather than jumping to
+    // it (§3.1), and arriving under its own steam.
     player.tick(TICK, 0, 0, false);
     player.aimTowards(0, -1);
-    expect(player.aim.y).toBeCloseTo(-1);
+    player.tick(TICK, 0, 0, false);
+    expect(player.aim.y).toBeLessThan(0);
+    expect(player.aim.y).toBeGreaterThan(-0.9);
+
+    for (let i = 0; i < 30; i += 1) {
+      player.aimTowards(0, -1);
+      player.tick(TICK, 0, 0, false);
+    }
+    expect(player.aim.y).toBeCloseTo(-1, 1);
   });
 
   it('outruns everything on the map, and a walk outruns everything but a fleeing spider (§5)', () => {

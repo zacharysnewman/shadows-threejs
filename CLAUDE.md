@@ -14,9 +14,7 @@ the code.** That includes:
 - A value the spec does not give — a radius, a delay, a rate. Add it to the spec and to
   `src/config.ts` together, with the section it belongs to.
 - A question the spec does not answer. If a phase turns one up, fix the spec rather than
-  deciding it in code and moving on. Write down the reasoning, not just the answer: the
-  next person needs to know which way the decision could have gone and why it went this
-  way.
+  deciding it in code and moving on.
 - A design decision made or reversed in conversation. Get it into the spec before or with
   the code, so the spec never describes a game that no longer exists.
 
@@ -24,6 +22,20 @@ A pull request that changes behaviour and not the spec is incomplete. `docs/` is
 documentation of the code — it is the thing the code is trying to be.
 
 When the spec and the code disagree, the spec wins and the code is the bug.
+
+### Write the spec as it stands, not as it got here
+
+Reasoning earns its place in the spec only when a reader would otherwise make the change
+back: a value that looks arbitrary but is load-bearing, a rule that reads like an oversight
+until you know what it prevents. Most edits need none of it. A wrong number, a stale
+sentence, a decision that has been reversed — correct the text and move on. Do not leave a
+trail of "this was first X, then changed to Y": git has the history, and the spec's job is
+to describe the game as it is now. A spec that argues with its own past is harder to read
+than one that simply states the design.
+
+The same goes for reversals in `docs/IMPLEMENTATION_PLAN.md`. A phase's Status note records
+what landed and what it sent back to the spec — not the sequence of minds changed getting
+there.
 
 ## Recording progress
 

@@ -35,7 +35,7 @@ re-checked rather than taken on trust.
 | 3 — Lighting Core & Flashlight | **Done** |
 | 4 — Audio Core | **Done** |
 | 5 — Navigation & Enemy Base | **Done** |
-| 6 — Illumination Detection Service | Not started |
+| 6 — Illumination Detection Service | **Done** |
 | 7 — Spider AI | Not started |
 | 8 — Shadow Monster | Not started |
 | 9 — Interactables, Power & Objectives | Not started |
@@ -118,7 +118,10 @@ player at the screen edge.
 which locks the aim to the direction of travel while held — the speed is paid for with the
 twin-stick independence that lets a player back away with the beam on a threat. §5's speed
 table note was rewritten with it, since it had been resting on the player *not* having a
-sprint.
+sprint. The turn was first written as a smoothing time constant and is now a bounded
+**540°/s**, because angular speed is what a player perceives and therefore what should be
+specified; the same rate turns the beam *back* onto the cursor when the sprint ends, since
+releasing with the cursor behind you would otherwise whip it through 180° in one frame.
 
 *Known, unsolved.* At a 70°–75° pitch, a full-height wall standing between the camera and
 the player hides the player — visible on the example map today with placeholder 3 m walls.
@@ -160,8 +163,13 @@ exit criterion needs a real GPU and is outstanding.
 in it (§4); the beam's mounting, its derived declination, and the input that toggles it
 (§4.1); filmic tone mapping as a render requirement rather than a preference (§7).
 
-*Revised after Phase 5.* The ambient this phase chose was near-black, and that turned out to
-be a design mistake rather than a tuning one: with only the beam visible, a spider and the
+*Revised after Phase 5 — the night rig.* §4 now carries a dim ambient, fog, and a moon that
+gives the gloom a direction without casting. Shadows exist only where a directed light does,
+so a shadow on the ground means something is being lit — which is what the Shadow Monster is
+built on (§5.2).
+
+*Revised after Phase 5 — the ambient.* The ambient this phase chose was near-black, and that
+turned out to be a design mistake rather than a tuning one: with only the beam visible, a spider and the
 Shadow Monster are the same shape inside a cone, and §5.2's entire design goes unseen. §4 now
 calls for a dim ambient plus fog — dark, not blacked out, with distance rather than darkness
 doing the hiding. The values live in `AMBIENT` and `FOG`.
@@ -289,22 +297,69 @@ distance/angle test, the throttled confirming raycast, and environmental light c
 **Exit:** a debug readout reports lit/unlit per entity correctly through walls, at beam
 edges, and inside environmental light radii, at the specified raycast budget.
 
+**Status: done.**
+
+*Landed.* `src/lighting/Illumination.ts` — one service answering *is this entity lit, and by
+how much*, with the cone test, the lamp-pool test and the throttled confirming raycast in
+one place. `src/nav/raycast.ts` holds the segment-versus-obstacle test it uses, and
+`ColliderIndex` gained a box query to feed it. The readout reports lit/unlit per entity with
+its source and strength, and the measured raycast rate beside the budget.
+
+*Verified.* Driven in a browser on `phase5-test`, through the debug handle:
+
+| Case | Reported |
+| --- | --- |
+| Beam on the entity | `lit, 0.55, flashlight` |
+| Beam turned away | `unlit` — on the next tick, not the next confirmation |
+| 20° off the beam axis (inside the 22.5° half-angle) | `lit, 0.02` — right at the rim |
+| 25° off the axis (outside it) | `unlit` |
+| Behind the central block, beam aimed at it | `unlit` |
+| Under an unpowered lamp | `unlit` |
+| Same lamp powered | `lit, 1.00, environment` |
+| Budget | `5/s across 4 subjects · budget 10/s each` |
+
+The measured rate sits under the budget rather than at it, because an entity outside every
+cone and pool costs no raycast at all: the geometry rules it out first, and only a candidate
+is ever confirmed.
+
+*Sent back to the spec.* §4.1 described the cheap test and the throttle and never said what
+the query *answers*, which the plan had asked for as "and by how much". §4.1 now carries the
+illumination query: lit is geometric — inside the reach with a clear line, so a dim beam
+still counts, because §5.1 stuns "the instant the beam hits" and brightness never decides;
+the amount is reported beside it for tuning and for a later behaviour that should care;
+occlusion is shared with movement, including the admission that the test ignores height and
+so errs towards shadowed; and the throttle applies to the *repeat* confirmation only.
+
+*The rule that turned on a contradiction.* A flat 10 Hz throttle would delay a spider's stun
+by up to a tenth of a second, and §5.1 says "the instant". Entering a light's reach now
+confirms on that same tick, and leaving is instant because the geometry is re-tested every
+tick; only an entity that stays inside a cone while a wall comes between them can lag, and
+by at most one interval.
+
+*Left to later phases.* Nothing consumes the answer yet. Phase 7 turns it into the spider's
+stun and deterrence timer, and Phase 8 into the monster's freeze — which is the point of
+building it once here: two AIs asking the same question cannot disagree about it.
+
 ## Phase 7 — Spider AI
 
 The four-step light reaction lifecycle (§5.1) on top of Phases 5 and 6: stun, randomised
-deterrence timer, flee target selection, and interruption. Also its contact resolution —
-damage, mutual knockback, and the post-hit recoil hold (§5.3).
+deterrence timer, flee target selection, and interruption. Also its attack: the wind-up, the
+strike that re-checks range, the miss, and the knockback, recoil hold and cooldown that
+follow (§5.3). The strike time is the simulation's, so the attack animation is authored to
+it rather than the other way round.
 
 **Exit:** every branch of the lifecycle is reachable and observable in a test map; the flee
-raycast never targets an unwalkable point; three contacts from full health kill; one
-spider cannot land hits faster than its own cooldown, and two spiders converging both
-register inside the same second.
+raycast never targets an unwalkable point; three contacts from full health kill; a lunge
+dodged during the wind-up deals nothing and still costs the spider tempo; a spider lit
+during its wind-up never strikes; one spider cannot land hits faster than its own cooldown,
+and two spiders converging both register inside the same second.
 
 ## Phase 8 — Shadow Monster
 
-Near-invisible shadow-casting material, freeze-on-lit, the flicker curve and its severity
+The never-drawn shadow-casting body (§5.2), freeze-on-lit, the flicker curve and its severity
 ramp, blink stepping, its fatal contact resolution (§5.3), and the environmental light
-sabotage lifecycle (§5.2, §4.2).
+sabotage lifecycle (§5.2, §4.2). No animation work: the monster is never both moving and
+visible, so one pose covers it.
 
 **Exit:** the monster is trackable by shadow and footsteps alone; sustained focus produces
 the flicker ramp and blink; a lamp the monster stands under runs the full
@@ -336,7 +391,9 @@ chain from Phase 9 is completable end to end with enemies live.
 ## Phase 11 — Content & Tuning
 
 The real map built in the editor tooling (§1), art and audio passes, and a tuning pass over
-the timing constants — deterrence timers, flicker ramp, battery rates, enemy speeds. These
+the timing constants — deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
+speeds. The art pass owes the spider a speed-driven locomotion cycle and an attack whose
+contact frame lands on §5.3's strike time, and the Shadow Monster a single pose. These
 are the numbers most likely to move once the game is playable; expect to amend the spec
 here rather than treating the current values as final.
 
