@@ -26,6 +26,34 @@ npm test           # unit tests
 
 `node scripts/gen-example-map.mjs` regenerates the example map's layer data.
 
+## Deployment
+
+The site is a static bundle published to GitHub Pages from this repository.
+`.github/workflows/deploy.yml` runs the tests, builds, and hands the artifact to Pages on
+every push to `main` — `dist/` is never committed, so the deployed site cannot drift from
+the commit it was built from. `workflow_dispatch` redeploys without a new commit.
+
+Two one-time settings, both in the repository's GitHub settings:
+
+1. **Settings → Pages → Source → "GitHub Actions."**
+2. The repository must be **public**, unless the account has GitHub Pro — the Free plan
+   only serves Pages from public repositories.
+
+It is served as a **project** site, at `https://<user>.github.io/shadows-threejs/` rather
+than a domain root. That subpath is baked in at build time, so `vite.config.ts` sets `base`
+to `/shadows-threejs/` and every runtime fetch is built from `import.meta.env.BASE_URL`
+rather than left document-relative.
+
+Set `BASE_PATH` to build for a different location:
+
+```bash
+BASE_PATH=/ npm run build                  # user site or custom domain
+BASE_PATH=/other-repo/ npm run build       # published from a different repository
+```
+
+`base` applies in dev too, so `npm run dev` serves from the same subpath as production —
+a base-path mistake shows up locally rather than as a wall of 404s after deploying.
+
 ## Debug harness
 
 | Key | |

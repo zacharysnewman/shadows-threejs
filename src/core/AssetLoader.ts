@@ -57,7 +57,11 @@ export class AssetLoader {
   private readonly gltf = new GLTFLoader();
   private readonly missing = new Set<string>();
 
-  constructor(private readonly baseUrl = 'assets/prefabs/') {}
+  /**
+   * Prefabs live outside Vite's bundled-asset directory and are addressed from `BASE_URL`,
+   * so the site works when served from a subpath (GitHub Pages project sites).
+   */
+  constructor(private readonly baseUrl = `${import.meta.env.BASE_URL}prefabs/`) {}
 
   /** Prefab names that fell back to a placeholder, for the debug overlay. */
   get missingPrefabs(): readonly string[] {

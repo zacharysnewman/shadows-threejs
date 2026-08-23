@@ -28,7 +28,10 @@ function selectedMap(): string {
   const requested = new URLSearchParams(window.location.search).get('map');
   // Directory name only — no traversal out of `maps/`.
   const safe = requested && /^[\w-]+$/.test(requested) ? requested : DEFAULT_MAP;
-  return `maps/${safe}/`;
+  // Built from BASE_URL rather than left document-relative: the site is served from a
+  // subpath on GitHub Pages, and a relative URL would resolve against whatever path the
+  // page happens to be on.
+  return `${import.meta.env.BASE_URL}maps/${safe}/`;
 }
 
 function showFatal(message: string): void {
