@@ -3,9 +3,9 @@
  *
  * The contact check is here rather than in either AI because §5.3 defines *one* test — an
  * X/Z distance below 1 m against the player's capsule — and two different answers to it.
- * This reports the condition and nothing else; Phase 7 turns it into damage, knockback and
- * a 1.5 s per-attacker cooldown, and Phase 8 turns it into death. Keeping the consequence
- * out of here is what stops a spider's cooldown quietly applying to the monster.
+ * This runs the test and hands it to the enemy that tripped it; what it means is the
+ * enemy's own business, which is what stops a spider's cooldown quietly applying to the
+ * monster. Listeners get the same event for debug and for the readout.
  *
  * Because the resolvers own their own cooldowns, contact is reported on every tick the
  * overlap holds rather than only on the tick it begins. An edge-triggered check would be
@@ -18,10 +18,28 @@ import type { Rng } from '../core/rng';
 import type { EntityRegistry } from '../map/EntityRegistry';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
 import type { ColliderIndex } from '../player/collision';
-import { Enemy, ENEMY_PROFILES, type EnemyKind } from './Enemy';
+import {
+  Enemy,
+  ENEMY_PROFILES,
+  type EnemyContext,
+  type EnemyKind,
+  type IlluminationSampler,
+  type PlayerActions,
+} from './Enemy';
+import { Spider } from './Spider';
 
 /** Fired for every enemy overlapping the player, every tick the overlap lasts (§5.3). */
 export type ContactListener = (enemy: Enemy, distance: number) => void;
+
+/** Everything outside the enemies that a tick of them depends on. */
+export interface EnemyWorld {
+  playerX: number;
+  playerZ: number;
+  /** §4.1 — the shared light query. */
+  illumination: IlluminationSampler;
+  /** §5.3 — what contact resolves into. */
+  player: PlayerActions;
+}
 
 export class EnemyManager {
   readonly enemies: Enemy[] = [];
@@ -45,13 +63,14 @@ export class EnemyManager {
     // order they were spawned in (Cross-Cutting: determinism).
     const spawn = (kind: EnemyKind): void => {
       for (const entity of registry.byType(kind)) {
-        const enemy = new Enemy(
-          ENEMY_PROFILES[kind],
-          entity.key,
-          entity.wx,
-          entity.wz,
-          rng.stream(entity.key),
-        );
+        const stream = rng.stream(entity.key);
+        // The Shadow Monster has no subclass yet (Phase 8), so it runs on the shared enemy
+        // and reacts to nothing — visible in the readout as a spider-less lifecycle rather
+        // than as a monster that has quietly become immune to light.
+        const enemy =
+          kind === 'SpiderEnemy'
+            ? new Spider(entity.key, entity.wx, entity.wz, stream)
+            : new Enemy(ENEMY_PROFILES[kind], entity.key, entity.wx, entity.wz, stream);
         this.enemies.push(enemy);
         this.root.add(enemy.object);
       }
@@ -99,22 +118,25 @@ export class EnemyManager {
   }
 
   /** One simulation tick for every enemy, then the contact check (§7). */
-  tick(dt: number, playerX: number, playerZ: number): void {
+  tick(dt: number, world: EnemyWorld): void {
     if (!this._enabled) return;
 
-    const context = {
-      playerX,
-      playerZ,
+    const context: EnemyContext = {
+      playerX: world.playerX,
+      playerZ: world.playerZ,
       grid: this.grid,
       colliders: this.colliders,
       neighbours: this.enemies,
+      illumination: world.illumination,
+      player: world.player,
     };
 
     for (const enemy of this.enemies) enemy.tick(dt, context);
 
     for (const enemy of this.enemies) {
-      const distance = enemy.distanceTo(playerX, playerZ);
+      const distance = enemy.distanceTo(world.playerX, world.playerZ);
       if (distance >= ENEMY.contactDistance) continue;
+      enemy.onPlayerContact(distance, context);
       for (const listener of this.listeners) listener(enemy, distance);
     }
   }

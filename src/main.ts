@@ -31,6 +31,8 @@ import * as THREE from 'three';
 import { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
+import { Spider } from './enemies/Spider';
+import { SpiderVoices } from './enemies/SpiderVoices';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
 import { OccluderFade } from './core/OccluderFade';
@@ -160,20 +162,23 @@ async function main(): Promise<void> {
   const paths = new PathOverlay(enemies, loaded.grid);
   viewport.scene.add(paths.object);
 
-  // §5.3 — the check reports contact; each AI resolves it its own way in Phases 7 and 8.
-  // Until they exist, the first touch from each enemy is logged and nothing happens.
+  // §5.3 — the check reports contact and each enemy resolves it: a spider starts a lunge
+  // (§5.3), and the Shadow Monster's kill is Phase 8's. This listener is the readout's, and
+  // logs the monster's unresolved touches so the gap is visible rather than silent.
   const contacted = new Set<string>();
   enemies.onContact((enemy, distance) => {
-    if (contacted.has(enemy.key)) return;
+    if (enemy.profile.kind === 'SpiderEnemy' || contacted.has(enemy.key)) return;
     contacted.add(enemy.key);
     console.info(
       `[contact] ${enemy.profile.kind} ${enemy.key} at ${distance.toFixed(2)}m — ` +
-        `resolution is Phase ${enemy.profile.kind === 'SpiderEnemy' ? '7' : '8'}'s (§5.3)`,
+        `resolution is Phase 8's (§5.3)`,
     );
   });
 
   await audioReady;
   const footsteps = new FootstepCadence();
+  // §5.1 — the spiders get a voice now that they have something to be heard doing.
+  const voices = new SpiderVoices(audio, enemies.enemies);
   const testEmitter = new AudioTestEmitter(audio);
 
   const rig = new CameraRig(viewport, loaded.bounds);
@@ -200,7 +205,12 @@ async function main(): Promise<void> {
     }
 
     illumination.tick(dt);
-    enemies.tick(dt, player.position.x, player.position.y);
+    enemies.tick(dt, {
+      playerX: player.position.x,
+      playerZ: player.position.y,
+      illumination,
+      player,
+    });
     testEmitter.tick(dt, player.position.x, player.position.y);
   });
 
@@ -278,6 +288,19 @@ async function main(): Promise<void> {
       return `${tag}:${sample.source === 'flashlight' ? 'beam' : 'lamp'} ${(sample.amount * 100).toFixed(0)}%`;
     });
     return parts.join(' · ');
+  });
+  // §5.1's lifecycle is four steps and only one of them shows up in `state`; without the
+  // timers beside it, "stunned" and "about to flee" look identical.
+  overlay.addRow('spider', () => {
+    const spiders = enemies.enemies.filter((enemy): enemy is Spider => enemy instanceof Spider);
+    if (spiders.length === 0) return 'none on this map';
+    const nearest = spiders
+      .map((spider) => ({ spider, distance: spider.distanceTo(player.position.x, player.position.y) }))
+      .sort((a, b) => a.distance - b.distance)[0]!;
+    return (
+      `${spiders.length} · nearest ${nearest.distance.toFixed(1)}m · ` +
+      `${nearest.spider.state} · ${nearest.spider.lightStatus}`
+    );
   });
   overlay.addRow('rays', () =>
     `${illumination.raycastsPerSecond}/s across ${illumination.subjectCount} subject(s)` +
@@ -500,6 +523,7 @@ async function main(): Promise<void> {
       testEmitter,
       occluders,
       enemies,
+      voices,
       rng,
       illumination,
     };
@@ -521,6 +545,7 @@ async function main(): Promise<void> {
 
     player.render(clock.alpha);
     enemies.render(clock.alpha);
+    voices.update();
     paths.update();
     // Bound to the interpolated position, not the tick position: a beam that stepped at
     // 60 Hz while the player moved smoothly would visibly swim around them.

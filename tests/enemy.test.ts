@@ -3,84 +3,19 @@
 import { describe, expect, it } from 'vitest';
 import { ENEMY } from '../src/config';
 import { Rng } from '../src/core/rng';
-import { Enemy, ENEMY_PROFILES, type EnemyContext } from '../src/enemies/Enemy';
+import { Enemy, ENEMY_PROFILES } from '../src/enemies/Enemy';
 import { EnemyManager } from '../src/enemies/EnemyManager';
-import { EntityRegistry } from '../src/map/EntityRegistry';
-import { buildColliders } from '../src/map/colliders';
-import { parseMap, parseTileset } from '../src/map/validate';
-import { WalkabilityGrid } from '../src/map/WalkabilityGrid';
-import { ColliderIndex } from '../src/player/collision';
-
-const TILE = 2;
-const TICK = 1 / 60;
-
-const tileset = parseTileset({
-  tiles: {
-    '0': { prefab: null, solid: false },
-    '1': { prefab: 'floor_concrete', solid: false },
-    '2': { prefab: 'wall_brick', solid: true },
-  },
-});
-
-/** ASCII sketch: `#` wall, everything else open floor. */
-function world(rows: string[], entities: unknown[] = [{ type: 'PlayerSpawn', x: 0, y: 0, properties: {} }]) {
-  const width = rows[0]!.length;
-  const height = rows.length;
-  const floor: number[] = [];
-  const walls: number[] = [];
-  for (const row of rows) {
-    for (const cell of row) {
-      floor.push(1);
-      walls.push(cell === '#' ? 2 : 0);
-    }
-  }
-
-  const map = parseMap(
-    {
-      width,
-      height,
-      tileSize: TILE,
-      layers: [
-        { name: 'Floor', data: floor },
-        { name: 'Walls', data: walls },
-      ],
-      entities,
-    },
-    tileset,
-  );
-
-  const grid = new WalkabilityGrid(map, tileset);
-  const colliders = new ColliderIndex(
-    buildColliders(map, tileset, () => 3),
-    width,
-    height,
-    TILE,
-  );
-  return { map, grid, colliders, registry: new EntityRegistry(map.entities) };
-}
+import {
+  TICK,
+  contextFor,
+  fakeIllumination,
+  fakePlayer,
+  run,
+  world,
+} from './support/world';
 
 function spider(x: number, z: number, rng = new Rng(1)): Enemy {
   return new Enemy(ENEMY_PROFILES.SpiderEnemy, 'spider#0', x, z, rng);
-}
-
-function contextFor(
-  built: ReturnType<typeof world>,
-  playerX: number,
-  playerZ: number,
-  neighbours: Enemy[] = [],
-): EnemyContext {
-  return {
-    playerX,
-    playerZ,
-    grid: built.grid,
-    colliders: built.colliders,
-    neighbours,
-  };
-}
-
-function run(enemy: Enemy, context: EnemyContext, seconds: number): void {
-  const ticks = Math.round(seconds / TICK);
-  for (let i = 0; i < ticks; i += 1) enemy.tick(TICK, context);
 }
 
 const OPEN = Array.from({ length: 12 }, () => ' '.repeat(12));
@@ -260,7 +195,7 @@ describe('local avoidance', () => {
 
     // Both chasing the same player from almost the same spot.
     for (let i = 0; i < 120; i += 1) {
-      const context = contextFor(built, 18, 9, neighbours);
+      const context = contextFor(built, 18, 9, { neighbours: neighbours });
       a.tick(TICK, context);
       b.tick(TICK, context);
     }
@@ -274,7 +209,7 @@ describe('local avoidance', () => {
     const other = new Enemy(ENEMY_PROFILES.ShadowMonster, 'monster#1', 9.1, 9, new Rng(4));
 
     for (let i = 0; i < 60; i += 1) {
-      const context = contextFor(built, 18, 9, [monster, other]);
+      const context = contextFor(built, 18, 9, { neighbours: [monster, other] });
       monster.tick(TICK, context);
       other.tick(TICK, context);
     }
@@ -309,11 +244,11 @@ describe('EnemyManager', () => {
     manager.onContact((enemy, distance) => hits.push(`${enemy.profile.kind}@${distance.toFixed(2)}`));
 
     // Player far away: nothing touches.
-    manager.tick(TICK, 200, 200);
+    manager.tick(TICK, { playerX: 200, playerZ: 200, illumination: fakeIllumination(), player: fakePlayer() });
     expect(hits).toHaveLength(0);
 
     // Player standing on the monster's tile.
-    manager.tick(TICK, 17, 17);
+    manager.tick(TICK, { playerX: 17, playerZ: 17, illumination: fakeIllumination(), player: fakePlayer() });
     expect(hits.some((hit) => hit.startsWith('ShadowMonster'))).toBe(true);
   });
 
@@ -323,8 +258,8 @@ describe('EnemyManager', () => {
     let count = 0;
     manager.onContact(() => (count += 1));
 
-    manager.tick(TICK, 17, 17);
-    manager.tick(TICK, 17, 17);
+    manager.tick(TICK, { playerX: 17, playerZ: 17, illumination: fakeIllumination(), player: fakePlayer() });
+    manager.tick(TICK, { playerX: 17, playerZ: 17, illumination: fakeIllumination(), player: fakePlayer() });
     expect(count).toBeGreaterThanOrEqual(2);
   });
 
@@ -332,7 +267,7 @@ describe('EnemyManager', () => {
     const built = world(OPEN, entities);
     const manager = new EnemyManager(built.registry, built.grid, built.colliders, new Rng(1));
 
-    manager.tick(TICK, 200, 200);
+    manager.tick(TICK, { playerX: 200, playerZ: 200, illumination: fakeIllumination(), player: fakePlayer() });
     expect(manager.countsByState()).toContain('×');
 
     // Across the map from everything: the spiders drift, and the Shadow Monster is still
@@ -351,7 +286,7 @@ describe('EnemyManager', () => {
     const position = enemy.position.clone();
 
     manager.enabled = false;
-    for (let i = 0; i < 120; i += 1) manager.tick(TICK, 8, 8);
+    for (let i = 0; i < 120; i += 1) manager.tick(TICK, { playerX: 8, playerZ: 8, illumination: fakeIllumination(), player: fakePlayer() });
 
     expect(enemy.position.equals(position)).toBe(true);
   });

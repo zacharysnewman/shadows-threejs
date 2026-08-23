@@ -214,6 +214,40 @@ export class Player {
     this.aim.set(Math.sin(angle), Math.cos(angle));
   }
 
+  /**
+   * §5.3 — take a hit. Delegates to the pool so an attacker does not have to reach through
+   * the player to find it; true when this deduction is the one that killed them.
+   */
+  damage(amount: number): boolean {
+    return this.health.damage(amount);
+  }
+
+  /**
+   * §5.3 — shoved `metres` directly away from a point by a spider that landed a hit.
+   *
+   * A displacement, resolved against the same geometry walking is, so the shove slides
+   * along a wall rather than posting the player through it. Velocity is left alone: the
+   * spec knocks the player back, it does not stagger them, and with §3.1's 0.1 s
+   * acceleration a cancelled velocity would read as a second, invisible penalty.
+   */
+  knockBack(fromX: number, fromZ: number, metres: number): void {
+    const dx = this.position.x - fromX;
+    const dz = this.position.y - fromZ;
+    const length = Math.hypot(dx, dz);
+    const ux = length < 1e-4 ? 0 : dx / length;
+    const uz = length < 1e-4 ? 1 : dz / length;
+
+    const result = moveCircle(
+      this.colliders,
+      this.position.x,
+      this.position.y,
+      ux * metres,
+      uz * metres,
+      PLAYER.radius,
+    );
+    this.position.set(result.x, result.z);
+  }
+
   /** Teleport without smoothing; used by run start and the debug warp (Cross-Cutting). */
   moveTo(worldX: number, worldZ: number): void {
     this.position.set(worldX, worldZ);
