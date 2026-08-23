@@ -343,19 +343,23 @@ building it once here: two AIs asking the same question cannot disagree about it
 ## Phase 7 — Spider AI
 
 The four-step light reaction lifecycle (§5.1) on top of Phases 5 and 6: stun, randomised
-deterrence timer, flee target selection, and interruption. Also its contact resolution —
-damage, mutual knockback, and the post-hit recoil hold (§5.3).
+deterrence timer, flee target selection, and interruption. Also its attack: the wind-up, the
+strike that re-checks range, the miss, and the knockback, recoil hold and cooldown that
+follow (§5.3). The strike time is the simulation's, so the attack animation is authored to
+it rather than the other way round.
 
 **Exit:** every branch of the lifecycle is reachable and observable in a test map; the flee
-raycast never targets an unwalkable point; three contacts from full health kill; one
-spider cannot land hits faster than its own cooldown, and two spiders converging both
-register inside the same second.
+raycast never targets an unwalkable point; three contacts from full health kill; a lunge
+dodged during the wind-up deals nothing and still costs the spider tempo; a spider lit
+during its wind-up never strikes; one spider cannot land hits faster than its own cooldown,
+and two spiders converging both register inside the same second.
 
 ## Phase 8 — Shadow Monster
 
 The never-drawn shadow-casting body (§5.2), freeze-on-lit, the flicker curve and its severity
 ramp, blink stepping, its fatal contact resolution (§5.3), and the environmental light
-sabotage lifecycle (§5.2, §4.2).
+sabotage lifecycle (§5.2, §4.2). No animation work: the monster is never both moving and
+visible, so one pose covers it.
 
 **Exit:** the monster is trackable by shadow and footsteps alone; sustained focus produces
 the flicker ramp and blink; a lamp the monster stands under runs the full
@@ -387,7 +391,9 @@ chain from Phase 9 is completable end to end with enemies live.
 ## Phase 11 — Content & Tuning
 
 The real map built in the editor tooling (§1), art and audio passes, and a tuning pass over
-the timing constants — deterrence timers, flicker ramp, battery rates, enemy speeds. These
+the timing constants — deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
+speeds. The art pass owes the spider a speed-driven locomotion cycle and an attack whose
+contact frame lands on §5.3's strike time, and the Shadow Monster a single pose. These
 are the numbers most likely to move once the game is playable; expect to amend the spec
 here rather than treating the current values as final.
 

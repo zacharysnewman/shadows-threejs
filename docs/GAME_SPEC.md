@@ -462,6 +462,10 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 
 - **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
   and light. Emits chittering/scuttling spatial audio.
+- **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
+  driven by the spider's actual speed, so a wandering spider (1.2 m/s), a pursuing one
+  (2.4 m/s) and a fleeing one (3.6 m/s) all place their legs on the ground instead of
+  skating. The attack animation is authored *to* the strike time in §5.3 — see there.
 - **Base Behavior:** wanders, or uses A\* pathfinding to approach the player.
 - **Light Reaction Lifecycle:**
   1. **Instant Stun:** the instant the flashlight beam hits the spider's bounding box, its
@@ -490,6 +494,12 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     leaves it there is nothing there again. A faint visible body would be strictly worse: it
     would give the player a second, easier way to find the monster, and the whole design is
     that there is only the one hard way.
+  - **Animation: none.** A single pose is enough, because the monster is never both moving
+    and visible. It is invisible unless a light is on it, and a light on it freezes it
+    (below) — so every frame in which the player can see anything of it is a frame in which
+    it is standing still. The blink step is the one exception and wants no animation either:
+    §5.2 calls for a jump-cut rather than a walk, so the pose simply arrives somewhere else.
+    Nothing subtle would read anyway; what the player sees is a silhouette on the floor.
   - **Audio:** heavy, slow, spatial footsteps.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
@@ -521,17 +531,46 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - If `distance(player, enemy) < 1.0m` (radius overlap), the outcome depends on which
   enemy made contact:
 
-**Spider contact — damaging.** Deducts 0.34 health (§3.4). The player is knocked back
-1.0 m from the spider, and the spider itself recoils 1.5 m, holds for 1.0 s, then resumes
-pursuit (§5.1). That spider cannot damage again for 1.5 s from the moment it lands the
-hit; the cooldown is tracked on the spider, not on the player, so other spiders are
-unaffected and can land their own hits in the same second. Without the recoil and cooldown
-a spider that reaches the player would deal its whole pool in consecutive ticks; with them,
-being caught by one spider is survivable and being caught by three is not. The run
-continues; if the deduction takes health to 0.0, it resolves as death below.
+**Spider contact — an attack, not a touch.** Closing to 1.0 m does not deal damage; it
+starts an attack, and the damage lands partway through it:
 
-**Shadow Monster contact — fatal.** Kills outright at any health. There is no chip damage,
-no partial hit, and no survivable brush — reaching the player is the whole of its threat.
+1. **Wind-up (0.35 s).** The spider commits: it stops advancing and plays its attack
+   animation. This is a telegraph, and it is the player's window — 0.35 s is a metre of
+   walking (§3.1), so a player who reacts to the lunge gets out of reach of it.
+2. **Strike (at 0.35 s).** The 1.0 m check is taken *again*, at this instant.
+   - **In reach:** deducts 0.34 health (§3.4). The player is knocked back 1.0 m from the
+     spider, and the spider recoils 1.5 m, holds for 1.0 s, then resumes pursuit (§5.1).
+   - **Out of reach:** the lunge misses. No damage, no knockback, and the spider holds for
+     0.5 s before it can do anything else. Missing has to cost it tempo, or dodging buys
+     the player nothing.
+3. **Cooldown (1.5 s from the strike),** whether it hit or missed. Tracked on the spider,
+   not on the player, so other spiders are unaffected and can land their own hits in the
+   same second.
+
+**Light cancels an attack outright.** A spider lit during its wind-up stops where it is
+(§5.1's stun is immediate and literal); the strike never happens and no cooldown starts.
+Cancelling a lunge with the beam is one of the few things the flashlight does *directly* to
+a spider rather than through the deterrence timer, and the battery is what it costs.
+
+**The strike time belongs to the simulation, not to the animation.** Damage resolves at
+0.35 s into the attack whatever the art does; an attack animation whose contact frame lands
+somewhere else is the thing that gets re-timed. Tying the damage to an animation event
+instead would make a gameplay constant editable in an art file, and would change how much
+health a mistake costs whenever the animation is re-exported.
+
+Without the recoil and the cooldown, a spider that reached the player would deal its whole
+pool in consecutive ticks; with them, being caught by one spider is survivable and being
+caught by three is not. The run continues; if the deduction takes health to 0.0, it resolves
+as death below.
+
+The wind-up and miss-recovery durations above are first values, expected to move in the
+tuning pass (§1, content): they set how reactive a spider feels, and that is not knowable
+until it is played.
+
+**Shadow Monster contact — fatal.** Kills outright at any health, on contact, with no
+wind-up and no animation. There is no chip damage, no partial hit, and no survivable brush —
+reaching the player is the whole of its threat, and giving it a telegraph would hand the
+player a reaction where the design gives them none.
 
 **On death:**
 
