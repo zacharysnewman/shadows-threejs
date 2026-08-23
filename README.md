@@ -114,7 +114,7 @@ Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–5 are implemented:
+Phases 0–6 are implemented:
 
 - **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
 - **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
@@ -141,6 +141,11 @@ Phases 0–5 are implemented:
   the state machine both AIs are built on, §5's movement speeds, local avoidance, spawning
   from map entities, and the shared contact check. No light reactions yet.
 
+- **Phase 6** — the shared illumination query: one service answering whether an entity is
+  lit and by how much, with the cone and lamp-pool tests, occlusion against the same
+  obstacles that block walking, and the confirming raycast throttled to 10 Hz per entity.
+  Both AIs will consume it; neither will implement its own.
+
 Not yet built: the light reactions that make each enemy itself (Phases 7 and 8), interaction
 and objectives (Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently
 logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
@@ -157,9 +162,9 @@ src/config.ts     constants mirroring the spec — tuning happens here, not in s
 src/core/         sim clock, viewport, asset loader, input, occluder fade
 src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
-src/lighting/     flashlight, battery, environmental lights, night ambient
+src/lighting/     flashlight, battery, environmental lights, night ambient, illumination query
 src/audio/        listener, source pool, distance profiles, sound bank
-src/nav/          grid A*, line of sight
+src/nav/          grid A*, line of sight, segment occlusion
 src/enemies/      shared enemy, state machine, spawning, contact check
 src/debug/        overlay and debug visualisations
 public/maps/      map data, one directory per map

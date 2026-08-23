@@ -350,3 +350,17 @@ export const ENEMY = {
     loseRadius: Number.POSITIVE_INFINITY,
   },
 } as const;
+
+/**
+ * §4.1 — the shared illumination query. Both AIs ask this and neither implements its own,
+ * so its budget is the budget for light detection on the whole map.
+ */
+export const ILLUMINATION = {
+  /** §4.1 — line-of-sight confirmations per second, per entity. */
+  raycastHz: 10,
+  /**
+   * Amount below which a source contributes nothing worth reporting. Not what decides
+   * *lit* — §4.1 makes that geometric — only a floor on the number reported beside it.
+   */
+  amountFloor: 0.01,
+} as const;

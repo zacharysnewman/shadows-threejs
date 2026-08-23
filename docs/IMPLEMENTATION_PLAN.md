@@ -35,7 +35,7 @@ re-checked rather than taken on trust.
 | 3 — Lighting Core & Flashlight | **Done** |
 | 4 — Audio Core | **Done** |
 | 5 — Navigation & Enemy Base | **Done** |
-| 6 — Illumination Detection Service | Not started |
+| 6 — Illumination Detection Service | **Done** |
 | 7 — Spider AI | Not started |
 | 8 — Shadow Monster | Not started |
 | 9 — Interactables, Power & Objectives | Not started |
@@ -300,6 +300,49 @@ distance/angle test, the throttled confirming raycast, and environmental light c
 
 **Exit:** a debug readout reports lit/unlit per entity correctly through walls, at beam
 edges, and inside environmental light radii, at the specified raycast budget.
+
+**Status: done.**
+
+*Landed.* `src/lighting/Illumination.ts` — one service answering *is this entity lit, and by
+how much*, with the cone test, the lamp-pool test and the throttled confirming raycast in
+one place. `src/nav/raycast.ts` holds the segment-versus-obstacle test it uses, and
+`ColliderIndex` gained a box query to feed it. The readout reports lit/unlit per entity with
+its source and strength, and the measured raycast rate beside the budget.
+
+*Verified.* Driven in a browser on `phase5-test`, through the debug handle:
+
+| Case | Reported |
+| --- | --- |
+| Beam on the entity | `lit, 0.55, flashlight` |
+| Beam turned away | `unlit` — on the next tick, not the next confirmation |
+| 20° off the beam axis (inside the 22.5° half-angle) | `lit, 0.02` — right at the rim |
+| 25° off the axis (outside it) | `unlit` |
+| Behind the central block, beam aimed at it | `unlit` |
+| Under an unpowered lamp | `unlit` |
+| Same lamp powered | `lit, 1.00, environment` |
+| Budget | `5/s across 4 subjects · budget 10/s each` |
+
+The measured rate sits under the budget rather than at it, because an entity outside every
+cone and pool costs no raycast at all: the geometry rules it out first, and only a candidate
+is ever confirmed.
+
+*Sent back to the spec.* §4.1 described the cheap test and the throttle and never said what
+the query *answers*, which the plan had asked for as "and by how much". §4.1 now carries the
+illumination query: lit is geometric — inside the reach with a clear line, so a dim beam
+still counts, because §5.1 stuns "the instant the beam hits" and brightness never decides;
+the amount is reported beside it for tuning and for a later behaviour that should care;
+occlusion is shared with movement, including the admission that the test ignores height and
+so errs towards shadowed; and the throttle applies to the *repeat* confirmation only.
+
+*The rule that turned on a contradiction.* A flat 10 Hz throttle would delay a spider's stun
+by up to a tenth of a second, and §5.1 says "the instant". Entering a light's reach now
+confirms on that same tick, and leaving is instant because the geometry is re-tested every
+tick; only an entity that stays inside a cone while a wall comes between them can lag, and
+by at most one interval.
+
+*Left to later phases.* Nothing consumes the answer yet. Phase 7 turns it into the spider's
+stun and deterrence timer, and Phase 8 into the monster's freeze — which is the point of
+building it once here: two AIs asking the same question cannot disagree about it.
 
 ## Phase 7 — Spider AI
 

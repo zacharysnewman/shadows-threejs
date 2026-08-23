@@ -312,6 +312,37 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   - Raycasts to confirm line-of-sight are only performed at a fixed interval
     (e.g. every 100 ms / 10 Hz).
 
+#### The illumination query
+
+One service answers *is this entity lit, and by how much*, and **both AIs consume it;
+neither has its own**. A spider that decided it was lit on different terms than the Shadow
+Monster would be a bug nobody could see, only feel.
+
+- **Lit is geometric, not photometric.** An entity is lit when it is inside a light's reach
+  with a clear line to it: within the beam's range *and* half-angle for the flashlight
+  (above), or within a lamp's ground radius for an environmental light (§4.2). §5.1 says
+  the spider stuns "the instant the beam hits" it, so a dim beam still counts — brightness
+  never decides, only geometry. A beam that is off and a lamp that is unpowered light
+  nothing.
+- **The amount** is reported beside it: 0–1, the strongest single source's strength at that
+  point, falling off with distance and towards the edge of a cone, scaled by the beam's
+  battery falloff (§4.1) or the lamp's authored intensity (§4.2). Nothing in §5 keys off it
+  yet — it is there for tuning, for the HUD, and so that a later behaviour that *should*
+  care about strength has something honest to ask.
+- **Occlusion is shared with movement.** Light is blocked by the same obstacles that block
+  walking (§3.1), and by nothing else: a hole in the floor does not cast a shadow. The test
+  is a segment against those obstacles on the X/Z plane, which is an approximation — it
+  ignores height, so a beam that would pass over a low crate is treated as stopping at it.
+  It errs towards *shadowed*, which matches the shadow the player can see on the ground.
+- **The confirming raycast is throttled to the interval above and staggered across
+  entities**, so the cost is spread rather than landing on one tick. What is throttled is
+  the *repeat*: an entity entering a light's reach is confirmed on that same tick, because
+  §5.1 stuns "the instant the beam hits" and a tenth of a second is not an instant. Leaving
+  the cone is instant too — the geometry is re-tested every tick, and losing the light has
+  to be immediate or §5.2's freeze could be held with a beam no longer on the monster.
+  What can lag by up to one interval is the middle case: an entity that stays inside the
+  cone while a wall comes between them.
+
 ### 4.2 Environmental Lighting (Dynamic Sabotage)
 
 - Turning on power switches activates environmental lights (e.g. overhead streetlamps or
