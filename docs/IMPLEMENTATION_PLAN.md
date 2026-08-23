@@ -33,7 +33,7 @@ re-checked rather than taken on trust.
 | 1 — Map Pipeline | **Done** |
 | 2 — Player Controller & Camera | **Done** |
 | 3 — Lighting Core & Flashlight | **Done** |
-| 4 — Audio Core | Not started |
+| 4 — Audio Core | **Done** |
 | 5 — Navigation & Enemy Base | Not started |
 | 6 — Illumination Detection Service | Not started |
 | 7 — Spider AI | Not started |
@@ -174,6 +174,46 @@ debug key currently powers wholesale.
 Listener, positional source pooling, distance models (§4.3), and the autoplay-gesture gate.
 
 **Exit:** a moving off-screen test emitter is locatable by ear alone.
+
+**Status: done.**
+
+*Landed.* `src/audio/` — `AudioCore.ts` (the listener, a fixed pool of positional sources,
+long-lived emitters for entities, and the autoplay-gesture gate), `profiles.ts` (§4.3's two
+distance models, plus the arithmetic the debug readout uses to say what the player *should*
+be hearing), `SoundBank.ts` (fetch a real file, fall back to seeded procedural synthesis —
+the same arrangement as the placeholder prefabs) and `Footsteps.ts` (a step per stride of
+ground actually covered). `Z` orbits a test emitter off-screen; the readout reports its
+distance, its side, and its expected gain.
+
+*Verified.* The exit criterion is about ears, which no test runner has, so the live audio
+graph was tapped in a browser instead — a channel splitter and two analysers on the
+listener's own output, measuring what actually comes out:
+
+| Source | Measured |
+| --- | --- |
+| 8 m east | bias **+0.59** (right) |
+| 8 m west | bias **−0.60** (left) |
+| 8 m north | bias **−0.00** — centred, exactly the limit §4.3 now records |
+| 3 → 8 → 16 → 24 m | level 1.00 → 0.77 → 0.40 → 0.042, against 1.00 → 0.77 → 0.41 → 0.045 predicted by the linear model |
+| 28 m and 33 m | default profile silent; monster profile still audible, 8× the default's level at 24 m |
+
+The gesture gate was watched going `suspended` → `running` on the first key, pausing was
+watched taking it back to `suspended` and unpausing returning it, and walking for three
+seconds at 3 m/s produced nine footsteps against a 0.95 m stride.
+
+*Sent back to the spec.* The listener rides the player rather than the camera, and why
+(§4.3) — with the consequence that north and south of the player pan alike, so distance
+carries the rest. The player's own footsteps: driven by ground covered, centred, and
+distinct from the monster's. And what a paused simulation does to sound, which §6 implied
+and §4.3 did not say: positional sources go silent, the context stays alive, unpausing
+resumes rather than restarts. That last one is implemented here rather than deferred,
+since writing a rule into the spec and leaving the code disagreeing with it is worse than
+either alone.
+
+*Left to later phases.* Nothing on the map makes a sound of its own yet — the emitters an
+enemy holds are Phase 5's to create, and `footstep_heavy` and `chitter` are sitting in the
+bank waiting for them. Real audio files replace the synthesised placeholders in Phase 11,
+changing nothing above `SoundBank`.
 
 ## Phase 5 — Navigation & Enemy Base
 

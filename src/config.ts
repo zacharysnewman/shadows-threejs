@@ -196,3 +196,35 @@ export const AMBIENT = {
   groundColor: 0x0a0c10,
   intensity: 0.25,
 } as const;
+
+/**
+ * §4.3 — spatial audio. The distance model is the mechanic here: an unseen threat has to
+ * be locatable by ear, which is a question of how loudness falls off with distance and of
+ * nothing else.
+ */
+export const AUDIO = {
+  /** Master gain. A mix level, not a spec value; the options UI (Phase 10) will own it. */
+  masterVolume: 0.8,
+  /**
+   * Pooled positional sources for one-shots. Enemies hold their own long-lived emitters,
+   * so this only has to cover footsteps, interactions and the like happening at once.
+   */
+  poolSize: 16,
+  /** §4.3 — every source unless it names another profile. */
+  defaultProfile: {
+    model: 'linear',
+    refDistance: 2,
+    maxDistance: 25,
+    rolloffFactor: 1.0,
+  },
+  /**
+   * §4.3 — the Shadow Monster's footsteps carry further than anything else on the map,
+   * because hearing is the only way to track it before it is close enough to read.
+   */
+  monsterFootstepProfile: {
+    model: 'linear',
+    refDistance: 4,
+    maxDistance: 35,
+    rolloffFactor: 1.0,
+  },
+} as const;

@@ -297,15 +297,29 @@ readable at any distance, and worth reading before the pool goes dark.
 
 ### 4.3 Audio Core
 
-- Implement `THREE.AudioListener` attached to the camera/player.
+- Implement `THREE.AudioListener`, carried by the **player**, not the camera. Every distance
+  below is measured from where the player is standing, and the camera sits 14 m above and
+  behind them (§3.2) — hanging the listener off it would add that 14 m to every source and
+  quietly halve the map's audible radius.
+- The listener is never rotated, like the camera (§3.2), so world `+x` is screen-right and
+  what the player hears on their left is on the left of their screen. North and south of
+  the player pan alike; that is a real limit of stereo on a top-down map, and it is why
+  distance has to carry the rest of the information.
 - All entities utilize `THREE.PositionalAudio` with a defined rolloff/reference distance so
   the player can audibly locate unseen threats. Default `linear` distance model,
   `refDistance` 2 m, `maxDistance` 25 m, `rolloffFactor` 1.0.
 - The Shadow Monster's footsteps use `refDistance` 4 m and `maxDistance` 35 m — audible
   further out than anything else on the map, because hearing is the only way to track it
   before it is close enough to cast a readable shadow.
+- The player's own footsteps sound on a cadence driven by ground actually covered, not by a
+  timer: a player held against a wall makes no noise however hard they walk into it. They
+  are quieter and higher than the Shadow Monster's (§5.2) and always centred on the
+  listener, so they can never be mistaken for something approaching.
 - Browser autoplay policy requires a user gesture before audio starts; the title screen's
   first input resumes the `AudioContext`.
+- A paused simulation (§6) silences positional sources: a world that is not advancing must
+  not still be walking towards the player. The listener and the context stay alive, so
+  unpausing resumes rather than restarts.
 
 ## 5. Enemy Design & AI Specification
 
