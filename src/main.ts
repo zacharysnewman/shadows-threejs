@@ -52,12 +52,18 @@ import { MapValidationError } from './map/validate';
 import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
 import { LampVoices } from './lighting/LampVoices';
+import { Hud } from './ui/Hud';
+import { Gates } from './world/Gates';
+import { findTarget, isInteractable, type Interactable } from './world/Interaction';
+import { loadNotes } from './world/Notes';
+import { Objectives } from './world/Objectives';
+import { Props } from './world/Props';
 import { IlluminationService } from './lighting/Illumination';
 import { Flashlight } from './lighting/Flashlight';
 import { CameraRig } from './player/CameraRig';
 import { ColliderIndex } from './player/collision';
 import { Player } from './player/Player';
-import { FLASHLIGHT, HEALTH, ILLUMINATION, PLAYER } from './config';
+import { FLASHLIGHT, HEALTH, ILLUMINATION, INTERACTION, PLAYER } from './config';
 
 const DEFAULT_MAP = 'example';
 
@@ -161,6 +167,28 @@ async function main(): Promise<void> {
   // that what blocks light is exactly what blocks walking.
   const illumination = new IlluminationService(flashlight, environment, colliderIndex);
 
+  // §6 — the run's world state, the props that make it findable, and the swing that opens
+  // a gate. Built before the HUD, because the HUD only ever reads them.
+  const objectives = new Objectives(loaded.entities);
+  const props = new Props(loaded.entities.all.filter(isInteractable));
+  viewport.scene.add(props.root);
+  const gates = new Gates(
+    loaded.geometry,
+    loaded.grid,
+    colliderIndex,
+    loaded.data.width,
+    loaded.data.tileSize,
+  );
+  const notes = await loadNotes(`${import.meta.env.BASE_URL}notes.json`);
+  const hud = new Hud();
+
+  // §6.1 — the torch is a pick-up on maps that author one, and in hand on maps that do not.
+  flashlight.held = objectives.hasFlashlight;
+  // §6.3/§6.4 — the switches act through these, so nothing else has to know what a
+  // `targetId` might name.
+  objectives.onGateOpen((gate) => gates.open(gate));
+  objectives.onPowerChange((groupId, on) => environment.setGroupPowered(groupId, on));
+
   const paths = new PathOverlay(enemies, loaded.grid);
   viewport.scene.add(paths.object);
 
@@ -229,6 +257,9 @@ async function main(): Promise<void> {
     // §4.2 — the lamps find out who is standing under them.
     environment.tick(dt, enemies.monsterPositions(), () => sabotageRng.float());
     monsterSteps.tick(enemies.monsters);
+    // §6.4 — a swing is the one piece of map geometry that moves, and it runs on the
+    // simulation clock like everything else with a timer, so a note modal stops it too.
+    gates.tick(dt);
     testEmitter.tick(dt, player.position.x, player.position.y);
   });
 
@@ -324,6 +355,28 @@ async function main(): Promise<void> {
     `${illumination.raycastsPerSecond}/s across ${illumination.subjectCount} subject(s)` +
     ` · budget ${ILLUMINATION.raycastHz}/s each`,
   );
+  // §6 — the objective chain, which is otherwise entirely invisible from the scene: a
+  // latched switch and an unpressed one look the same until the exit opens.
+  overlay.addRow('objective', () => {
+    const { fired, required, unlocked } = objectives.exitProgress();
+    if (required === 0) return 'no exit on this map';
+    return (
+      `exit ${fired}/${required} routed${unlocked ? ' · OPEN' : ''} · ` +
+      `notes ${objectives.notesRead}/${objectives.noteCount}` +
+      `${objectives.hasFlashlight ? '' : ' · no torch yet'}`
+    );
+  });
+  overlay.addRow('props', () => {
+    const total = props.count;
+    if (total === 0) return 'none on this map';
+    const target = interactTarget ? `${interactTarget.type} — ${objectives.promptFor(interactTarget)}` : '—';
+    return `${props.present.length}/${total} present · in reach: ${target}`;
+  });
+  overlay.addRow('gates', () =>
+    loaded.entities.byType('Gate').length + loaded.entities.byType('ExitGate').length === 0
+      ? 'none on this map'
+      : `${gates.openedCount} opened · ${gates.swingingCount} swinging`,
+  );
   overlay.addRow('seed', () => `${rng.seed}`);
   overlay.addRow('torch', () => {
     const { battery } = flashlight;
@@ -403,6 +456,82 @@ async function main(): Promise<void> {
   });
   overlay.addRow('hover', () => hovered);
 
+  /** The one thing `E` would act on right now, or null (§3.3). */
+  let interactTarget: Interactable | null = null;
+
+  /**
+   * §3.3 — pick a target and act on it. Runs per frame rather than per tick because it is
+   * driven by an input edge, and the edge is cleared at the end of the frame it happened
+   * in.
+   */
+  function resolveInteraction(): void {
+    // §3.3 — interaction is disabled while a modal is up, and the modal's own key is the
+    // only thing the action does there.
+    if (hud.modalOpen) {
+      interactTarget = null;
+      if (input.wasPressed('interact')) closeNote();
+      return;
+    }
+
+    interactTarget = freeCamera.enabled
+      ? null
+      : findTarget(props.present, {
+          playerX: player.position.x,
+          playerZ: player.position.y,
+          aimX: player.aim.x,
+          aimZ: player.aim.y,
+        });
+
+    if (!interactTarget || !input.wasPressed('interact')) return;
+
+    const target = interactTarget;
+    const result = objectives.use(target);
+    if (result.kind === 'flashlight') {
+      props.collect(target);
+      flashlight.held = true;
+    }
+    if (result.kind === 'note' && result.noteId) openNote(result.noteId);
+    if (result.message) console.info(`[interact] ${result.message}`);
+  }
+
+  /** §6.2 — reading pauses the world. The clock is paused here, where the clock lives. */
+  function openNote(noteId: string): void {
+    hud.openNoteModal(noteId, notes);
+    clock.paused = true;
+  }
+
+  function closeNote(): void {
+    hud.closeNoteModal();
+    clock.paused = false;
+  }
+
+  /** Project the prompt anchor into pixels and hand the HUD everything it draws (§6). */
+  function updateHud(): void {
+    let screen: { x: number; y: number } | null = null;
+    if (interactTarget) {
+      _promptAnchor.set(
+        interactTarget.wx,
+        props.anchorFor(interactTarget) + INTERACTION.promptHeight,
+        interactTarget.wz,
+      );
+      _promptAnchor.project(viewport.camera);
+      // Behind the camera projects to a point in front of it; a prompt for something the
+      // player cannot see would be a prompt pinned to the wrong place on screen.
+      if (_promptAnchor.z <= 1) {
+        const size = viewport.renderer.domElement;
+        screen = {
+          x: ((_promptAnchor.x + 1) / 2) * size.clientWidth,
+          y: ((1 - _promptAnchor.y) / 2) * size.clientHeight,
+        };
+      }
+    }
+    hud.showPrompt(interactTarget ? objectives.promptFor(interactTarget) : null, screen);
+    hud.showObjective(objectives.exitProgress(), {
+      read: objectives.notesRead,
+      total: objectives.noteCount,
+    });
+  }
+
   /**
    * Resolve aim intent to a world direction (§3.1). A pointer names a screen position, so
    * it has to be projected onto the ground plane through the current camera; a stick
@@ -422,6 +551,7 @@ async function main(): Promise<void> {
 
   // --- Debug keys ---------------------------------------------------------
   overlay.addBinding('WASD', 'move · mouse aims');
+  overlay.addBinding('E', 'interact — pick up, read, throw a switch (§3.3)');
   overlay.addBinding('Shift', 'sprint — aim locks to the way you are going');
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
   overlay.addBinding('O', 'occluder fade');
@@ -432,7 +562,7 @@ async function main(): Promise<void> {
   overlay.addBinding('I', 'draw the Shadow Monster\'s body (§5.2 says never)');
   overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
-  overlay.addBinding('L', 'power every light group (Phase 9 owns the switches)');
+  overlay.addBinding('L', 'debug override: power every light group, past the switches');
   overlay.addBinding('K', `debug damage (${HEALTH.spiderDamage})`);
   overlay.addBinding('J', 'heal to full');
   overlay.addBinding('G', 'walkability overlay');
@@ -529,6 +659,11 @@ async function main(): Promise<void> {
       case 'BracketRight':
         clock.timeScale = Math.min(8, clock.timeScale * 2);
         break;
+      case 'Escape':
+        // §6.2 — the modal's other way out. Not an action binding: `Escape` closing a
+        // dialogue is not something a player should have to be told.
+        if (hud.modalOpen) closeNote();
+        break;
       case 'KeyH':
         overlay.toggle();
         break;
@@ -561,6 +696,11 @@ async function main(): Promise<void> {
       testEmitter,
       occluders,
       enemies,
+      objectives,
+      props,
+      gates,
+      hud,
+      notes,
       voices,
       monsterSteps,
       lampVoices,
@@ -579,6 +719,7 @@ async function main(): Promise<void> {
     // same input snapshot to all three rather than three different reads of the hardware.
     input.update();
     updateAim();
+    resolveInteraction();
 
     // §7 — the simulation advances in fixed ticks; rendering is whatever the display gives.
     clock.advance(realDelta);
@@ -623,6 +764,8 @@ async function main(): Promise<void> {
     }
 
     environment.update(viewport.camera);
+    props.refresh(objectives);
+    updateHud();
     overlay.update(realDelta);
     viewport.render();
     input.endFrame();
@@ -638,5 +781,8 @@ async function main(): Promise<void> {
       `${loaded.data.warnings.length} warning(s)`,
   );
 }
+
+/** Scratch for projecting the prompt anchor; allocating one per frame is a per-frame GC. */
+const _promptAnchor = new THREE.Vector3();
 
 void main();

@@ -63,6 +63,26 @@ export class ColliderIndex {
     }
   }
 
+  /**
+   * Drop every collider covering a tile (§6 — a gate that has swung open).
+   *
+   * Removed from every bucket it was filed under rather than from the one asked for: a
+   * collider spans a merged run of tiles, and leaving it in the neighbouring buckets would
+   * leave a gate that is open from one side and shut from the other.
+   */
+  removeAt(gx: number, gy: number): number {
+    const bucket = this.buckets[gy * this.width + gx];
+    if (!bucket || bucket.length === 0) return 0;
+
+    const doomed = new Set(bucket);
+    for (const other of this.buckets) {
+      for (let i = other.length - 1; i >= 0; i -= 1) {
+        if (doomed.has(other[i]!)) other.splice(i, 1);
+      }
+    }
+    return doomed.size;
+  }
+
   /** Every collider whose tiles intersect the circle's bounding square, without repeats. */
   query(x: number, z: number, radius: number, out: BoxCollider[] = []): BoxCollider[] {
     out.length = 0;

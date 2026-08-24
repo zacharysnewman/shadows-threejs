@@ -1,0 +1,10 @@
+{
+  "intro_yard": {
+    "title": "Torn shift log",
+    "body": "Third night the yard lights have gone out on their own. Maintenance says the circuits are fine, so either maintenance is wrong or something out there is standing under them.\n\nWhichever it is: keep the torch on the ground in front of you, not out at arm's length. You will see more and be seen less."
+  },
+  "substation": {
+    "title": "Note taped inside the substation door",
+    "body": "The main gate takes power from three routing switches, and it will not open until all three have been thrown. They are not near each other. That is deliberate — nobody wanted the gate opening by accident.\n\nOne more thing, and I am not putting my name to it. The spiders can be pushed back with a light. Hold it on one long enough and it breaks and runs. The other thing does not break. Light stops it where it stands, and that is all it does, and the longer you hold the beam on it the worse the beam gets."
+  }
+}
