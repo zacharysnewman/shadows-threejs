@@ -101,11 +101,33 @@ Tests are the floor, not the whole story. Anything a test runner structurally ca
 are available; this environment renders through a software rasteriser, so frame rate
 measured here means nothing.
 
+### The tests move with the logic
+
+**Every change to what the game does moves the tests in the same commit** — written,
+rewritten, or deleted. Two cases, and neither is optional:
+
+- **A rule changed in the spec.** The tests that encoded the old rule are now asserting a
+  game that does not exist. Update them, and add one for whatever the new rule says that
+  the old one did not. A spec change that leaves the suite green untouched either was not a
+  behaviour change or is not covered — find out which.
+- **A bug was fixed.** Ship the test that fails on the old code. If nothing in the suite
+  could have caught it, that is the finding: write the check that would have, at whatever
+  level it is legible — a unit test where the arithmetic lives, a source-level assertion
+  where the invariant is structural. A fix without one is a fix that comes back.
+
+Deleting is part of this. A test for behaviour that has been removed is not coverage, it is
+a claim about the game that is no longer true, and it will be *kept working* by the next
+person who does not know it is stale.
+
+A test that hard-codes a number derived from a constant — a distance that is really a speed
+times a time — is a test that will fail on the next tuning pass for a reason that has
+nothing to do with what it was written to check. Derive it from the constant.
+
 ## Maps
 
 The maps in `public/maps/` are prototypes: `example` exercises the pipeline at full size and
 the `phaseN-test` maps each exercise one phase's mechanics. **None of them is the level.**
-The real level is authored in the 2D editor tooling in Phase 11 (§1), so map content is
+The real level is authored in the editor built in Phase 12 (§9, `?edit`), so map content is
 scaffolding to build systems against and should never constrain a system's design.
 
 ## Layout
@@ -122,6 +144,9 @@ src/lighting/     flashlight, battery, environmental lights, night ambient
 src/audio/        listener, source pool, distance profiles, sound bank
 src/nav/          grid A*, line of sight
 src/enemies/      shared enemy, state machine, spawning, contact check
+src/world/        gates, interaction, notes, objectives, props, run outcome
+src/ui/           HUD, run overlays
+src/editor/       the level editor (§9)
 src/debug/        overlays and debug visualisations
 ```
 
