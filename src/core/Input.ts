@@ -19,14 +19,37 @@ import { INPUT } from '../config';
 
 export type AimSource = 'none' | 'pointer' | 'stick';
 
-/** Every action the game binds. Phase 2 consumes `interact` only through the debug harness. */
-export type ActionName = 'interact' | 'flashlight' | 'sprint';
+/**
+ * Every action the game binds. Exported as a list rather than only as a union so that the
+ * set is enumerable at run time: an action the player has a key for but nothing in the run
+ * ever reads is invisible to the type system, and is exactly how the flashlight ended up
+ * bound to `F` and reachable only from the debug harness (§8.3).
+ */
+export const ACTION_NAMES = ['interact', 'flashlight', 'sprint'] as const;
+
+export type ActionName = (typeof ACTION_NAMES)[number];
 
 const ACTION_KEYS: Readonly<Record<ActionName, readonly string[]>> = {
   interact: ['KeyE'],
   flashlight: ['KeyF'],
   sprint: ['ShiftLeft', 'ShiftRight'],
 };
+
+/**
+ * §3.1, §3.3, §4.1 — the actions that get an on-screen button on touch, stacked in the
+ * bottom-right corner with the first of them nearest the thumb.
+ *
+ * Every action the game asks a player to *tap* belongs here, because a touch player has no
+ * other way to reach it: the flashlight was bound to `F` and to gamepad `X` and to nothing
+ * on screen, which on a phone is not a control at all. `sprint` is the one deliberate
+ * omission — it is held rather than tapped, and pushing the movement stick to its rim is
+ * what starts it (§3.1), so a button would ask for a second thumb the player does not have
+ * spare.
+ */
+export const TOUCH_BUTTONS: ReadonlyArray<{ action: ActionName; label: string }> = [
+  { action: 'interact', label: 'E' },
+  { action: 'flashlight', label: 'F' },
+];
 
 /** Standard-mapping gamepad button indices for the same actions. */
 const ACTION_BUTTONS: Readonly<Record<ActionName, readonly number[]>> = {
@@ -280,8 +303,8 @@ export class Input {
   // --- Touch ---------------------------------------------------------------
   // Left half of the screen is a floating movement stick, right half a floating aim stick:
   // both anchor wherever the thumb lands rather than at a fixed spot, which is the only
-  // arrangement that works across hand sizes and orientations. The on-screen action button
-  // is created lazily, so a desktop session never renders touch chrome.
+  // arrangement that works across hand sizes and orientations. The action buttons are
+  // created lazily along with them, so a desktop session never renders touch chrome.
 
   private beginTouch(event: PointerEvent): void {
     const stick: TouchStick = {
@@ -348,29 +371,39 @@ export class Input {
     const move = ring();
     const aim = ring();
 
-    // §3.3 — the touch equivalent of `E`. Present only once touch is in use.
-    const button = document.createElement('button');
-    button.textContent = 'E';
-    button.style.cssText = [
-      'position:absolute',
-      'right:24px',
-      'bottom:24px',
-      'width:72px',
-      'height:72px',
-      'border-radius:50%',
-      'border:2px solid rgba(200,230,210,0.4)',
-      'background:rgba(10,16,12,0.55)',
-      'color:#cfe3d0',
-      'font:20px/1 ui-monospace,SFMono-Regular,Menlo,monospace',
-      'pointer-events:auto',
-      'touch-action:none',
-    ].join(';');
-    button.addEventListener('pointerdown', (event) => {
-      event.stopPropagation();
-      this.gestureSeen = true;
-      this.pressed.add('interact');
+    // §3.1 — one button per tapped action, stacked up from the corner. Present only once
+    // touch is in use, so a desktop session never renders any of this.
+    const { touchButtonSize, touchButtonGap, touchButtonMargin } = INPUT;
+    TOUCH_BUTTONS.forEach(({ action, label }, index) => {
+      const button = document.createElement('button');
+      button.textContent = label;
+      // Named for the action rather than the key, because the key is the thing a touch
+      // player does not have.
+      button.setAttribute('aria-label', action);
+      button.dataset['action'] = action;
+      button.style.cssText = [
+        'position:absolute',
+        `right:${touchButtonMargin}px`,
+        `bottom:${touchButtonMargin + index * (touchButtonSize + touchButtonGap)}px`,
+        `width:${touchButtonSize}px`,
+        `height:${touchButtonSize}px`,
+        'border-radius:50%',
+        'border:2px solid rgba(200,230,210,0.4)',
+        'background:rgba(10,16,12,0.55)',
+        'color:#cfe3d0',
+        'font:20px/1 ui-monospace,SFMono-Regular,Menlo,monospace',
+        'pointer-events:auto',
+        'touch-action:none',
+      ].join(';');
+      button.addEventListener('pointerdown', (event) => {
+        // Stopped here, or the tap also lands on the window listener and anchors an aim
+        // stick under the button — the beam would swing every time the torch is toggled.
+        event.stopPropagation();
+        this.gestureSeen = true;
+        this.pressed.add(action);
+      });
+      layer.appendChild(button);
     });
-    layer.appendChild(button);
 
     document.body.appendChild(layer);
     this.touchLayer = layer;

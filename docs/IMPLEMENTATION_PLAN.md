@@ -90,7 +90,7 @@ regeneration delay and refill curve.
 **Status: done.**
 
 *Landed.* `src/core/Input.ts` — one snapshot of movement, aim and actions fed by keyboard
-and mouse, gamepad, and touch (floating twin sticks plus an on-screen action button), all
+and mouse, gamepad, and touch (floating twin sticks plus on-screen action buttons), all
 three wired from the start rather than retrofitted. `src/player/` — `collision.ts`
 (tile-bucketed broad phase and circle-versus-box resolution along contact normals),
 `Player.ts` (movement smoothing, aim, render interpolation off the sim clock's `alpha`),
@@ -131,17 +131,17 @@ Recorded in §3.2 as a requirement on the art pass rather than papered over here
 
 ## Phase 3 — Lighting Core & Flashlight
 
-The flashlight spotlight bound to aim, the battery charge/drain/recharge cycle with its
-intensity falloff and re-enable lockout (§4.1), environmental light entities with a debug
-toggle, and the shadow budget and quality settings (§7).
+The flashlight spotlight bound to aim, the battery's drain and intensity falloff (§4.1),
+environmental light entities with a debug toggle, and the shadow budget and quality
+settings (§7).
 
 **Exit:** the beam casts hard floor shadows from a test prop; a full drain-to-empty cycle
-behaves per spec including the lockout; frame rate holds with the shadow budget saturated.
+behaves per spec; frame rate holds with the shadow budget saturated.
 
 **Status: done.**
 
-*Landed.* `src/lighting/` — `Battery.ts` (drain, recharge, the intensity falloff and the
-lockout, all on the sim clock), `Flashlight.ts` (the one shadow-casting spotlight §7
+*Landed.* `src/lighting/` — `Battery.ts` (the drain and the intensity falloff, on the sim
+clock), `Flashlight.ts` (the one shadow-casting spotlight §7
 budgets for, bound to the player's aim), `EnvironmentLights.ts` (a lamp per entity, shaped
 to its authored ground pool, powered by group, with §7's two shadow slots re-chosen each
 frame by proximity and frustum) and `Ambient.ts` (the night baseline that replaced the
@@ -152,8 +152,8 @@ reaches. Debug harness gained `F` (torch), `B` (drain to 5%), `L` (power every g
 `O` (occluder fade), plus torch and lamp readouts.
 
 *Verified.* The beam's hard shadows and the lamp pools were checked in a browser, not only
-in tests. The full battery cycle was driven end to end there too: 5% → drains out → cuts
-off and latches → `F` refused → recharges past 15% → relights at partial beam.
+in tests. The battery was driven end to end there too, via `B`: 5% → the beam dims as the
+falloff takes hold → cuts out at 0% → `F` refused, and still refused after waiting.
 
 *Not verified.* "Frame rate holds with the shadow budget saturated" could not be measured:
 this environment renders through a software rasteriser at 7–15 fps regardless of what is on
@@ -175,6 +175,22 @@ turned out to be a design mistake rather than a tuning one: with only the beam v
 Shadow Monster are the same shape inside a cone, and §5.2's entire design goes unseen. §4 now
 calls for a dim ambient plus fog — dark, not blacked out, with distance rather than darkness
 doing the hiding. The values live in `AMBIENT` and `FOG`.
+
+*Revised after Phase 12 — the battery.* The recharge is gone. §4.1 now gives the run a
+single finite supply of light: 10 minutes from full, draining only while the beam is on and
+never coming back. A recharging battery made darkness a wait rather than a decision, and it
+was the only reason the re-enable lockout existed — with nothing to recover, strobing the
+beam against §5.2's freeze costs exactly the light it makes, so the lockout went with it.
+`Battery.ts` lost `lockedOut`, and `FLASHLIGHT` lost `rechargePerSecond` and
+`reEnableCharge`.
+
+*Revised after Phase 12 — the ambient, again.* The values Phase 5 chose were tuned against
+the placeholder boxes, and the real prefab kit that landed afterwards is far brighter: the
+same numbers lit the whole map, and §4's ceiling — the floor cannot be read for a route
+without the beam — was quietly false. `AMBIENT.intensity` and `MOON.intensity` came down to
+a tenth, together. §4 now says outright that they are one setting: the moon is the larger
+half of what the ground is lit by, and dropping the ambient alone leaves the tile seams
+readable at zero ambient.
 
 *Solved rather than deferred.* Phase 2 recorded camera-side occluders as a problem for the
 art pass. Turning the lights out promoted it: an unlit occluder is not a wall the player
@@ -916,10 +932,28 @@ build does nothing; on `?debug` it pauses the clock — which is the honest way 
 the debug keys are live, since the effect is on the handle. `?debug` also adds the `Editor`
 button and shows the readout.
 
-`tests/shell.test.ts` covers both rules that rot quietly: the credits against `package.json`
+*Fixed afterwards — and the touch half of the same gap.* The torch had no on-screen button
+either, so on a phone it was unreachable twice over. `TOUCH_BUTTONS` is the set of actions
+that get one, and the touch layer renders a button per entry rather than the single
+hard-coded `E`; `INPUT` gained the button geometry §3.1 now describes. `tests/input.test.ts`
+holds the rule that produced the bug: an action the run reads as an edge is a tap, and a tap
+with no button is an action a touch player cannot perform. Sprint stays off the list — it is
+held, not tapped, and lives on the movement stick's rim.
+
+*Fixed afterwards.* Moving the keydown listener behind `?debug` took the flashlight with
+it. `F` was bound in `Input` as a player action from Phase 2 and never read by the run —
+the only thing that toggled the torch was `debugKey`, so from this phase until now there
+was no way to switch the beam on in normal play at all, on any device. `Run.frame` reads
+`input.wasPressed('flashlight')` now, beside `interact`, and `debugKey` no longer handles
+`F` (two paths would toggle twice under `?debug` and the beam would never come on).
+
+`tests/shell.test.ts` covers the rules that rot quietly: the credits against `package.json`
 (add a dependency without crediting it and the test fails naming it — checked by adding
-`prettier` and watching it fail), and debug being off by default, including that `?map=` and
-`?seed=` are ignored without it and that a map name cannot climb out of `maps/`.
+`prettier` and watching it fail), debug being off by default, including that `?map=` and
+`?seed=` are ignored without it and that a map name cannot climb out of `maps/`, and —
+after the above — that every action `Input` binds a key for is actually read by the run.
+That last one is the check that was missing: an action nobody consumes type-checks
+perfectly, so nothing but a source-level assertion could have caught it.
 
 ## Cross-Cutting
 

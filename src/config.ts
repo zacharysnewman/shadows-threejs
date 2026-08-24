@@ -159,6 +159,15 @@ export const INPUT = {
   touchStickRadius: 56,
   /** Deflection at which the touch movement stick starts sprinting (§3.1). */
   touchSprintDeflection: 0.95,
+  /**
+   * §3.1 — the on-screen action buttons, in CSS pixels: how wide each one is, the gap
+   * between them in the stack, and how far the stack sits from the corner. 72 px is a
+   * little over the 44 px minimum a thumb can hit reliably, which is the floor worth
+   * respecting rather than the target.
+   */
+  touchButtonSize: 72,
+  touchButtonGap: 16,
+  touchButtonMargin: 24,
 } as const;
 
 /** §4.1 — the flashlight spotlight and its battery. */
@@ -184,12 +193,12 @@ export const FLASHLIGHT = {
    * falling-off beam is too dim to make decisions by, and the beam's reach is a mechanic.
    */
   decay: 1.0,
-  /** Fraction of charge drained per second while on — 45 s from full (§4.1). */
-  drainPerSecond: 1 / 45,
-  /** Fraction recharged per second while off — half the drain rate (§4.1). */
-  rechargePerSecond: 1 / 90,
-  /** After a full drain, the charge needed before it can be switched on again (§4.1). */
-  reEnableCharge: 0.15,
+  /**
+   * Fraction of charge drained per second while on — 10 minutes of light from full (§4.1),
+   * and there is no recharge, so this is the whole run's supply of light rather than a
+   * cooldown. Switching the beam off is how the player saves it for later.
+   */
+  drainPerSecond: 1 / 600,
   /** Charge above which the beam is at full intensity (§4.1). */
   falloffCharge: 0.25,
   /** Intensity fraction at zero charge, interpolated up to full at `falloffCharge` (§4.1). */
@@ -248,11 +257,14 @@ export const AMBIENT = {
    *
    * Bright enough to read a silhouette at mid-range, dim enough that identifying it, or
    * reading the floor for a route, still needs the beam (§4). That ceiling is what the
-   * flashlight's value as a mechanic rests on: at roughly half again this value the tile
-   * seams come up and the floor becomes readable without light; back near zero and both
+   * flashlight's value as a mechanic rests on, and it is a ceiling on the *pair*: this and
+   * `MOON.intensity` together are what light the map with the beam off, so they are tuned
+   * and moved together. On the `example` map this puts unlit ground at ~8.6/255 mean
+   * luminance against the ~2.9 the fog alone gives; roughly four times this and the tile
+   * seams come up and the floor becomes readable without light, while back near zero both
    * enemies collapse into the same shape inside a cone.
    */
-  intensity: 14,
+  intensity: 1.4,
 } as const;
 
 /**
@@ -262,8 +274,13 @@ export const AMBIENT = {
  */
 export const MOON = {
   color: 0x9fb6d8,
-  /** Dim enough to identify nothing by; it contributes shape, not visibility. */
-  intensity: 0.55,
+  /**
+   * Dim enough to identify nothing by; it contributes shape, not visibility. Kept at a
+   * fixed fraction of `AMBIENT.intensity`, and moved with it — see the note there. The
+   * moon is the larger half of what the floor is lit by, and left where the ambient is
+   * not it holds the tile seams readable however far the ambient falls.
+   */
+  intensity: 0.055,
   /** Direction the light comes from, as a world offset. Steep, like a high moon. */
   direction: { x: -0.45, y: 1, z: -0.35 },
   /** How far from the player it is placed. Only its direction matters; it casts nothing. */

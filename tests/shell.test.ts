@@ -5,11 +5,20 @@
  * credits quietly stop being true; a test map gets easier to reach and debug mode leaks
  * into what a player sees. Neither failure is visible in a screenshot, so both are checked
  * here.
+ *
+ * And the same rule read the other way round: what debug mode is allowed to be the *only*
+ * way to reach. A key the player has been given has to work without `?debug`, which is a
+ * wiring question rather than a behavioural one, so it is checked against the source.
+ *
+ * And the same rule read the other way: what debug mode is allowed to be the *only* way to
+ * reach. A key the player is given has to work without `?debug`, which is a wiring question
+ * rather than a behavioural one, so it is checked against the source.
  */
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CREDITS, PREFAB_SOURCE } from '../src/config';
+import { ACTION_NAMES } from '../src/core/Input';
 import { parseShellOptions } from '../src/core/options';
 import { creditSections, creditsText } from '../src/ui/credits';
 
@@ -100,5 +109,71 @@ describe('debug mode (§8.3)', () => {
     const options = parseShellOptions('?edit');
     expect(options.edit).toBe(true);
     expect(options.debug).toBe(false);
+  });
+});
+
+describe("the player's keys are not the debug harness's (§8.3)", () => {
+  /** `src/Run.ts` with comment lines dropped, so a mention in prose is not a use. */
+  function runCode(): string {
+    return readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+  }
+
+  it('reads every action it binds a key for, from the run and not from `debugKey`', () => {
+    // The bug this holds shut: `flashlight` was bound to `F` and to gamepad `X`, and
+    // nothing outside `debugKey` ever read it. `main.ts` attaches the debug listener only
+    // under `?debug`, so the torch had no key at all in normal play — an action the type
+    // system is perfectly happy with, because a `Set` nobody queries still type-checks.
+    const code = runCode();
+
+    for (const action of ACTION_NAMES) {
+      const consumed =
+        code.includes(`wasPressed('${action}')`) || code.includes(`isHeld('${action}')`);
+      expect(consumed, `nothing in the run reads the '${action}' action`).toBe(true);
+    }
+  });
+
+  it('does not also toggle the torch from the debug keys', () => {
+    // Both paths at once is not a harmless duplicate: `debugKey` is a second listener, so
+    // under `?debug` one press would toggle twice and the beam would never come on.
+    const debugKeys = runCode().split('function debugKey(')[1] ?? '';
+    expect(debugKeys).not.toContain('KeyF');
+    // Not vacuous — the other debug keys are still in there.
+    expect(debugKeys).toContain('KeyB');
+  });
+});
+
+describe("the player's keys are not the debug harness's (§8.3)", () => {
+  /** `src/Run.ts` with comment lines dropped, so a mention in prose is not a use. */
+  function runCode(): string {
+    return readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+  }
+
+  it('reads every action it binds a key for, from the run and not from `debugKey`', () => {
+    // The bug this holds shut: `flashlight` was bound to `F` and to gamepad `X`, and
+    // nothing outside `debugKey` ever read it. `main.ts` registers the debug listener only
+    // under `?debug`, so the torch had no key at all in normal play — a state the type
+    // system is perfectly happy with, because a `Set` nobody queries still type-checks.
+    const code = runCode();
+
+    for (const action of ACTION_NAMES) {
+      const consumed =
+        code.includes(`wasPressed('${action}')`) || code.includes(`isHeld('${action}')`);
+      expect(consumed, `nothing in the run reads the '${action}' action`).toBe(true);
+    }
+  });
+
+  it('does not also toggle the torch from the debug keys', () => {
+    // Both paths at once is not a harmless duplicate: `debugKey` is a second listener, so
+    // under `?debug` one press would toggle twice and the beam would never come on.
+    const debugKeys = runCode().split('function debugKey(')[1] ?? '';
+    expect(debugKeys).not.toContain('KeyF');
+    // Not vacuous — the other debug keys are still in there.
+    expect(debugKeys).toContain('KeyB');
   });
 });
