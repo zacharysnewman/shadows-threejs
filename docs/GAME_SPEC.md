@@ -797,7 +797,11 @@ playing a different game than the one this specifies.
 
 - Enabled by `?debug` on the URL, which also unlocks `?map=` and `?seed=`.
 - Without it: no readout, no debug keys, and the map is the level.
-- With it: everything the Cross-Cutting debug harness describes, exactly as now.
+- With it: everything the Cross-Cutting debug harness describes, exactly as now, plus a
+  link to the editor (§9) on the title screen.
+- **The editor is not behind it.** `?edit` opens on its own, because authoring a level is
+  not debugging a run — the person doing it wants a tool, not a diagnostic readout over
+  their level. What debug mode decides is whether a *player* is offered the door.
 
 The distinction is not a build flag. `window.shadows` is already stripped from production
 builds; this is about what a *development* build shows by default, so that running the game

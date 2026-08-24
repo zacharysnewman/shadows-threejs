@@ -116,6 +116,18 @@ export class AudioCore {
    * hangs this on the title screen's first input; there is no title screen yet (Phase 10),
    * so the first input of any kind does it, which is the same rule with a wider net.
    */
+  /**
+   * §4.3, §8.1 — start the context from inside a user gesture, which is the only place a
+   * browser allows it. `Play` is that gesture: `armGesture` waits for the *next* one, and a
+   * listener added while the click is already dispatching does not hear that click.
+   */
+  async resume(): Promise<void> {
+    const context = this.listener?.context;
+    if (!context || context.state === 'running') return;
+    await context.resume();
+    console.info(`[audio] context ${context.state} from the title screen`);
+  }
+
   armGesture(): void {
     if (!this.listener || this.gestureArmed) return;
     this.gestureArmed = true;

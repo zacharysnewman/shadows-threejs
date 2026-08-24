@@ -41,6 +41,7 @@ export class RunOverlays {
   private readonly endingCard: HTMLDivElement;
   private readonly canvas: HTMLElement;
   private restart: (() => void) | null = null;
+  private credits: (() => void) | null = null;
   private saturated = true;
 
   constructor(canvas: HTMLElement, parent: HTMLElement = document.body) {
@@ -144,7 +145,28 @@ export class RunOverlays {
       <h1>Out</h1>
       <p>${minutes}:${seconds} &middot; ${summary.notesRead} of ${summary.notesTotal} notes found</p>
       <p class="run-ending-hint">E or click to begin again</p>`;
+
+    // §8.1 — the credits are reachable from here as well as from the title, because
+    // finishing the game is the moment somebody wants to know who made it.
+    if (this.credits) {
+      const link = document.createElement('button');
+      link.type = 'button';
+      link.className = 'run-ending-credits';
+      link.dataset['name'] = 'ending-credits';
+      link.textContent = 'Credits';
+      // The whole ending is a restart target (§6); this one child is not.
+      link.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.credits?.();
+      });
+      this.endingCard.append(link);
+    }
     this.ending.hidden = false;
+  }
+
+  /** §8.1 — what the victory screen's credits link does, or null for no link. */
+  onCredits(handler: (() => void) | null): void {
+    this.credits = handler;
   }
 
   /** Back to a run that has not started ending yet. */
@@ -200,4 +222,10 @@ const STYLE = `<style>
 .run-ending-card.is-victory h1 { color: #8ff0b4; }
 .run-ending-card p { margin: 0; color: #cdc7bb; }
 .run-ending-hint { margin-top: 20px !important; font-size: 13px; color: #7d8592; letter-spacing: 0.05em; }
+.run-ending-credits {
+  appearance: none; margin-top: 18px; min-height: 44px; padding: 10px 22px;
+  font: inherit; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #e8ecf2; background: rgba(232, 236, 242, 0.06);
+  border: 1px solid rgba(232, 236, 242, 0.22); border-radius: 8px; cursor: pointer;
+}
 </style>`;

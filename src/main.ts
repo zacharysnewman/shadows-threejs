@@ -7,10 +7,11 @@
  * which is what §5.3\'s "the only continuation is a new game" is made of: death and
  * victory both come back here, tear the world down, and build another.
  *
- * `?map=<directory>` selects which map under `maps/` to load, so the per-phase test maps
- * are reachable without a rebuild. `?seed=<word|number>` pins the run\'s randomness; with
- * one pinned, every restart replays identically, and without one each life draws a fresh
- * seed and logs it.
+ * §8.1 — a session starts at the title, not in a run: the audio context cannot be started
+ * without a user gesture (§4.3), and `Play` is the first gesture there is. §8.3 — `?debug`
+ * arms the developer affordances and nothing else does, `?map=<directory>` and
+ * `?seed=<word|number>` among them, so a player never lands in a test fixture or on
+ * somebody else's replay.
  */
 
 import { AudioCore } from './audio/AudioCore';
@@ -24,6 +25,8 @@ import { Hud } from './ui/Hud';
 import { loadNotes } from './world/Notes';
 import { createRun, type Run } from './Run';
 import { EditorApp, PLAYTEST_KEY } from './editor/EditorApp';
+import { parseShellOptions } from './core/options';
+import { TitleScreen } from './ui/TitleScreen';
 
 const DEFAULT_MAP = 'example';
 
@@ -34,12 +37,6 @@ const DEFAULT_MAP = 'example';
  */
 function mapDirectory(name: string): string {
   return `${import.meta.env.BASE_URL}maps/${name}/`;
-}
-
-function selectedMap(): string {
-  const requested = new URLSearchParams(window.location.search).get('map');
-  // Directory name only — no traversal out of `maps/`.
-  return mapDirectory(requested && /^[\w-]+$/.test(requested) ? requested : DEFAULT_MAP);
 }
 
 function showFatal(message: string): void {
@@ -61,21 +58,11 @@ function showFatal(message: string): void {
 }
 
 /**
- * §9 — the level editor, on the same site. `?edit` boots it instead of the game, so a level
- * can be authored on the device it is being designed on without a second app or a build
- * step.
- */
-function editorRequested(): boolean {
-  return new URLSearchParams(window.location.search).has('edit');
-}
-
-/**
  * §9.3 — a level handed straight from the editor to the game, through the browser rather
  * than through the repository. `?map=playtest` reads it; nothing else does, and a player
  * has no way to reach it.
  */
 function playtestMap(): unknown | null {
-  if (new URLSearchParams(window.location.search).get('map') !== 'playtest') return null;
   try {
     const raw = localStorage.getItem(PLAYTEST_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -85,7 +72,9 @@ function playtestMap(): unknown | null {
 }
 
 async function main(): Promise<void> {
-  if (editorRequested()) {
+  const options = parseShellOptions(window.location.search);
+
+  if (options.edit) {
     new EditorApp();
     return;
   }
@@ -96,6 +85,9 @@ async function main(): Promise<void> {
   // rebuild and identical between runs.
   const viewport = new Viewport();
   const overlay = new DebugOverlay();
+  // §8.3 — off by default. `H` still toggles it, but only once debug mode has armed the
+  // keys at all, so a player has no way to summon it.
+  overlay.setVisible(options.debug);
   const assets = new AssetLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
@@ -112,16 +104,16 @@ async function main(): Promise<void> {
   ]);
 
   // §9.3 — a playtest borrows the standard tileset and brings only its own layout.
-  const playtest = playtestMap();
-  if (playtest === null && new URLSearchParams(window.location.search).get('map') === 'playtest') {
+  const playtest = options.playtest ? playtestMap() : null;
+  if (options.playtest && playtest === null) {
     // There is no `maps/playtest/` to fall through to, and a dev server answers a missing
     // file with the index page — so without this the designer gets a JSON parse error
     // instead of being told which browser their draft is in.
     showFatal('No playtest level in this browser.\n\nOpen the editor (?edit) and press Play.');
     return;
   }
-  const directory = playtest ? mapDirectory(DEFAULT_MAP) : selectedMap();
-  const pinnedSeed = new URLSearchParams(window.location.search).get('seed');
+  const directory = mapDirectory(playtest ? DEFAULT_MAP : (options.map ?? DEFAULT_MAP));
+  const pinnedSeed = options.seed;
   let run: Run | null = null;
   // A run asks for the next one; the shell is what actually swaps them, because a run
   // cannot be the thing that disposes itself.
@@ -135,6 +127,9 @@ async function main(): Promise<void> {
     hud,
     notes,
     onRestart: () => void startRun(),
+    // §8.1 — from the victory screen. Assigned through a getter rather than captured,
+    // because the title screen is built after the shell it is handed to.
+    onCredits: () => title.showCredits(),
   };
 
   /**
@@ -152,20 +147,45 @@ async function main(): Promise<void> {
     }
   }
 
-  try {
-    await startRun();
-  } catch (error) {
-    const detail = error instanceof MapValidationError ? error.message : String(error);
-    showFatal(`Failed to load ${directory}\n\n${detail}`);
-    throw error;
+  /**
+   * §8.1 — the title screen, and the only door into a run.
+   *
+   * `Play` is the user gesture the audio context is started from (§4.3), which is why
+   * there is no way past this screen: a run reached without it would be a run with no
+   * sound until the player happened to click something.
+   */
+  const title = new TitleScreen({
+    onPlay: () => {
+      audio.armGesture();
+      void audio.resume();
+      title.hide();
+      void begin();
+    },
+    // §8.3 — the editor is a developer affordance on the title, and reachable by URL
+    // regardless; what debug mode decides is whether a player is offered it.
+    onEdit: options.debug ? () => { window.location.search = '?edit'; } : null,
+  });
+
+  async function begin(): Promise<void> {
+    try {
+      await startRun();
+    } catch (error) {
+      const detail = error instanceof MapValidationError ? error.message : String(error);
+      showFatal(`Failed to load ${directory}\n\n${detail}`);
+      throw error;
+    }
   }
 
   // One listener for the whole session, forwarding to whichever run is current. A listener
   // per run would be a listener per death, each holding its run alive.
-  window.addEventListener('keydown', (event) => {
-    if (event.repeat) return;
-    run?.debugKey(event.code);
-  });
+  // §8.3 — the debug keys exist only in debug mode: a player who presses `V` is not asking
+  // for a free camera, and finding one is finding a different game.
+  if (options.debug) {
+    window.addEventListener('keydown', (event) => {
+      if (event.repeat) return;
+      run?.debugKey(event.code);
+    });
+  }
 
   // --- Render loop --------------------------------------------------------
   let previous = performance.now();

@@ -123,10 +123,25 @@ function mapFacts(text) {
   }
 }
 
-const files = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
-  .split('\n')
-  .filter((path) => path.length > 0 && !SKIP.has(path))
-  .sort();
+/**
+ * Tracked files *and* new ones that are not ignored.
+ *
+ * `git ls-files` alone lists only what is staged or committed, which makes the map blind to
+ * a file until somebody runs `git add`. That is invisible locally — the generator and the
+ * test agree with each other about a file neither can see — and then CI, which checks out a
+ * commit where the file *is* tracked, disagrees with both. So the list is the union, and a
+ * new file is in the map from the moment it exists.
+ */
+const files = [
+  ...new Set(
+    execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter((path) => path.length > 0 && !SKIP.has(path)),
+  ),
+].sort();
 
 const records = files.map((path) => {
   const text = readFileSync(resolve(ROOT, path), 'utf8');

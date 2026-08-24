@@ -886,6 +886,41 @@ no debug keys; `?debug` restores everything the Cross-Cutting harness describes;
 name the art, the libraries and the designer, and adding a dependency changes them without
 anybody editing a screen.
 
+**Status: done.**
+
+`src/ui/TitleScreen.ts` is the title and the credits; `src/ui/credits.ts` is what they *say*,
+derived from `PREFAB_SOURCE` and `CREDITS` rather than written out; `src/core/options.ts` is
+what the URL is allowed to turn on. `main.ts` no longer starts a run on load — it builds the
+title and waits.
+
+**`Play` is where the audio context starts** (§4.3, §8.1), and it needed a method that did
+not exist. `AudioCore.armGesture` waits for the *next* gesture, and a listener added while a
+click is already dispatching does not hear that click — so pressing Play would have armed the
+context for whatever the player touched second. `resume()` starts it from inside the handler,
+which is the one place a browser allows it.
+
+**Debug mode is one flag, read in one place.** `parseShellOptions` returns `debug` and gates
+`?map=` and `?seed=` behind it, because a player following a link into `phase7-test` is
+playing a fixture and one with a pinned seed is replaying a run somebody already knows. The
+readout starts hidden *and unsampled* — the rows close over live systems and formatting them
+several times a second is work a player should not pay for — and the keydown listener is not
+registered at all without `?debug`, so there is no key a player can press to find a different
+game. `?edit` stays open: authoring a level is not debugging a run, and §8.3 now says so.
+
+*Verified in Chromium on an iPhone 13 profile.* A plain load shows the title with `Play` and
+`Credits`, no run built and no readout in the DOM. Credits list Zack Newman, then KayKit with
+its author and CC0 (and the line saying CC0 required none of it), then three.js, ZzFX, Vite,
+TypeScript and Vitest with their licences; `Back` returns to the title. `Play` builds the run
+and the title goes away, leaving the HUD as the only thing on screen. Pressing `P` on that
+build does nothing; on `?debug` it pauses the clock — which is the honest way to ask whether
+the debug keys are live, since the effect is on the handle. `?debug` also adds the `Editor`
+button and shows the readout.
+
+`tests/shell.test.ts` covers both rules that rot quietly: the credits against `package.json`
+(add a dependency without crediting it and the test fails naming it — checked by adding
+`prettier` and watching it fail), and debug being off by default, including that `?map=` and
+`?seed=` are ignored without it and that a map name cannot climb out of `maps/`.
+
 ## Cross-Cutting
 
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit
