@@ -67,6 +67,12 @@ export const MAP_LIMITS = {
   /** §2 — layer roles by index. */
   floorLayerIndex: 0,
   obstacleLayerIndex: 1,
+  /**
+   * How many rounds of "open a gate, see what that reaches" the map audit runs before it
+   * gives up. Not a spec value — a level whose gates chain more than this deep is one
+   * nobody would want to play, and the cap is what stops a cycle spinning.
+   */
+  maxGateCascade: 16,
 } as const;
 
 /**

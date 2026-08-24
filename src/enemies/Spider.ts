@@ -65,6 +65,21 @@ export class Spider extends Enemy {
   }
 
   /**
+   * §5.3 — how far through the wind-up the lunge is, reaching 1 at the strike. The attack
+   * animation is authored to this: whatever the clip does, its contact frame goes where
+   * this reaches 1, and re-exporting the art cannot move when the damage lands.
+   */
+  protected override get attackProgress(): number {
+    if (this.state === 'attack') {
+      return 1 - Math.max(0, this.windUp) / ATTACK.windUpSeconds;
+    }
+    // Held past 1 through the recoil, so a clip can play out past the strike rather than
+    // snapping back on the tick the hit resolved.
+    if (this.state === 'recoil') return 1;
+    return 0;
+  }
+
+  /**
    * §5.3 — closing to 1.0 m starts an attack; it does not land one. Refused while the
    * spider is held by anything else, so a stunned or fleeing or already-committed spider
    * cannot begin a second lunge by drifting through the threshold.

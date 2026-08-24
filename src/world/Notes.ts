@@ -36,6 +36,11 @@ export class NoteLibrary {
     return this.notes.size;
   }
 
+  /** Every id the file defines, for the map audit to check the level's notes against. */
+  get ids(): ReadonlySet<string> {
+    return new Set(this.notes.keys());
+  }
+
   get(noteId: string): NoteText {
     const note = this.notes.get(noteId);
     if (note) return note;

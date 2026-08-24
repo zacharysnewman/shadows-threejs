@@ -22,6 +22,7 @@ import type { Rng } from '../core/rng';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
 import { findPath, hasLineOfSight, type GridPoint } from '../nav/AStar';
 import { moveCircle, type ColliderIndex } from '../player/collision';
+import { Gait, type GaitProfile } from './Gait';
 
 export type EnemyKind = 'SpiderEnemy' | 'ShadowMonster';
 
@@ -61,6 +62,21 @@ export interface EnemyProfile {
   /** Range at which pursuit is abandoned. Wider than `detectRadius`, so it cannot flicker. */
   loseRadius: number;
 }
+
+/**
+ * §5.1 — the spider's locomotion, speed-driven so its legs land where they touch. The
+ * Shadow Monster has none: §5.2 is explicit that one pose covers a creature that is never
+ * both moving and visible.
+ */
+const SPIDER_GAIT: GaitProfile = {
+  /** Dog-sized and eight-legged: a short stride and a lot of them (§5.1). */
+  strideMetres: 0.8,
+  bobMetres: 0.07,
+  swingRadians: 0.5,
+  /** Its pursue speed, so a chase is the cycle at full amplitude. */
+  fullSpeed: ENEMY.spider.pursueSpeed,
+  windUpRadians: 0.55,
+};
 
 export const ENEMY_PROFILES: Readonly<Record<EnemyKind, EnemyProfile>> = {
   SpiderEnemy: {
@@ -160,6 +176,13 @@ export class Enemy {
   /** Grid version the current path was found against (§2); a change invalidates it. */
   private pathGridVersion = -1;
 
+  /** §5.1 — what the body is doing, which is not what the AI is doing. */
+  private readonly gait = new Gait(SPIDER_GAIT);
+  /** The animated parts of the placeholder body; empty for a body that never moves. */
+  private readonly limbs: THREE.Object3D[] = [];
+  private body: THREE.Object3D | null = null;
+  private bodyRestY = 0;
+
   private wanderPause = 0;
   /** Seconds left of a `recoil` hold, or of any other timed state (§5.3). */
   private holdTimer = 0;
@@ -174,7 +197,11 @@ export class Enemy {
     this.position.set(spawnX, spawnZ);
     this.previous.copy(this.position);
     this.object.name = `${profile.kind}:${key}`;
-    this.object.add(buildPlaceholderMesh(profile));
+    const built = buildPlaceholderMesh(profile);
+    this.object.add(...built.parts);
+    this.body = built.body;
+    this.bodyRestY = built.body.position.y;
+    this.limbs.push(...built.limbs);
     this.render(1);
   }
 
@@ -299,6 +326,13 @@ export class Enemy {
       this.profile.radius,
     );
     this.position.set(result.x, result.z);
+    // §5.1 — driven by the ground actually covered, so a body stopped against a wall does
+    // not walk on the spot.
+    this.gait.advance(
+      Math.hypot(this.position.x - this.previous.x, this.position.y - this.previous.y),
+      this.speed,
+      dt,
+    );
 
     if (result.hit) {
       const into = this.velocity.x * result.normalX + this.velocity.y * result.normalZ;
@@ -494,6 +528,14 @@ export class Enemy {
     }
   }
 
+  /**
+   * How far through an attack's wind-up this enemy is, 0–1 at the strike (§5.3). Only the
+   * spider has one; the base is never mid-lunge.
+   */
+  protected get attackProgress(): number {
+    return 0;
+  }
+
   /** Interpolated between ticks, like the player, so movement is smooth above 60 fps (§7). */
   render(alpha: number): void {
     this.object.position.set(
@@ -504,6 +546,25 @@ export class Enemy {
     if (this.velocity.lengthSq() > 1e-4) {
       this.object.rotation.y = Math.atan2(this.velocity.x, this.velocity.y);
     }
+    this.poseBody();
+  }
+
+  /**
+   * Apply the gait to the placeholder body (§5.1). Presentation only: nothing read here is
+   * read back by the AI, and an enemy whose art has not been made yet behaves identically
+   * to one whose has.
+   */
+  private poseBody(): void {
+    if (!this.body || this.limbs.length === 0) return;
+    const pose = this.gait.pose(this.attackProgress);
+    this.body.position.y = this.bodyRestY + pose.bob;
+    this.body.rotation.x = pose.pitch;
+    this.limbs.forEach((limb, index) => {
+      // Alternating pairs, so the legs on one side are half a cycle behind the other —
+      // the difference between walking and a body of legs moving as one.
+      const phase = index % 2 === 0 ? pose.swing : -pose.swing;
+      limb.rotation.x = phase;
+    });
   }
 
   dispose(): void {
@@ -522,6 +583,20 @@ export class Enemy {
 const _steer = new THREE.Vector2();
 
 /**
+ * A placeholder body, split into the parts the gait moves (§5.1). Flat rather than under a
+ * group of its own: the enemy's own node is already the body's parent, and a wrapper would
+ * be one scene node per enemy that exists only to hold one other.
+ */
+interface PlaceholderBody {
+  /** Everything to add to the enemy's node. */
+  parts: THREE.Object3D[];
+  /** The part that bobs and pitches. */
+  body: THREE.Object3D;
+  /** Legs, alternating sides, empty for a body §5.2 keeps still. */
+  limbs: THREE.Object3D[];
+}
+
+/**
  * Placeholder bodies until the art pass (Phase 11). Both cast shadows, because that is how
  * each is meant to be read: the spider by sight, and the Shadow Monster *only* by the shadow
  * it throws (§5.2).
@@ -530,12 +605,22 @@ const _steer = new THREE.Vector2();
  * `visible = false`, because an invisible object is skipped by the shadow pass too, and the
  * shadow is the entire creature. What is left is a mesh that contributes nothing to the
  * image and everything to the shadow map.
+ *
+ * The spider gets legs, and the monster gets none — not for looks, but because §5.1 owes a
+ * speed-driven locomotion cycle and §5.2 owes a single pose, and a placeholder that cannot
+ * show the difference is a placeholder that hides whether the driver works.
  */
-function buildPlaceholderMesh(profile: EnemyProfile): THREE.Object3D {
+function buildPlaceholderMesh(profile: EnemyProfile): PlaceholderBody {
   const spider = profile.kind === 'SpiderEnemy';
+
   const geometry = spider
     ? new THREE.SphereGeometry(profile.radius, 10, 8)
-    : new THREE.CapsuleGeometry(profile.radius, Math.max(0.1, profile.height - profile.radius * 2), 4, 10);
+    : new THREE.CapsuleGeometry(
+        profile.radius,
+        Math.max(0.1, profile.height - profile.radius * 2),
+        4,
+        10,
+      );
 
   const material = new THREE.MeshStandardMaterial({
     color: spider ? 0x6b3f3f : 0x201d28,
@@ -551,5 +636,28 @@ function buildPlaceholderMesh(profile: EnemyProfile): THREE.Object3D {
   if (spider) mesh.scale.set(1, 0.7, 1.2);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  return mesh;
+
+  if (!spider) return { parts: [mesh], body: mesh, limbs: [] };
+
+  // Eight legs on four pivots a side, hung off the body so they swing with it. Thin boxes
+  // rather than anything shaped: what has to read is the *cycle*, and a shadow of eight
+  // legs moving in pairs reads at any level of detail.
+  const limbs: THREE.Object3D[] = [];
+  const legGeometry = new THREE.BoxGeometry(0.05, 0.05, profile.radius * 1.5);
+  for (let i = 0; i < 8; i += 1) {
+    const side = i % 2 === 0 ? 1 : -1;
+    const along = Math.floor(i / 2) - 1.5;
+
+    const pivot = new THREE.Group();
+    pivot.position.set(side * profile.radius * 0.7, profile.radius * 0.6, along * profile.radius * 0.4);
+    pivot.rotation.z = side * 0.5;
+
+    const leg = new THREE.Mesh(legGeometry, material);
+    leg.position.z = profile.radius * 0.6;
+    leg.castShadow = true;
+    pivot.add(leg);
+    limbs.push(pivot);
+  }
+
+  return { parts: [mesh, ...limbs], body: mesh, limbs };
 }
