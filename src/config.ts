@@ -523,3 +523,28 @@ export const ILLUMINATION = {
    */
   amountFloor: 0.01,
 } as const;
+
+/**
+ * §8.2 — everything the credits screen names that is not the art (`PREFAB_SOURCE` above).
+ *
+ * Beside the values the game loads by, for the reason §8.2 gives: a credits screen typed
+ * out separately is one that stops being true the first time a dependency changes.
+ * `tests/credits.test.ts` fails when `package.json` names a package this does not — which
+ * is what actually keeps it honest, since nothing else would notice.
+ */
+export const CREDITS = {
+  /** Matches `index.html`'s `<title>`; the title screen renders this one. */
+  title: 'Shadows',
+  designer: 'Zack Newman',
+  /** Shipped in the bundle. */
+  libraries: [
+    { package: 'three', name: 'three.js', author: 'mrdoob and contributors', licence: 'MIT', role: 'rendering, scene graph, glTF loading' },
+    { package: 'zzfx', name: 'ZzFX', author: 'Frank Force', licence: 'MIT', role: 'procedural sound (§4.3)' },
+  ],
+  /** Built with rather than shipped with, and credited on the same grounds. */
+  tools: [
+    { package: 'vite', name: 'Vite', licence: 'MIT' },
+    { package: 'typescript', name: 'TypeScript', licence: 'Apache-2.0' },
+    { package: 'vitest', name: 'Vitest', licence: 'MIT' },
+  ],
+} as const;

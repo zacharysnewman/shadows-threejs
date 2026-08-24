@@ -137,7 +137,7 @@ the shape of it.
 
 ```
 src/config.ts     constants mirroring the spec
-src/core/         sim clock, viewport, asset loader, input, occluder fade, rng
+src/core/         sim clock, viewport, asset loader, input, occluder fade, rng, url options
 src/map/          validation, geometry, colliders, walkability, entity registry
 src/player/       movement, collision, camera rig, health
 src/lighting/     flashlight, battery, environmental lights, night ambient
@@ -145,7 +145,7 @@ src/audio/        listener, source pool, distance profiles, sound bank
 src/nav/          grid A*, line of sight
 src/enemies/      shared enemy, state machine, spawning, contact check
 src/world/        gates, interaction, notes, objectives, props, run outcome
-src/ui/           HUD, run overlays
+src/ui/           HUD, run overlays, title and credits (§8)
 src/editor/       the level editor (§9)
 src/debug/        overlays and debug visualisations
 ```

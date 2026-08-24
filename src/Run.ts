@@ -72,6 +72,8 @@ export interface RunShell {
   notes: NoteLibrary;
   /** §6 — dismissing an end screen starts the next run, which the shell owns. */
   onRestart: RestartRequest;
+  /** §8.1 — the victory screen's route to the credits, which the shell also owns. */
+  onCredits: () => void;
 }
 
 export interface Run {
@@ -102,6 +104,7 @@ export async function createRun(
   const outcome = new RunOutcome();
   const overlays = new RunOverlays(viewport.renderer.domElement);
   overlays.onRestart(() => shell.onRestart());
+  overlays.onCredits(() => shell.onCredits());
   // The audio context is the shell's and may have been left paused by the run that ended.
   audio.setPaused(false);
   const rng = Rng.from(seed);

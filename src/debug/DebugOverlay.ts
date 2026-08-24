@@ -76,8 +76,18 @@ export class DebugOverlay {
   }
 
   toggle(): void {
-    this.visible = !this.visible;
-    this.root.style.display = this.visible ? 'block' : 'none';
+    this.setVisible(!this.visible);
+  }
+
+  /**
+   * §8.3 — debug mode is off by default, so the readout starts hidden and stays that way
+   * unless `?debug` says otherwise. Hidden means *not sampled*: the rows close over live
+   * systems and formatting them a few times a second is work a player should not be paying
+   * for, on a phone least of all.
+   */
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    this.root.style.display = visible ? 'block' : 'none';
   }
 
   /** Called once per rendered frame with the real frame delta in seconds. */

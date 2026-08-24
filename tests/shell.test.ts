@@ -1,0 +1,104 @@
+/**
+ * The shell (§8): what the credits claim, and what the URL is allowed to turn on.
+ *
+ * Both are rules that hold until somebody adds a convenience. A dependency arrives and the
+ * credits quietly stop being true; a test map gets easier to reach and debug mode leaks
+ * into what a player sees. Neither failure is visible in a screenshot, so both are checked
+ * here.
+ */
+
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { CREDITS, PREFAB_SOURCE } from '../src/config';
+import { parseShellOptions } from '../src/core/options';
+import { creditSections, creditsText } from '../src/ui/credits';
+
+describe('the credits (§8.2)', () => {
+  it('names the designer first', () => {
+    const [first] = creditSections();
+    expect(first?.heading).toBe('Game design');
+    expect(first?.lines[0]?.name).toBe('Zack Newman');
+  });
+
+  it('names the art, its author and its licence, in that order after design', () => {
+    const [, art] = creditSections();
+    expect(art?.heading).toBe('Art');
+    expect(art?.lines[0]?.name).toBe(PREFAB_SOURCE.kit);
+    expect(art?.lines[0]?.by).toBe(PREFAB_SOURCE.author);
+    expect(art?.lines[0]?.licence).toBe(PREFAB_SOURCE.licence);
+    // §8.2 — CC0 asks for nothing, and the screen says so rather than implying it had to.
+    expect(art?.note).toMatch(/requires no attribution/i);
+  });
+
+  it('credits every package the project actually ships or builds with (§8.2)', () => {
+    // The rule §8.2 states — "generated from the same constants the game loads by, not
+    // typed out separately" — is only true if something notices when it stops being. This
+    // is that something: add a dependency without crediting it and this fails, naming it.
+    const manifest = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+
+    const credited = new Set<string>([
+      ...CREDITS.libraries.map((library) => library.package),
+      ...CREDITS.tools.map((tool) => tool.package),
+    ]);
+
+    const shipped = Object.keys(manifest.dependencies ?? {});
+    const built = Object.keys(manifest.devDependencies ?? {})
+      // Type stubs are not libraries: nothing of theirs is in the bundle or the build, and
+      // crediting `@types/three` beside three.js would be crediting the same people twice.
+      .filter((name) => !name.startsWith('@types/'));
+
+    const missing = [...shipped, ...built].filter((name) => !credited.has(name));
+    expect(missing).toEqual([]);
+  });
+
+  it('renders every section as text without losing a line', () => {
+    const text = creditsText();
+    for (const section of creditSections()) {
+      expect(text).toContain(section.heading);
+      for (const entry of section.lines) expect(text).toContain(entry.name);
+    }
+  });
+});
+
+describe('debug mode (§8.3)', () => {
+  it('is off with no query string at all', () => {
+    const options = parseShellOptions('');
+    expect(options.debug).toBe(false);
+    expect(options.map).toBeNull();
+    expect(options.seed).toBeNull();
+  });
+
+  it('ignores ?map= and ?seed= unless debug is armed', () => {
+    // §8.3 — these unlock *with* debug mode. A player following a link with a test map in
+    // it is playing a fixture, and one with a pinned seed is replaying somebody else's run.
+    const player = parseShellOptions('?map=phase7-test&seed=hello');
+    expect(player.map).toBeNull();
+    expect(player.seed).toBeNull();
+
+    const developer = parseShellOptions('?debug&map=phase7-test&seed=hello');
+    expect(developer.map).toBe('phase7-test');
+    expect(developer.seed).toBe('hello');
+  });
+
+  it('refuses a map name that could climb out of maps/', () => {
+    expect(parseShellOptions('?debug&map=../../etc/passwd').map).toBeNull();
+    expect(parseShellOptions('?debug&map=a/b').map).toBeNull();
+    expect(parseShellOptions('?debug&map=phase8-test').map).toBe('phase8-test');
+  });
+
+  it('reads the editor hand-off as its own thing, not as a map directory (§9.3)', () => {
+    const playtest = parseShellOptions('?map=playtest&debug=1');
+    expect(playtest.playtest).toBe(true);
+    expect(playtest.map).toBeNull();
+    expect(playtest.debug).toBe(true);
+  });
+
+  it('opens the editor without arming the debug harness (§9)', () => {
+    // Authoring a level is not debugging a run: the editor is reachable on its own.
+    const options = parseShellOptions('?edit');
+    expect(options.edit).toBe(true);
+    expect(options.debug).toBe(false);
+  });
+});
