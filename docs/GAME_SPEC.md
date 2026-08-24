@@ -9,7 +9,7 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
 
 ### Technical Stack Summary
 
-- **Map Design Tools:** blurymind Tilemap Editor (PWA/Web) or NotTiled (Android/Web).
+- **Map Design Tools:** a tile editor built into this project and served from the same site (§9).
 - **Build Tooling:** Vite (development server & asset bundling).
 - **Language & Core Engine:** Modern JavaScript / TypeScript with Three.js (WebGL).
 - **Camera Perspective:** Pitched top-down — perspective camera pitched at ≈70°–75° down,
@@ -127,8 +127,8 @@ objects and a map should not fail to load over an unwritten field.
 | --- | --- | --- |
 | `PlayerSpawn` | `rotation` (deg, default `0`) | Exactly one required per map. |
 | `Flashlight` | — | Pick-up. |
-| `Note` | `noteId` (required) | Key into `notes.json`; see §6. |
-| `PowerSwitch` | `targetId` (required), `mode` (default `toggle`) | Names a light group or gate; `mode` is `toggle` or `latch` (§6). |
+| `Note` | `noteId` (required), `facing` (deg, default `0`) | Key into `notes.json`; see §6. Mounts on a solid neighbour (§9.2). |
+| `PowerSwitch` | `targetId` (required), `mode` (default `toggle`), `facing` (deg, default `0`) | Names a light group or gate; `mode` is `toggle` or `latch` (§6). Mounts on a solid neighbour (§9.2). |
 | `EnvironmentLight` | `groupId` (required), `radius` (default `6` m), `intensity` (default `1.0`) | Off until its group is powered. |
 | `Gate` | `id`, `targetId` (both required), `locked` (default `true`) | Rotates open when triggered. |
 | `ExitGate` | `id` (required), `locked` (default `true`), `requiredSwitches` (default `3`) | Win objective. |
@@ -742,3 +742,114 @@ constraint and not a polish-phase concern.
   §5) behave identically regardless of frame rate.
 - Budget for the whole level to be resident at once: the map is a single continuous space
   (§2) with no streaming and no loading screens after the initial load.
+
+## 8. Shell: Title, Credits & Debug Mode
+
+Everything outside a run. §6 defines what a run *is* and how it ends; this is what surrounds
+it — the screen it starts from, the credits it resolves to, and the developer affordances
+that must not be part of what a player sees.
+
+### 8.1 The Screens
+
+Four, and no more. A horror game's menu should get out of the way.
+
+1. **Title.** The game's name, `Play`, and `Credits`. Nothing animated behind it that costs
+   a frame budget the run needs.
+2. **Run.** §6's single life. The HUD (§6) and the damage feedback (§3.4) are the only
+   things on screen.
+3. **Ending.** §5.3's game-over or §6's victory overlay, both offering another run.
+4. **Credits.** Reachable from the title and from the victory screen, and it returns to the
+   title.
+
+**The title screen is where the audio context is armed** (§4.3). Browsers refuse to start an
+`AudioContext` without a user gesture, and pressing `Play` is the first gesture there is —
+which is why a run must not begin without passing through the title, however tempting a
+`?skip` would be. Loading a specific map for testing is a debug affordance (§8.3), not a
+route into the game.
+
+### 8.2 Credits
+
+The credits screen names, in this order:
+
+- **Game design:** Zack Newman.
+- **Art:** the prefab kit, its author, and its licence (§1). CC0 requires no attribution;
+  the credit is given because a project that only credits what it is forced to is a project
+  that has misunderstood why the licence is free.
+- **Code:** the libraries the game is built on, with their licences.
+
+The list is generated from the same constants the game loads its assets by, not typed out
+separately — a credits screen maintained by hand is a credits screen that stops being true
+the first time a dependency changes.
+
+### 8.3 Debug Mode
+
+**Off by default.** The debug readout, the free camera, the overlays and the debug keys are
+developer tools, and a player who reaches for `WASD` and finds a wall of diagnostics is
+playing a different game than the one this specifies.
+
+- Enabled by `?debug` on the URL, which also unlocks `?map=` and `?seed=`.
+- Without it: no readout, no debug keys, and the map is the level.
+- With it: everything the Cross-Cutting debug harness describes, exactly as now.
+
+The distinction is not a build flag. `window.shadows` is already stripped from production
+builds; this is about what a *development* build shows by default, so that running the game
+and testing the game are different acts rather than the same one.
+
+## 9. Level Editor
+
+The level is authored in a tile editor built into this project and served from the same
+site (§1), rather than in a third-party tool. Three reasons, in order of weight:
+
+1. **It writes `map.json` directly.** No export format to convert, no schema to keep in
+   sync with §2, and no class of bug where the editor's idea of the map and the game's
+   disagree.
+2. **It can run the audit while you author.** The loader answers "does this parse"; the
+   audit answers "can this level be finished" — a gate whose only switch is behind itself,
+   an exit needing more `latch` switches than the map has. Finding those while placing them
+   rather than after a playthrough is most of what the tool is for.
+3. **It runs where the level is being designed.** A browser tool works on a phone, which a
+   desktop editor does not.
+
+### 9.1 Editing Model
+
+- **Two tile layers** (§2): floor and obstacles, edited one at a time, with the other shown
+  faded for reference.
+- **Paint, erase, and rectangle.** The rectangle tool is how buildings are made: a building
+  is a filled or outlined block of wall tiles, not a distinct kind of thing. That keeps one
+  prefab to one tile, which is what §7's instancing and §2's collider merge are built on.
+- **Entities are placed on tiles**, one selected at a time, with a properties sheet for the
+  fields §2's entity table requires. An entity whose required property is unset is drawn as
+  an error, not silently written.
+- **Undo and redo** over every edit. A tile editor without undo is a tile editor that is
+  used carefully instead of quickly.
+- **The palette is the standard tileset.** The editor writes tile ids, and ids mean nothing
+  without the `tileset.json` a map is loaded beside (§2). So the ids the palette offers —
+  `0` pit, `1` concrete, `2` wall, `3` fence, `4` dirt, `5` gate, `6` crate — are defined by
+  every `tileset.json` in the project, whether or not that map uses them. A level moved
+  between directories keeps its tiles; one played through §9.3 gets the same walls it was
+  drawn with.
+
+### 9.2 Facing
+
+`Note` and `PowerSwitch` mount on a solid neighbour rather than standing in the open, and
+carry a `facing` in degrees clockwise from north (§2's convention). The editor defaults it
+to a solid neighbour and lets it be turned.
+
+**A note must face the camera to be readable.** The camera is pitched down with no yaw and
+sits on the `+Z` side of the player (§3.2), so only south-facing surfaces are ever seen. A
+note mounted on the north face of a wall is behind that wall from every angle the game can
+be viewed from. So a note's solid neighbour must be to its **north, east or west** — never
+south — and the editor refuses the fourth case rather than letting a level be authored with
+unreadable notes in it.
+
+A switch has no such constraint: it needs to be reachable (§3.3), not legible.
+
+### 9.3 Getting a Level Out
+
+- **Copy to clipboard.** The whole `map.json` as text, in one action. On a phone this is the
+  reliable path — no file system, no download permissions — and it pastes into a commit.
+- **Play it now.** The editor hands the level straight to the game without a round trip
+  through the repository, so a change can be tested in the seconds after it is made. This
+  is a debug affordance (§8.3) and is not a route a player can reach.
+- **Autosave.** Work in progress survives the browser being closed. It is not a save
+  system: the exported file is the level, and the autosave is a draft.

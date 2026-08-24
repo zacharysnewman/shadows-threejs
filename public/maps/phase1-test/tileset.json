@@ -5,6 +5,7 @@
     "2": { "prefab": "wall_brick",       "solid": true  },
     "3": { "prefab": "fence_chainlink",  "solid": true  },
     "4": { "prefab": "floor_dirt",       "solid": false },
-    "5": { "prefab": "gate_wood",        "solid": true  }
+    "5": { "prefab": "gate_wood",        "solid": true  },
+    "6": { "prefab": "prop_crate",       "solid": true  }
   }
 }

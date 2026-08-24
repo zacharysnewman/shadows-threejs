@@ -40,12 +40,21 @@ async function fetchJson(url: string): Promise<unknown> {
   return response.json();
 }
 
-export async function loadMap(directory: string, loader: AssetLoader): Promise<LoadedMap> {
+/**
+ * `rawMapOverride` is a map that did not come from a URL — the editor handing a level
+ * straight to the game (§9.3). The tileset still comes from `directory`, because a level
+ * being playtested is authored against the same tiles as every other level.
+ */
+export async function loadMap(
+  directory: string,
+  loader: AssetLoader,
+  rawMapOverride?: unknown,
+): Promise<LoadedMap> {
   const dir = directory.endsWith('/') ? directory : `${directory}/`;
 
   const [rawTileset, rawMap] = await Promise.all([
     fetchJson(`${dir}tileset.json`),
-    fetchJson(`${dir}map.json`),
+    rawMapOverride === undefined ? fetchJson(`${dir}map.json`) : Promise.resolve(rawMapOverride),
   ]);
 
   const tileset = parseTileset(rawTileset, `${dir}tileset.json`);

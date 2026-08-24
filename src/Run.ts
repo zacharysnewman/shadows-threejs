@@ -89,6 +89,8 @@ export async function createRun(
   shell: RunShell,
   directory: string,
   seed: string | number | null,
+  /** §9.3 — a level handed over by the editor rather than fetched. */
+  rawMapOverride?: unknown,
 ): Promise<Run> {
   const { viewport, overlay, input, assets, audio, freeCamera, hud, notes } = shell;
   const clock = new SimClock();
@@ -104,7 +106,7 @@ export async function createRun(
   audio.setPaused(false);
   const rng = Rng.from(seed);
 
-  const loaded: LoadedMap = await loadMap(directory, assets);
+  const loaded: LoadedMap = await loadMap(directory, assets, rawMapOverride);
 
   /**
    * §2, §6 — the loader answers "does this file parse"; this answers "can this level be
