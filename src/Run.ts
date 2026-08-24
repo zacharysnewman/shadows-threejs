@@ -34,6 +34,7 @@ import { AudioTestEmitter } from './debug/AudioTestEmitter';
 import { ColliderOverlay } from './debug/ColliderOverlay';
 import type { DebugOverlay } from './debug/DebugOverlay';
 import { EntityMarkers } from './debug/EntityMarkers';
+import { FrameStats } from './debug/FrameStats';
 import { FreeCamera } from './debug/FreeCamera';
 import { PathOverlay } from './debug/PathOverlay';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
@@ -42,6 +43,7 @@ import { EnvironmentLights } from './lighting/EnvironmentLights';
 import { Flashlight } from './lighting/Flashlight';
 import { IlluminationService } from './lighting/Illumination';
 import { LampVoices } from './lighting/LampVoices';
+import { auditMap, type AuditResult } from './map/audit';
 import { loadMap, type LoadedMap } from './map/MapLoader';
 import { CameraRig } from './player/CameraRig';
 import { ColliderIndex } from './player/collision';
@@ -92,6 +94,9 @@ export async function createRun(
   const clock = new SimClock();
   // §5.3, §6 — the run's ending, and the surface the player reads it on. Built first so
   // nothing below has to check whether they exist yet.
+  // §7 — the one exit criterion that cannot be met where this is built. The instrument
+  // can be, so whoever runs it on real hardware reads a figure rather than an impression.
+  const frameStats = new FrameStats(viewport.renderer);
   const outcome = new RunOutcome();
   const overlays = new RunOverlays(viewport.renderer.domElement);
   overlays.onRestart(() => shell.onRestart());
@@ -100,6 +105,21 @@ export async function createRun(
   const rng = Rng.from(seed);
 
   const loaded: LoadedMap = await loadMap(directory, assets);
+
+  /**
+   * §2, §6 — the loader answers "does this file parse"; this answers "can this level be
+   * finished". Run at load rather than only in tests, because the author of a level is
+   * going to be opening it here, and a soft-locked map is a thing you find out about by
+   * walking it twice unless something says so.
+   */
+  const audit: AuditResult = auditMap(loaded.data, loaded.tileset, loaded.entities, {
+    noteIds: notes.ids,
+  });
+  for (const finding of audit.findings) {
+    const line = `[audit] ${directory} — ${finding.code}: ${finding.message}`;
+    if (finding.severity === 'blocking') console.error(line);
+    else console.warn(line);
+  }
 
   const night = addNightAmbient(viewport.scene);
 
@@ -301,6 +321,8 @@ export async function createRun(
   overlay.addRow('map', () =>
     `${loaded.data.width}×${loaded.data.height} @ ${loaded.data.tileSize}m · ${loaded.data.layers.length} layers`,
   );
+  overlay.addRow('frames', () => frameStats.summary());
+  overlay.addRow('cost', () => frameStats.costSummary());
   overlay.addRow('static', () =>
     `${loaded.geometry.instanceCount} tiles in ${loaded.geometry.instancedMeshCount} instanced meshes`,
   );
@@ -312,6 +334,17 @@ export async function createRun(
   overlay.addRow('colliders', () => {
     const gaps = loaded.colliders.filter((collider) => collider.kind === 'gap').length;
     return `${loaded.colliders.length} boxes (${gaps} floor gap${gaps === 1 ? '' : 's'})`;
+  });
+  // §6 — whether the level can be finished at all, which nothing else on screen says.
+  overlay.addRow('audit', () => {
+    if (audit.findings.length === 0) return `clean · ${audit.reachableTiles} tiles reachable`;
+    const blocking = audit.blocking.length;
+    const warnings = audit.findings.length - blocking;
+    return (
+      `${blocking} blocking · ${warnings} warning(s)` +
+      `${audit.strandedTiles > 0 ? ` · ${audit.strandedTiles} stranded tiles` : ''}` +
+      `${blocking > 0 ? ` — ${audit.blocking[0]!.code}` : ''}`
+    );
   });
   overlay.addRow('entities', () =>
     `${loaded.entities.count} · ${loaded.entities
@@ -750,6 +783,8 @@ export async function createRun(
     rng,
     illumination,
     night,
+    audit,
+    frameStats,
   };
 
   /**
@@ -854,6 +889,8 @@ export async function createRun(
     updateHud();
     overlay.update(realDelta);
     viewport.render();
+    // After the render, so the renderer's counters are this frame's rather than the last.
+    frameStats.sample(realDelta);
     input.endFrame();
 
     requestAnimationFrame(frame);

@@ -40,7 +40,7 @@ re-checked rather than taken on trust.
 | 8 — Shadow Monster | **Done** |
 | 9 — Interactables, Power & Objectives | **Done** |
 | 10 — Run Lifecycle | **Done** |
-| 11 — Content & Tuning | Not started |
+| 11 — Content & Tuning | **In progress** — tooling landed, content outstanding |
 
 ## Phase 0 — Scaffold
 
@@ -664,6 +664,75 @@ are the numbers most likely to move once the game is playable; expect to amend t
 here rather than treating the current values as final.
 
 **Exit:** a complete playable run, target frame rates met on both hardware tiers (§7).
+
+**Status: partly done — everything that is not authoring.**
+
+This phase is three content passes and a tuning pass, and none of the four can be done by
+anyone who is not looking at the game: the level is designed, the art and audio are made,
+and the timings are tuned by playing. What *can* be built ahead of them is the tooling each
+pass needs, and that is what landed. **The phase is not done and its exit criteria are not
+met.**
+
+*Landed.*
+
+`src/map/audit.ts` — the question the loader does not ask. Parsing tells you the file is
+valid; this tells you the level can be *finished*. A gate whose only switch is behind
+itself, an exit needing three latches on a map with two, a switch buried in a wall nobody
+can stand next to, a note whose text was never written: none of these break anything, and a
+player finds them by walking the level twice and concluding the game is broken.
+
+Reachability is computed the way a player earns it, not with a flood fill over the finished
+map: flood from the spawn, open any gate whose switch is inside what has been reached, flood
+again, repeat to a fixed point. A single pass over the closed map understates the level and
+a pass with every gate open overstates it; the fixed point is the only one of the three that
+answers the question. It runs at load — so opening `?map=<yours>` reports on what you just
+exported — and over every checked-in map in the tests.
+
+`src/debug/FrameStats.ts` — §7's targets are the one exit criterion in the plan that cannot
+be checked where the game is built. The instrument can be. Percentiles rather than an
+average, because a run that averages 60 fps and drops one frame in fifty is not a run that
+hit the target; plus draw calls and triangles, because §7's instancing rule is stated as a
+number and is therefore checkable.
+
+`src/enemies/Gait.ts` — the half of the art pass that is not art. §5.1 owes the spider a
+speed-driven locomotion cycle and §5.3 owes an attack whose contact frame lands on the
+strike; both are numbers a clip is driven by, and both exist now. The cycle advances with
+*ground covered* rather than with time, so a wandering spider and a fleeing one both put
+their legs where they touch. The attack's progress runs 0 → 1 across the wind-up and the
+contact frame is placed where it reaches 1 — so re-exporting the art cannot move when damage
+lands, which is what §5.3 asks for. The placeholder spider grew eight legs to make the cycle
+visible; the Shadow Monster deliberately has none (§5.2 — one pose).
+
+*Verified.* 350 unit tests (up from 323): 17 over the audit, 10 over the gait. In a browser:
+
+| Case | Measured |
+| --- | --- |
+| Audit of the example map | 0 findings, 2068 tiles reachable, 0 stranded |
+| Audit of every checked-in map | nothing blocking |
+| A gate whose only switch is behind it | `gate-locked-out`, blocking, and the ground behind it reported stranded |
+| A cascade (gate B's switch behind gate A) | opens, because the fixed point runs again after A |
+| A diagonal-only gap | reported stranded: a player cannot squeeze through a corner |
+| §7's instancing rule | 2500 tiles → 5 instanced meshes, **6 draw calls** |
+| Frame instrument | p50 450 ms here, 67 stalls discarded — the number is meaningless on a software rasteriser, which is the point of building the instrument rather than reporting a figure |
+| Spider walking at 2.4 m/s | bob range 0.068 m, leg swing range 0.994 rad against a 0.5 rad amplitude |
+| Spider caught by a beam | swing settles from 0.994 rad to 0.001 over two seconds — eased, not snapped |
+
+*Sent back to the spec.* Nothing. This phase built tools for the passes that will amend it;
+the amendments themselves come out of the tuning, which needs someone playing.
+
+*Outstanding — the phase's actual content.*
+
+- **The real level.** Authored in the external editors §1 names and dropped into
+  `public/maps/`. Every map in the repo is scaffolding and none of them is the level.
+- **The art pass.** Real `.glb` prefabs, and the spider's two clips driven by `Gait`. The
+  monster needs one pose (§5.2).
+- **The audio pass.** Real files replacing the synthesised placeholders; the bank already
+  falls back, so this is a drop-in.
+- **The tuning pass.** Deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
+  speeds. Every one of them is a `config.ts` value citing its spec section, so a change is
+  an edit in two places — but which way to move them is not knowable from here.
+- **§7's frame rates on both tiers**, which stay unverified for the same reason they have in
+  every phase: this environment renders through a software rasteriser.
 
 ## Cross-Cutting
 

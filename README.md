@@ -46,6 +46,24 @@ logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
 
 The `scripts/gen-*-map.mjs` generators regenerate those maps' layer data.
 
+## Authoring a level
+
+Export from a 2D tile editor (§1) into `public/maps/<name>/` as `map.json` beside a
+`tileset.json`, then open `?map=<name>`. The loader warns about anything it had to skip, and
+the **audit** answers the question after that one — can the level be finished? It reports in
+the console at load and on the `audit` row of the debug readout:
+
+- a gate whose only switch is behind itself, or an exit needing more `latch` switches than
+  the map has (**blocking** — the level cannot be completed)
+- a switch, note, or the flashlight that no reachable tile is within interaction range of
+- a `noteId` with no entry in `public/notes.json`, a light group with no switch, a switch
+  naming something that does not exist
+- walkable ground the player can never get to
+
+Reachability is worked out the way a player earns it: flood from the spawn, open any gate
+whose switch is in reach, flood again, repeat. `npm test` runs the same audit over every
+checked-in map.
+
 ## CI
 
 `.github/workflows/ci.yml` runs the tests and the build on every pull request — the same
