@@ -38,7 +38,7 @@
 {"path":"scripts/gen-phase5-map.mjs","kind":"script","lines":151,"summary":"Regenerates `public/maps/phase5-test/map.json` (§2).","spec":["§2","§5","§6"]}
 {"path":"scripts/gen-phase7-map.mjs","kind":"script","lines":166,"summary":"Regenerates `public/maps/phase7-test/map.json` (§2).","spec":["§2","§4.1","§5.1","§5.3"]}
 {"path":"scripts/gen-phase8-map.mjs","kind":"script","lines":164,"summary":"Regenerates `public/maps/phase8-test/map.json` (§2).","spec":["§2","§3.1","§4.1","§4.2","§5","§5.2"]}
-{"path":"scripts/gen-project-map.mjs","kind":"script","lines":162,"summary":"Regenerates `docs/project-map.jsonl` — one JSON record per tracked file."}
+{"path":"scripts/gen-project-map.mjs","kind":"script","lines":177,"summary":"Regenerates `docs/project-map.jsonl` — one JSON record per tracked file."}
 {"path":"src/Run.ts","kind":"source","lines":942,"summary":"One run of the game (§6, Run Structure).","exports":["RestartRequest","Run","RunShell","createRun"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§6.1","§6.2","§6.3","§6.4","§7","§8.1","§9.3"]}
 {"path":"src/audio/AudioCore.ts","kind":"source","lines":247,"summary":"Spatial audio (§4.3).","exports":["AudioCore","AudioState","Emitter"],"spec":["§3.2","§4.3","§5.2","§6","§8.1"]}
 {"path":"src/audio/Footsteps.ts","kind":"source","lines":32,"summary":"Step cadence (§4.3).","exports":["FootstepCadence"],"spec":["§4.3","§7"]}
@@ -51,6 +51,7 @@
 {"path":"src/core/OccluderFade.ts","kind":"source","lines":135,"summary":"Fades static geometry standing between the camera and the player (§3.2).","exports":["OccluderFade"],"spec":["§3.2","§4","§7"]}
 {"path":"src/core/SimClock.ts","kind":"source","lines":121,"summary":"Fixed-timestep simulation clock (§7).","exports":["SimClock","TickListener"],"spec":["§6","§7"]}
 {"path":"src/core/Viewport.ts","kind":"source","lines":83,"summary":"Renderer, scene and camera setup with resize handling (§1, §3.2, §7).","exports":["Viewport"],"spec":["§1","§3.2","§4","§7"]}
+{"path":"src/core/options.ts","kind":"source","lines":47,"summary":"What the URL is allowed to change (§8.3).","exports":["ShellOptions","parseShellOptions"],"spec":["§8.3","§9","§9.3"]}
 {"path":"src/core/rng.ts","kind":"source","lines":75,"summary":"Seeded random numbers (Cross-Cutting: determinism).","exports":["Rng","hashSeed","mulberry32"],"spec":["§5.1","§5.2","§6"]}
 {"path":"src/debug/AudioTestEmitter.ts","kind":"source","lines":86,"summary":"The moving off-screen emitter Phase 4 is judged by (Cross-Cutting: debug harness).","exports":["AudioTestEmitter"],"spec":["§3.2","§7"]}
 {"path":"src/debug/ColliderOverlay.ts","kind":"source","lines":62,"summary":"Debug visualisation of the merged Layer 1 colliders (§2, §3.1).","exports":["ColliderOverlay"],"spec":["§2","§3.1"]}
@@ -96,6 +97,8 @@
 {"path":"src/player/collision.ts","kind":"source","lines":275,"summary":"Circle-versus-box collision resolution for the player capsule (§3.1).","exports":["ColliderIndex","MoveResult","circleBoxContact","moveCircle"],"spec":["§2","§3.1","§3.2","§4.1","§5.3","§6"]}
 {"path":"src/ui/Hud.ts","kind":"source","lines":161,"summary":"The player-facing UI (§6, §3.3).","exports":["Hud"],"spec":["§3.3","§3.4","§6","§6.2","§6.5"]}
 {"path":"src/ui/RunOverlays.ts","kind":"source","lines":232,"summary":"How a run *feels* and how it ends (§3.4, §5.3, §6).","exports":["DeathCause","RunOverlays","VictorySummary"],"spec":["§3.4","§5.3","§6","§7","§8.1"]}
+{"path":"src/ui/TitleScreen.ts","kind":"source","lines":208,"summary":"The screens outside a run (§8.1): the title, and the credits.","exports":["TitleScreen"],"spec":["§4","§4.3","§6","§8.1","§8.3"]}
+{"path":"src/ui/credits.ts","kind":"source","lines":93,"summary":"What the credits screen says (§8.2).","exports":["CreditLine","CreditSection","creditSections","creditsText"],"spec":["§8.2"]}
 {"path":"src/world/Gates.ts","kind":"source","lines":136,"summary":"Gates swinging open (§6.4).","exports":["Gates"],"spec":["§2","§3.1","§6.4","§7"]}
 {"path":"src/world/Interaction.ts","kind":"source","lines":81,"summary":"Choosing what the context action acts on (§3.3).","exports":["Interactable","TargetQuery","findTarget","isInteractable"],"spec":["§3.1","§3.3","§6"]}
 {"path":"src/world/Notes.ts","kind":"source","lines":69,"summary":"Note bodies (§6.2).","exports":["NoteLibrary","NoteText","loadNotes"],"spec":["§2","§6.2"]}
@@ -121,8 +124,9 @@
 {"path":"tests/objectives.test.ts","kind":"test","lines":399,"summary":"Interaction targeting (§3.3) and the objective chain it drives (§6): both switch modes, the gate they open, the exit counter, and what a run remembers.","spec":["§3.3","§6","§6.1","§6.2","§6.3","§6.4","§6.5"]}
 {"path":"tests/player.test.ts","kind":"test","lines":391,"summary":"Player movement, wall sliding and the spawn facing (§3.1, §3.4).","spec":["§2","§3.1","§3.2","§3.4","§5","§5.2","§5.3","§7"]}
 {"path":"tests/prefabs.test.ts","kind":"test","lines":123,"summary":"Fitting third-party prefabs to this project's grid (§1).","spec":["§1"]}
-{"path":"tests/project-map.test.ts","kind":"test","lines":129,"summary":"`docs/project-map.jsonl` has to be current, and a convention nobody can check is a convention that is wrong within a week.","spec":["§4.1","§5.1","§6"]}
+{"path":"tests/project-map.test.ts","kind":"test","lines":156,"summary":"`docs/project-map.jsonl` has to be current, and a convention nobody can check is a convention that is wrong within a week.","spec":["§4.1","§5.1","§6"]}
 {"path":"tests/run.test.ts","kind":"test","lines":163,"summary":"How a run ends (§5.3, §6): the outcome state machine, and the health feedback curves it is read through (§3.4).","spec":["§3.1","§3.4","§5","§5.3","§6","§7"]}
+{"path":"tests/shell.test.ts","kind":"test","lines":105,"summary":"The shell (§8): what the credits claim, and what the URL is allowed to turn on.","spec":["§8","§8.2","§8.3","§9","§9.3"]}
 {"path":"tests/simclock.test.ts","kind":"test","lines":65,"summary":"Fixed-timestep simulation clock (§7).","spec":["§7"]}
 {"path":"tests/spider.test.ts","kind":"test","lines":410,"summary":"The spider's light reaction lifecycle and its attack (§5.1, §5.3).","spec":["§3.4","§4.1","§5.1","§5.3"]}
 {"path":"tests/support/setup.ts","kind":"test","lines":19,"summary":"Test-runner setup.","spec":["§4.3"]}

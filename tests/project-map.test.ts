@@ -12,7 +12,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -53,9 +53,15 @@ describe('docs/project-map.jsonl', () => {
     ).toBe('current');
   });
 
-  it('covers every tracked file, and nothing that is not tracked', () => {
+  it('covers every file in the tree, and nothing that is not', () => {
+    // The same listing the generator uses — tracked files *and* new ones that are not
+    // ignored. Comparing against `git ls-files` alone would fail on any file that exists
+    // and has not been staged yet, which is a normal state to be in mid-change.
     const tracked = new Set(
-      execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
+      execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+      })
         .split('\n')
         // The same two exclusions the generator makes, and for the same reasons: a
         // lockfile says nothing, and the map cannot describe itself without its own line
@@ -70,6 +76,27 @@ describe('docs/project-map.jsonl', () => {
     const missing = [...tracked].filter((path) => !mapped.has(path));
     const extra = [...mapped].filter((path) => !tracked.has(path));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
+  });
+
+  it('sees a file that exists but has not been staged yet', () => {
+    // The bug this is here for: the generator listed only `git ls-files`, so a new file was
+    // invisible to it until somebody ran `git add`. The generator and this test then agreed
+    // with each other about a file neither could see, and CI — which checks out a commit
+    // where the file *is* tracked — disagreed with both. Green locally, red on the PR.
+    const probe = resolve(ROOT, 'src/core/__map-probe.ts');
+    const checkedIn = readFileSync(MAP, 'utf8');
+    try {
+      writeFileSync(probe, '/** A file the map has never been told about. */\nexport const probe = 1;\n');
+      execFileSync('node', ['scripts/gen-project-map.mjs'], { cwd: ROOT, stdio: 'pipe' });
+      const paths = readFileSync(MAP, 'utf8')
+        .split('\n')
+        .filter((line) => line.length > 0)
+        .map((line) => (JSON.parse(line) as Record).path);
+      expect(paths).toContain('src/core/__map-probe.ts');
+    } finally {
+      rmSync(probe, { force: true });
+      writeFileSync(MAP, checkedIn);
+    }
   });
 
   it('is one JSON object per line, so it can be read a record at a time', () => {
