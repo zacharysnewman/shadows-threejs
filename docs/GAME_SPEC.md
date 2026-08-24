@@ -204,7 +204,10 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
 ### 3.3 Interaction
 
 - A single context action (`E` / gamepad `A` / on-screen tap target) acts on the nearest
-  interactable within 1.5 m and within ±90° of the player's aim.
+  interactable within 1.5 m and within ±90° of the player's aim. Nearest is measured from
+  the player, not from the aim axis: a target dead ahead and one just inside the cone are
+  chosen between by distance, because the player's sense of which thing they are standing
+  next to is a distance sense.
 - When such a target exists, a prompt appears above it. Only one target is ever prompted —
   the nearest wins — so cluttered tiles cannot produce ambiguous input.
 - Interaction is disabled while a UI modal (§6) or the death overlay (§5.3) is up.
@@ -621,10 +624,18 @@ lands slightly before the meshes visibly touch, which reads as being grabbed.
 ## 6. Items & Interactivity Specification
 
 1. **Flashlight Prop:** item pick-up on grid. Equips the player's primary light source.
+   Until it is picked up the torch cannot be switched on at all, so the opening of a run is
+   played in whatever light the map already has. A map with no `Flashlight` entity starts
+   the player holding one — a map built to exercise one mechanic should not have to author
+   a pick-up to be playable.
 2. **Note Props:** pick-up or readable triggers. Display UI modal overlay containing
    lore/clues. Body text lives in a separate `notes.json` keyed by `noteId`, not in the
-   map file, so writing and level design stay independent. Opening a note pauses
-   simulation; the world does not advance while the player is reading.
+   map file, so writing and level design stay independent. A `noteId` with no entry is
+   shown as a placeholder rather than failing the load, on the same terms as a missing
+   prefab or sound (§2). Opening a note pauses simulation; the world does not advance while
+   the player is reading, and it closes on the interact action or `Escape`. The note stays
+   where it is once read — it is a thing on the map, not a collectable — and the count of
+   distinct notes read is what the victory screen reports (below).
 3. **Power Switches / Buttons:** interactive objects that act on every entity sharing
    their `targetId`. Two modes:
    - **`latch`** — one-way. Turns its target on and cannot be turned back off. Used for
@@ -636,13 +647,27 @@ lands slightly before the meshes visibly touch, which reads as being grabbed.
      being safe.
    Safe zones otherwise go dark only through the temporary outages in §4.2.
 4. **Fences & Gates:** solid obstacle prefabs. Gates transition from `solid = true` to
-   `solid = false` and rotate 90° when triggered.
+   `solid = false` and rotate 90° when triggered. The swing takes 0.6 s, and **walkability
+   and the collider flip when it completes**, not when it starts: a gate that can be walked
+   through while it still looks shut reads as broken, and 0.6 s is short enough that
+   waiting for it never feels like being held up.
+
+   The rotation is about the gate's hinge — the edge it shares with a solid neighbour,
+   taken in west, east, north, south order — so it swings clear of the opening instead of
+   turning in place. The map format has no hinge field and a gate filling a doorway always
+   has one; a gate with no solid neighbour at all rotates about its own centre, which is
+   the degenerate case and looks like nothing much.
 5. **The Exit Gate:** the final objective. Unpowered initially. Requires the player to
    navigate the map, find specific buttons/switches to route power to it, and survive the
    escape. It unlocks once `requiredSwitches` distinct `latch` switches targeting it have
    fired;
    a HUD counter shows how many remain so the objective never becomes a hunt for an
    unmarked last switch.
+
+   Unlocking is not an action the player takes at the gate: the last switch routes the
+   power, and the gate opens where it stands, wherever the player is. Distinct is by
+   switch, not by press — a `latch` that has already fired contributes nothing further,
+   which is what `latch` being one-way is for.
 ### Run Structure
 
 A run is a single life over the whole map (§2), with no checkpoints, no saves, and no

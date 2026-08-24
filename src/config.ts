@@ -425,6 +425,23 @@ export const ENEMY = {
 } as const;
 
 /**
+ * §3.3, §6 — interaction and the objectives it drives.
+ */
+export const INTERACTION = {
+  /** §3.3 — how close the player must be to act on something, in metres. */
+  range: 1.5,
+  /** §3.3 — half the arc around the aim direction a target must fall inside. */
+  aimHalfAngleDegrees: 90,
+  /** §6 — how long a gate takes to swing, and after which its walkability flips. */
+  gateSwingSeconds: 0.6,
+  /**
+   * Height above a target the interaction prompt is anchored at, in metres. Presentation,
+   * not a spec value: it only has to clear the placeholder props.
+   */
+  promptHeight: 1.2,
+} as const;
+
+/**
  * §4.1 — the shared illumination query. Both AIs ask this and neither implements its own,
  * so its budget is the budget for light detection on the whole map.
  */

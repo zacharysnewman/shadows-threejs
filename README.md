@@ -38,6 +38,8 @@ npm test           # unit tests
   across, a pit that light crosses and walking does not, two lamps in two groups so one
   can be sabotaged while the other stays as a control, and two spiders for the comparison
 
+The objective chain (§6) lives on the example map: `?map=example` is the one to play.
+
 `?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
 logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
 

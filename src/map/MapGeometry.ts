@@ -12,6 +12,18 @@ import type { AssetLoader, Prefab } from '../core/AssetLoader';
 import { MAP_LIMITS } from '../config';
 import type { GameMap, Tileset } from './types';
 
+/**
+ * A handle on one tile's instance in the batch that drew it, so a gate can be moved (§6).
+ * Only the obstacle layer is indexed: nothing in the game animates a floor tile, and an
+ * index over every tile on a 50×50 map would be 2500 entries nobody reads.
+ */
+export interface TileInstance {
+  mesh: THREE.InstancedMesh;
+  instance: number;
+  /** The matrix the tile was built with, so a transform can be composed from rest. */
+  rest: THREE.Matrix4;
+}
+
 export interface MapGeometry {
   root: THREE.Group;
   /** One per (layer, prefab) pair — this is the draw-call count for static geometry. */
@@ -20,6 +32,10 @@ export interface MapGeometry {
   instanceCount: number;
   /** Tile id → prefab height, so collider extents match what is drawn. */
   tileHeights: Map<number, number>;
+  /** Obstacle-layer tile index → its instance, for the few tiles that move (§6). */
+  obstacleInstances: Map<number, TileInstance>;
+  /** Re-place one obstacle tile. The only thing in the map that is not static. */
+  setObstacleTransform(tileIndex: number, transform: THREE.Matrix4): void;
   /** Prefab names that fell back to a placeholder box. */
   placeholders: string[];
   dispose(): void;
@@ -66,6 +82,7 @@ export async function buildMapGeometry(
   const root = new THREE.Group();
   root.name = 'MapStatic';
   const tileHeights = new Map<number, number>();
+  const obstacleInstances = new Map<number, TileInstance>();
   const disposables: Array<{ dispose(): void }> = [];
   let instancedMeshCount = 0;
   let instanceCount = 0;
@@ -103,6 +120,9 @@ export async function buildMapGeometry(
         const gy = Math.floor(tileIndex / map.width);
         matrix.makeTranslation((gx + 0.5) * map.tileSize, 0, (gy + 0.5) * map.tileSize);
         mesh.setMatrixAt(instance, matrix);
+        if (!isFloor) {
+          obstacleInstances.set(tileIndex, { mesh, instance, rest: matrix.clone() });
+        }
       });
       mesh.instanceMatrix.needsUpdate = true;
       mesh.computeBoundingSphere();
@@ -121,6 +141,16 @@ export async function buildMapGeometry(
     instancedMeshCount,
     instanceCount,
     tileHeights,
+    obstacleInstances,
+    setObstacleTransform(tileIndex, transform) {
+      const handle = obstacleInstances.get(tileIndex);
+      if (!handle) return;
+      handle.mesh.setMatrixAt(handle.instance, transform);
+      handle.mesh.instanceMatrix.needsUpdate = true;
+      // The batch's bounds were computed for tiles that never moved; a gate swinging out
+      // of its tile can otherwise be culled while it is on screen.
+      handle.mesh.computeBoundingSphere();
+    },
     placeholders,
     dispose() {
       for (const d of disposables) d.dispose();

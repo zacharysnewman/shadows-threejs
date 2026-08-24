@@ -38,7 +38,7 @@ re-checked rather than taken on trust.
 | 6 — Illumination Detection Service | **Done** |
 | 7 — Spider AI | **Done** |
 | 8 — Shadow Monster | **Done** |
-| 9 — Interactables, Power & Objectives | Not started |
+| 9 — Interactables, Power & Objectives | **Done** |
 | 10 — Run Lifecycle | Not started |
 | 11 — Content & Tuning | Not started |
 
@@ -501,6 +501,69 @@ the HUD (§6). Depends on Phase 6 only for the interaction prompt's aim test.
 **Exit:** a full objective chain — find flashlight, read a note, fire the required latch
 switches, open the exit — is completable on the example map with enemies disabled; a
 `toggle` switch cuts and restores its light group without touching exit progress.
+
+**Status: done.**
+
+*Landed.* `src/world/` — `Interaction.ts` is §3.3's target rule as one pure function;
+`Objectives.ts` is the run's whole world state (latched switches, powered groups, notes
+read, the torch in hand) and resolves an interaction into changes, reporting what happened
+rather than drawing anything; `Gates.ts` swings a gate and flips the three things that are
+normally static — the instanced tile, the walkability grid and the collider index;
+`Notes.ts` loads `notes.json`; `Props.ts` gives the interactables placeholder bodies.
+`src/ui/Hud.ts` is the prompt, the note modal and the exit counter, and nothing else — §3.4
+is explicit that health is *not* a HUD element.
+
+Two things had to stop being immutable for a gate to open: `ColliderIndex` gained
+`removeAt`, and `MapGeometry` now indexes the obstacle layer's instances so one tile can be
+re-placed. Both are narrow on purpose — a gate is the only thing in the map that moves.
+
+The example map already authored the whole chain (a torch, two notes, three `latch`
+switches on `MainExit`, one on `CompoundGate`, two `toggle` switches on light groups, a
+gate and an exit needing three). Phase 9 is the phase that makes it work, so it needed no
+new map.
+
+*Verified.* 313 unit tests (up from 290): 23 in `tests/objectives.test.ts` over the
+targeting rule, both switch modes, the exit counter and the gate swing. The chain itself was
+driven in a browser on the example map with the enemies disabled, at seed `phase9`, pressing
+`E` from where a player would stand:
+
+| Step | Observed |
+| --- | --- |
+| Stood by the torch | prompt `Take the flashlight`, `held=false` |
+| Took it | `held=true`, prop gone from the map, prompt gone, and the torch will now switch on |
+| Stood by a note | prompt `Read` |
+| Read it | modal `Torn shift log`, sim paused, notes 1/2 |
+| While reading | the world advanced **0 ticks in 0.8 s**, and the prompt was hidden (§3.3, §6.2) |
+| `Escape` | closed, unpaused |
+| `toggle` on `YardLights` | 0/5 lamps lit → 3/5 → 0/5 → 3/5 across three presses |
+| …and the exit | `0/3` throughout: cutting a light group costs no objective progress |
+| `latch` on `CompoundGate` | not walkable on the tick it fired; flipped after **0.600 s** of gate ticks (spec 0.6) |
+| Three `latch` switches on `MainExit` | counter `1/3` → `2/3` → `EXIT OPEN`, exit tile walkable, gate swung |
+| Re-pressing a fired `latch` | prompt `Already routed`, exit still `3/3` |
+
+*The bug the screenshots caught.* The note modal was drawn permanently, holding the last
+note's text over the game. `.hud-modal` sets `display: grid`, and a class selector outbids
+the user agent's `[hidden] { display: none }` — so `hidden = true` did nothing. It is a
+one-line `.hud [hidden] { display: none !important }` now, and the reason it is worth a note
+is that every state probe said the modal was closed: `hud.openNote` was null, the element's
+`hidden` was true, and the thing was still on screen. Only a picture showed it.
+
+*Sent back to the spec.* §6.1 did not say what a map with no `Flashlight` entity does; the
+player starts holding one, so a map built to exercise one mechanic need not author a pick-up
+to be playable. §6.2 did not say what closes a note (the interact action or `Escape`) or what
+a `noteId` with no entry does (a placeholder, on the same terms as a missing prefab). §6.4
+gave a gate no swing duration and nothing to rotate about: 0.6 s, about the hinge it shares
+with a solid neighbour taken in west/east/north/south order, and **walkability and the
+collider flip when the swing completes** — a gate that can be walked through while it still
+looks shut reads as broken. §6.5 now says unlocking is not something the player does at the
+gate: the last switch routes the power and it opens where it stands. §3.3 now says nearest
+is measured from the player rather than from the aim axis.
+
+*Left to later phases.* Reaching the open exit does nothing yet — §6's victory condition
+(input disabled, an overlay with elapsed time and notes found) is Phase 10's, as is the death
+side of §5.3. The props are placeholder shapes; the art pass is Phase 11. Gamepad and
+on-screen tap targets for the context action are bound in `Input` but only `E` has been
+driven here.
 
 ## Phase 10 — Run Lifecycle
 
