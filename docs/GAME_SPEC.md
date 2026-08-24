@@ -193,6 +193,17 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   lock is the resource, not a bar.
 - There is no jump or crouch.
 
+**On touch**, the same two independent controls are floating sticks: the left half of the
+screen moves, the right half aims, and each anchors wherever the thumb lands rather than at
+a fixed spot on the glass — the only arrangement that survives different hand sizes and both
+orientations. Sprint is the movement stick pushed to its rim, so it costs no second thumb.
+
+Every action the player *taps* — the context action (§3.3) and the flashlight (§4.1) — has
+an on-screen button, stacked in the bottom-right corner. This is not optional chrome: an
+action bound only to a key and a gamepad button does not exist on a phone, and the game is
+meant to be playable there (§7). Held actions are the exception, and sprint is the only one:
+they belong on the stick the thumb is already on.
+
 ### 3.2 Camera Rig
 
 - Perspective camera, 50° vertical FOV, pitched per §1, positioned 14 m above and behind

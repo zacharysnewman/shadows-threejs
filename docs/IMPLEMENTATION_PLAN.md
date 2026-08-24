@@ -90,7 +90,7 @@ regeneration delay and refill curve.
 **Status: done.**
 
 *Landed.* `src/core/Input.ts` — one snapshot of movement, aim and actions fed by keyboard
-and mouse, gamepad, and touch (floating twin sticks plus an on-screen action button), all
+and mouse, gamepad, and touch (floating twin sticks plus on-screen action buttons), all
 three wired from the start rather than retrofitted. `src/player/` — `collision.ts`
 (tile-bucketed broad phase and circle-versus-box resolution along contact normals),
 `Player.ts` (movement smoothing, aim, render interpolation off the sim clock's `alpha`),
@@ -931,6 +931,14 @@ and the title goes away, leaving the HUD as the only thing on screen. Pressing `
 build does nothing; on `?debug` it pauses the clock — which is the honest way to ask whether
 the debug keys are live, since the effect is on the handle. `?debug` also adds the `Editor`
 button and shows the readout.
+
+*Fixed afterwards — and the touch half of the same gap.* The torch had no on-screen button
+either, so on a phone it was unreachable twice over. `TOUCH_BUTTONS` is the set of actions
+that get one, and the touch layer renders a button per entry rather than the single
+hard-coded `E`; `INPUT` gained the button geometry §3.1 now describes. `tests/input.test.ts`
+holds the rule that produced the bug: an action the run reads as an edge is a tap, and a tap
+with no button is an action a touch player cannot perform. Sprint stays off the list — it is
+held, not tapped, and lives on the movement stick's rim.
 
 *Fixed afterwards.* Moving the keydown listener behind `?debug` took the flashlight with
 it. `F` was bound in `Input` as a player action from Phase 2 and never read by the run —

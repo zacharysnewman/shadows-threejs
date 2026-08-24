@@ -159,6 +159,15 @@ export const INPUT = {
   touchStickRadius: 56,
   /** Deflection at which the touch movement stick starts sprinting (§3.1). */
   touchSprintDeflection: 0.95,
+  /**
+   * §3.1 — the on-screen action buttons, in CSS pixels: how wide each one is, the gap
+   * between them in the stack, and how far the stack sits from the corner. 72 px is a
+   * little over the 44 px minimum a thumb can hit reliably, which is the floor worth
+   * respecting rather than the target.
+   */
+  touchButtonSize: 72,
+  touchButtonGap: 16,
+  touchButtonMargin: 24,
 } as const;
 
 /** §4.1 — the flashlight spotlight and its battery. */
