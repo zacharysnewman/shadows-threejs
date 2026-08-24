@@ -48,6 +48,31 @@ State plainly what could not be verified. An exit criterion that cannot be met i
 environment (frame rate on a software renderer, for instance) is recorded as outstanding,
 not quietly dropped.
 
+## The project map
+
+`docs/project-map.jsonl` is an index of every tracked file: one JSON record per line, with
+its path, kind, line count, doc-comment summary, exports, and the `§` spec sections it
+cites. Read it first when you need to find where something lives — it answers "what
+implements §4.1", "what is in `src/world/`", and "what does this file export" without
+opening a hundred files.
+
+It is **generated, never hand-edited**:
+
+```bash
+npm run map        # rewrites docs/project-map.jsonl from the tree
+```
+
+**Regenerate it in the same change that adds, deletes, renames, or edits any tracked
+file.** Every field is derived from the file itself, so a header comment reworded or an
+export renamed moves the map too — it is not only new and deleted files that make it stale.
+A commit that changes the tree and not the map is incomplete, in the same way a commit that
+changes behaviour and not the spec is.
+
+`tests/project-map.test.ts` enforces this: it regenerates the map and fails if the result
+differs from what is checked in. A rule nothing checks is a rule that is wrong within a
+week, and an index that is quietly wrong is worse than no index — it sends the next reader
+to a file that no longer exists.
+
 ## Constants
 
 `src/config.ts` mirrors the spec's values, each citing the section it comes from. Nothing in
@@ -61,6 +86,7 @@ npm install
 npm run dev        # dev server — also the only build with the window.shadows debug handle
 npm run build      # typecheck + production build
 npm test           # unit tests
+npm run map        # regenerate docs/project-map.jsonl (see The project map)
 npm run preview    # serve the production build
 ```
 
@@ -83,6 +109,9 @@ The real level is authored in the 2D editor tooling in Phase 11 (§1), so map co
 scaffolding to build systems against and should never constrain a system's design.
 
 ## Layout
+
+A file-by-file index of all of this lives in `docs/project-map.jsonl`; the tree below is
+the shape of it.
 
 ```
 src/config.ts     constants mirroring the spec
