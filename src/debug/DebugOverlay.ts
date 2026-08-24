@@ -57,6 +57,14 @@ export class DebugOverlay {
     this.rows.set(label, provider);
   }
 
+  /**
+   * Drop every row. The rows close over the run that added them, so a restart has to clear
+   * them or the readout keeps the previous run's objects alive and reports them.
+   */
+  clearRows(): void {
+    this.rows.clear();
+  }
+
   removeRow(label: string): void {
     this.rows.delete(label);
   }

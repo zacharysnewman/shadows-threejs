@@ -227,10 +227,12 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   roughly 3 s to undo one hit, 8 s to recover from near-death. Taking damage resets the
   delay. Regeneration continues while moving; there is no resting or bandaging action, and
   nothing to collect.
-- **Feedback:** no numeric bar or hearts. Damage state reads through a red vignette that
-  tightens as health drops, an audible heartbeat that quickens below 0.34, and desaturation
-  at the lowest band. The player should feel the state without reading a HUD element,
-  and the effects fade as regeneration proceeds.
+- **Feedback:** no numeric bar or hearts. Damage state reads through a red vignette whose
+  strength is `1 − health`, so it is absent at full and total at zero; an audible heartbeat
+  below 0.34, running from 1.0 Hz at the threshold to 2.2 Hz at zero; and desaturation
+  below 0.17, where the image falls to 40% of its colour. The player should feel the state
+  without reading a HUD element, and because all three are functions of the current value
+  rather than of a damage event, they fade on their own as regeneration proceeds.
 
 The intent is that spider encounters are survivable and recoverable — a mistake costs
 tempo and forces a retreat rather than the run — while the Shadow Monster stays absolute.
@@ -613,10 +615,19 @@ player a reaction where the design gives them none.
 
 - Input is disabled.
 - A full-screen jump-scare UI element (CSS/HTML overlay) triggers, holding for 1.5 s. The
-  two enemies use different jump-scare presentations, so the player reads what killed them.
+  two enemies use different jump-scare presentations, so the player reads what killed them:
+  the spider's is red and convulsive, the Shadow Monster's is a black screen with a shape
+  arriving out of it. What has to hold, whatever the art becomes, is that the two are not
+  confusable at a glance — the player has to know which mistake they made, because the two
+  mistakes have nothing in common.
+- The hold is real time, not simulation time: the world has already stopped.
 - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
   game-over screen, and the only continuation is a new game from the level start with all
   switch, note, and pick-up progress cleared.
+
+Which enemy killed the player is not tracked separately: §5.3 gives the spider a *damage*
+and the monster a *kill*, so the deduction that empties the pool and the outright kill are
+already two different events, and the jump-scare reads them apart from that alone.
 
 The check runs against the player's 0.4 m capsule; the 1.0 m threshold means contact
 lands slightly before the meshes visibly touch, which reads as being grabbed.
@@ -679,6 +690,17 @@ victory.
 
 Reaching the unlocked exit gate ends the run: input is disabled, a victory overlay
 displays elapsed time and notes found, and the player may start a new run.
+
+*Reaching* it means standing on its tile. A locked exit is a solid tile and cannot be stood
+on at all, so no separate check for "is it open" is needed — the gate having swung is what
+makes the tile reachable (§6.4).
+
+Elapsed time is simulation time, so the seconds a player spent reading a note (§6.2) are not
+counted against them; a game that punished reading would be a game that told the player not
+to read.
+
+Both end screens — game-over and victory — are dismissed by the interact action or a click,
+and dismissing them starts the new run.
 
 ## 7. Rendering & Performance Targets
 

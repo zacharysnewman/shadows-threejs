@@ -21,6 +21,7 @@ export const SOUND_NAMES = [
   'footstep_heavy',
   'chitter',
   'lamp_buzz',
+  'heartbeat',
 ] as const;
 
 export type SoundName = (typeof SOUND_NAMES)[number];
@@ -136,6 +137,38 @@ const RECIPES: Readonly<Record<SoundName, Recipe>> = {
       }
       lowPass(data, 0.5);
       normalise(data, 0.55);
+    },
+  },
+
+  /**
+   * §3.4 — the player's own heart, which is the only feedback the spec gives for health.
+   * Two thumps, the second softer, and nothing above 90 Hz: it has to be felt underneath
+   * the map's audio rather than heard on top of it.
+   */
+  heartbeat: {
+    seconds: 0.5,
+    loop: false,
+    seed: 17,
+    render(data, sampleRate, random) {
+      const thump = (start: number, gain: number): void => {
+        const from = Math.floor(start * sampleRate);
+        for (let i = 0; from + i < data.length && i < sampleRate * 0.22; i += 1) {
+          const t = i / sampleRate;
+          // A pitch that falls as it decays, which is what makes a thump a thump rather
+          // than a tone with an envelope on it.
+          const frequency = 62 - t * 26;
+          const envelope = Math.exp(-t * 22);
+          data[from + i] =
+            (data[from + i] ?? 0) +
+            (Math.sin(2 * Math.PI * frequency * t) * 0.9 + (random() * 2 - 1) * 0.06) *
+              envelope *
+              gain;
+        }
+      };
+      thump(0.0, 1.0);
+      thump(0.17, 0.55);
+      lowPass(data, 0.09);
+      normalise(data, 0.85);
     },
   },
 

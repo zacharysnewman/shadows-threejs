@@ -67,6 +67,14 @@ export class SimClock {
     return this._paused ? 0 : Math.min(1, this.accumulator / this.tickSeconds);
   }
 
+  /**
+   * Drop every listener. A clock is per-run (§6, Run Structure), and a listener surviving
+   * a teardown would go on ticking the dead run's systems from the next run's clock.
+   */
+  dispose(): void {
+    this.listeners.clear();
+  }
+
   onTick(listener: TickListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);

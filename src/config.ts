@@ -425,6 +425,19 @@ export const ENEMY = {
 } as const;
 
 /**
+ * §5.3, §6 — the run's ending, and the state the player reads it through.
+ */
+export const RUN = {
+  /** §5.3 — how long the jump-scare holds before the game-over screen. Real time. */
+  jumpScareSeconds: 1.5,
+  /** §3.4 — the heartbeat's rate at `HEALTH.lowThreshold` and at zero. */
+  heartbeatHz: { atThreshold: 1.0, atZero: 2.2 },
+  /** §3.4 — health below which the image desaturates, and the fraction it falls to. */
+  desaturateBelow: 0.17,
+  desaturateTo: 0.4,
+} as const;
+
+/**
  * §3.3, §6 — interaction and the objectives it drives.
  */
 export const INTERACTION = {

@@ -116,6 +116,17 @@ export class Hud {
     this.modal.hidden = true;
   }
 
+  /**
+   * Back to how a run starts (§6, Run Structure). The HUD outlives a run, so the state it
+   * carries — an open note, a stale prompt, the last run's counter — has to be cleared or
+   * the new life begins mid-sentence.
+   */
+  reset(): void {
+    this.closeNoteModal();
+    this.prompt.hidden = true;
+    this.counter.hidden = true;
+  }
+
   dispose(): void {
     this.root.remove();
   }

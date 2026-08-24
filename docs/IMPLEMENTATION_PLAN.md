@@ -39,7 +39,7 @@ re-checked rather than taken on trust.
 | 7 — Spider AI | **Done** |
 | 8 — Shadow Monster | **Done** |
 | 9 — Interactables, Power & Objectives | **Done** |
-| 10 — Run Lifecycle | Not started |
+| 10 — Run Lifecycle | **Done** |
 | 11 — Content & Tuning | Not started |
 
 ## Phase 0 — Scaffold
@@ -576,6 +576,83 @@ about snapshotting it.
 **Exit:** death and victory both return to a fresh run with no state carried over —
 including no leaked timers, audio sources, or lights from the previous run; the objective
 chain from Phase 9 is completable end to end with enemies live.
+
+**Status: done.**
+
+*Landed.* The phase is mostly a refactor, because "no state carried over" is a question
+about structure and not about features. `src/Run.ts` now owns everything that belongs to one
+life — the clock, the map, the lights, the enemies, the objectives, the readout rows, the
+debug keys — and `src/main.ts` is the shell that outlives it: the renderer, the input
+devices, the decoded sound bank, the HUD and the note library. A run cannot dispose itself,
+so ending one asks the shell, and the shell disposes the old before building the new.
+
+`src/world/RunOutcome.ts` is the ending as arithmetic: four states, input and simulation
+switched off on the same call that starts the jump-scare, and a run that cannot end twice.
+`src/ui/RunOverlays.ts` is §3.4's damage feedback and §5.3's two jump-scares and end
+screens. `Player` now records which of §5.3's two contact resolutions emptied the pool,
+which is all the jump-scare needs to know.
+
+Five things had no teardown and now do: `SimClock` (listeners), `DebugOverlay` (rows, which
+close over the run that added them), `AudioTestEmitter` (a held source), `Hud` (an open note
+would otherwise survive into the next life), and `MapLoader` (its geometry group).
+
+*Verified.* 323 unit tests (up from 313), ten of them over the outcome ordering and the
+§3.4 curves. The exit criterion itself is a census of the live scene across three runs,
+taken in a browser on the example map with the enemies live:
+
+| Run | Scene |
+| --- | --- |
+| 1 (fresh) | 139 objects, 8 lights, 43 meshes |
+| 2 (after a death and a restart) | 139 objects, 8 lights, 43 meshes |
+| 3 (after a second death) | 139 objects, 8 lights, 43 meshes |
+
+Δ0 on every count. Getting there found two real leaks — a `SpotLight` is constructed with a
+default target object, and the flashlight was adding that to the scene before replacing it,
+so one empty `Object3D` accumulated per life; and `MapLoader.dispose` emptied the static
+geometry group without taking it out of the scene.
+
+Alongside it:
+
+| Case | Measured |
+| --- | --- |
+| Death | `input=false`, `simulating=false` on the same call, cause `ShadowMonster`, the monster's jump-scare on screen |
+| The world after death | **0 simulation ticks in 0.7 s** |
+| The jump-scare's hold | 6 × 0.25 s clamped frames → `over` (spec 1.5 s), driven through the live `RunOutcome` |
+| Game over | `You were caught`, and `E` starts the next run |
+| A restart's state | torch back on the floor, notes 0, exit 0/3, health 1.00, clock reset |
+| A pinned seed | identical across runs, so a death is replayable |
+| The second death | spider this time, and the spider's jump-scare — the two are distinguishable |
+| Victory | `Out · 0:01.3 · 1 of 2 notes found` |
+| Vignette | `1 − health` exactly: 0.34, 0.68, 0.87 at healths 0.66, 0.32, 0.13 |
+| Desaturation | fires at 0.13, not at 0.32 — the band is below 0.17, which two spider hits do not reach |
+| Heartbeat at health 0.30 | 0.88 s between beats against a computed 0.876 s |
+
+*What could not be measured this way.* Wall-clock sampling of the jump-scare through
+Playwright is too coarse at this frame rate — the whole 1.5 s falls between two samples — so
+the hold is measured by driving the live `RunOutcome` a clamped frame at a time instead.
+Screenshots time out while the jump-scare's keyframes are on screen, so the two
+presentations are evidenced by their DOM state (`run-scare is-spider` / `is-monster`) rather
+than by a picture. Frame rate remains unmeasurable here, as in every phase.
+
+*Sent back to the spec.* §3.4 said the vignette "tightens", the heartbeat "quickens below
+0.34" and the image desaturates "at the lowest band", and gave no numbers for any of it:
+the vignette's strength is `1 − health`, the heartbeat runs 1.0 → 2.2 Hz between the
+threshold and zero, and the image falls to 40% colour below 0.17. All three are functions of
+the current value rather than of a damage event, which is *why* they fade on their own as
+regeneration proceeds — that is now written down rather than implied. §5.3 now says the
+jump-scare's hold is real time because the world has already stopped, and that which enemy
+killed the player needs no separate tracking: the spider's contact is a *damage* and the
+monster's is a *kill*, so the two are already distinct events. §6 now says reaching the exit
+means standing on its tile — a locked exit is a solid tile and cannot be stood on, so the
+gate having swung is the whole of the "is it open" test — that elapsed time is simulation
+time, so reading a note costs the player nothing, and that both end screens are dismissed by
+the interact action or a click.
+
+*Left to later phases.* The jump-scares are CSS shapes, not art, and the end screens are
+plain cards; Phase 11 owns how any of it looks. There is no title screen and no options, so
+the audio context is still armed by the first input of any kind rather than by a title
+screen's (§4.3). The real level is Phase 11's too — everything above was driven on the
+example map, which is scaffolding.
 
 ## Phase 11 — Content & Tuning
 
