@@ -429,9 +429,8 @@ Shadow Monster's half of the contact check is still unresolved and still logs, w
 ## Phase 8 — Shadow Monster
 
 The never-drawn shadow-casting body (§5.2), freeze-on-lit, the flicker curve and its severity
-ramp, blink stepping, its fatal contact resolution (§5.3), and the environmental light
-sabotage lifecycle (§5.2, §4.2). No animation work: the monster is never both moving and
-visible, so one pose covers it.
+ramp, the blink, its fatal contact resolution (§5.3), and the environmental light sabotage
+lifecycle (§5.2, §4.2).
 
 **Exit:** the monster is trackable by shadow and footsteps alone; sustained focus produces
 the flicker ramp and blink; a lamp the monster stands under runs the full
@@ -446,8 +445,7 @@ fatal contact, on the same `decide` hook the spider uses. `src/lighting/flicker.
 it, because §4.2 asks for "the same character" and the reason is a gameplay one: a lamp
 straining across the map and a beam starting to blink are the player learning the same fact.
 `EnvironmentLights` gained §4.2's lifecycle, with *powered* and *working* kept as two
-separate facts so a failure never touches the switch. `blink` joined the state machine as a
-state that is pinned and still moves. `MonsterFootsteps` and `LampVoices` are the two tells
+separate facts so a failure never touches the switch. `blink` joined the state machine. `MonsterFootsteps` and `LampVoices` are the two tells
 that work with nothing on screen; `Player.kill` is the contact.
 
 `maps/phase8-test` is the map, and its load-bearing feature is a **pit**: light crosses a
@@ -455,6 +453,35 @@ floor gap (§4.1 occludes on obstacles, and a hole is not one) and walking does 
 makes it the only place a monster can be lit with something impassable between it and the
 player — so it is the only reliable way to watch the blink stop short instead of lurching
 into it. Two spiders share the map for the comparison the whole design rests on.
+
+*Revised afterwards — the blink is a walk in the dark, not a jump-cut.* Three faults, and
+the first was doing real damage: the curve clamped to zero, so at high severity the beam
+*switched off* for a tick or two at a time — 17 blackouts in six seconds of focus, `visible`
+going false — which reads as the player's torch failing rather than as something reaching
+into their light. It is clamped to `FLICKER.floor` (15%) now, beam and lamps alike.
+
+The blink itself was a 2 m displacement over 0.15 s, marched against the grid, silent
+because a jump-cut is not eight strides. §5.2 now gives it 0.5 s — the length of a human
+blink — with the beam held at the floor for the whole window and the freeze simply lifted:
+the monster *walks*, at its ordinary 1.8 m/s, along a route the grid allows, with its
+footsteps audible. About 0.64 m per blink once the acceleration ramp is paid, and the dead
+time is measured from the end of the window rather than the start (measured from the start,
+a cooldown no longer than the blink would let them run back to back).
+
+That made `blink` an ordinary hunting state rather than a pinned one, which is where the
+third fault came from: `pinned`, `speedForState` and the acquisition branch all knew, and
+`steer` did not — so the first version was unfrozen, pathing, and standing perfectly still.
+`hunting()` names the pair now, so the sites that have to agree are one edit.
+
+The fourth was mine and the tests caught it: sweeping the torch away *inside* a blink left
+the beam dimmed and the severity ramp open, because the window ran to completion regardless.
+A 0.15 s window hid that; a 0.5 s one would not have. A blink now ends on the tick the beam
+leaves.
+
+Sent back to the spec: the floor and why it is not zero; the blink as a window rather than a
+step; and the one thing this costs — the monster is now dimly lit *while moving*, so "the
+monster is never both moving and visible" is no longer true and §5.2 records a walk cycle
+for the blink as an art requirement rather than pretending one pose still covers it.
 
 *Verified.* 290 unit tests (up from 256): 21 in `tests/monster.test.ts` for the curve, the
 freeze, the ramp and the blink, 8 more in `tests/lighting.test.ts` for the sabotage
@@ -506,9 +533,9 @@ slower than the player's 0.95 m so the two are never confusable.
 *Left to later phases.* Death itself: contact takes the pool to 0.0 and the readout says
 `DEAD`, and that is all — input is still live, there is no jump-scare and no game-over, all
 of which are Phase 10's (§5.3). The `PowerSwitch` entities on the map still do nothing;
-§4.2's groups are driven by the debug key until Phase 9 wires them. No animation work, as
-the phase said: §5.2 is explicit that one pose covers a creature that is never both moving
-and visible.
+§4.2's groups are driven by the debug key until Phase 9 wires them. No animation work — one
+pose, which covered the monster completely until the blink became a walk. §5.2 now asks for
+a walk cycle for that window alone, and it is outstanding.
 
 ## Phase 9 — Interactables, Power & Objectives
 

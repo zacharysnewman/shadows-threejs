@@ -238,6 +238,18 @@ export const FLICKER = {
   frequency: 18,
   /** The per-tick jitter multiplying the sine. */
   jitter: { min: 0.7, max: 1.3 },
+  /**
+   * §5.2 — the floor the curve is clamped to, as a fraction of base intensity. Not zero:
+   * at full severity the formula goes negative on a high jitter draw, and a beam clamped
+   * to zero is switched *off* for a tick or two, which reads as the torch dying rather
+   * than as the torch struggling. The struggle is the tell; killing the light throws it
+   * away and hands the player a fright with no information in it.
+   *
+   * It bounds the lamps too (§4.2), and a straining lamp wants the same treatment: dim to
+   * nearly nothing and hold, rather than strobe to black. A lamp that has actually failed
+   * is set dark outright, which is a different event and still available.
+   */
+  floor: 0.15,
 } as const;
 
 /**
@@ -429,18 +441,19 @@ export const ENEMY = {
       intensityThreshold: 0.35,
       /** Consecutive ticks below it before the freeze breaks (§7 — ticks, not frames). */
       consecutiveTicks: 3,
-      /** How far the lurch carries it, at most. */
-      distance: 2.0,
-      /** How long the lurch takes. Short enough to read as a jump-cut, not a walk. */
-      seconds: 0.15,
-      /** Dead time after a blink before another can trigger. */
-      cooldownSeconds: 0.5,
       /**
-       * Resolution of the walkability march along the step, in metres. Not a spec value —
-       * as with §5.1's flee search, it only has to be finer than a tile so the step can
-       * never be placed across a wall it stepped over.
+       * How long the beam stays down, in seconds — the length of a human blink. The beam
+       * holds at `FLICKER.floor` for the whole of it and the monster is free the whole
+       * time, so this is also how much ground a blink is worth: at its 1.8 m/s pursuit
+       * speed, a little under a metre.
        */
-      searchStep: 0.25,
+      seconds: 0.5,
+      /**
+       * Dead time after a blink *ends* before another can trigger. Measured from the end
+       * rather than the start, or a cooldown no longer than the blink itself would let
+       * them run back to back and the beam would never come up between them.
+       */
+      cooldownSeconds: 0.5,
     },
     /** §5.2 — ground covered between footsteps. Slower than the player's 0.95 m (§4.3). */
     strideMetres: 1.6,

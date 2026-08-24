@@ -8,8 +8,11 @@
  * two unrelated effects.
  *
  * ```
- * I(t) = I_base · (1 − severity · |sin(f · t)| · random(0.7, 1.3))
+ * I(t) = I_base · max(floor, 1 − severity · |sin(f · t)| · random(0.7, 1.3))
  * ```
+ *
+ * The floor is the part worth knowing about: the formula's own range runs below zero at
+ * high severity, and a light that reaches zero is not flickering, it is off (§5.2).
  *
  * Pure arithmetic, and the randomness is passed in rather than drawn here, so the curve
  * can be tested exactly and so a run replays identically from its seed (Cross-Cutting:
@@ -25,7 +28,9 @@ import { FLICKER } from '../config';
  */
 export function flickerFraction(t: number, severity: number, jitter: number): number {
   const dip = severity * Math.abs(Math.sin(FLICKER.frequency * t)) * jitter;
-  return Math.min(1, Math.max(0, 1 - dip));
+  // Clamped to `FLICKER.floor` rather than to zero (§5.2): at full severity a high jitter
+  // draw takes the formula negative, and a light held at zero is a light switched off.
+  return Math.min(1, Math.max(FLICKER.floor, 1 - dip));
 }
 
 /**

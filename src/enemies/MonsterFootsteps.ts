@@ -47,14 +47,11 @@ export class MonsterFootsteps {
       previous.x = monster.position.x;
       previous.z = monster.position.y;
 
-      // §5.2 — the blink is a jump-cut, not a walk. Two metres of it is not eight strides,
-      // and giving it a burst of footsteps would turn the game's one silent movement into
-      // its loudest.
-      if (monster.state === 'blink') {
-        cadence.reset();
-        continue;
-      }
-
+      // A blink gets footsteps like any other walking (§5.2). It used to be silenced here,
+      // when it was a 2 m jump-cut: eight strides' worth of ground in 0.15 s would have
+      // been a burst of noise for a movement that never happened. It is a walk now, at
+      // walking speed, and the steps are the only thing the player has while the beam is
+      // down — half a second of hearing it come is the point of the window.
       if (!cadence.tick(moved)) continue;
       this.audio.playAt(
         'footstep_heavy',

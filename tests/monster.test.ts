@@ -43,13 +43,18 @@ describe('the flicker curve (§5.2)', () => {
 
   it('dips deepest at the sine\'s peak, by exactly severity × jitter', () => {
     const peak = Math.PI / 2 / FLICKER.frequency;
-    expect(flickerFraction(peak, 0.95, 1.0)).toBeCloseTo(1 - 0.95);
+    // Above the floor the formula is untouched.
     expect(flickerFraction(peak, 0.5, 1.2)).toBeCloseTo(1 - 0.6);
+    expect(flickerFraction(peak, 0.4, 1.0)).toBeCloseTo(0.6);
   });
 
-  it('never reports a negative beam', () => {
+  it('never takes the beam below the floor, or to zero (§5.2)', () => {
     const peak = Math.PI / 2 / FLICKER.frequency;
-    expect(flickerFraction(peak, 0.95, FLICKER.jitter.max)).toBeGreaterThanOrEqual(0);
+    // 1 − 0.95 is 0.05, and 1 − 0.95 × 1.3 is negative: both would once have been a torch
+    // switched off for a tick. The floor is what keeps it a torch struggling.
+    expect(flickerFraction(peak, 0.95, 1.0)).toBeCloseTo(FLICKER.floor);
+    expect(flickerFraction(peak, 0.95, FLICKER.jitter.max)).toBeCloseTo(FLICKER.floor);
+    expect(FLICKER.floor).toBeGreaterThan(0);
   });
 
   it('ramps 0.1 → 0.95 over three seconds and holds there', () => {
@@ -136,12 +141,15 @@ describe('Shadow Monster light interference (§5.2)', () => {
     expect(monster.flickerSeverity).toBeCloseTo(FLICK.severity.to, 2);
   });
 
-  it('restarts the ramp the moment focus is lost (§5.2 — focus is continuous)', () => {
+  it('restarts the ramp the moment focus is lost, even mid-blink (§5.2)', () => {
     const built = world(OPEN);
     const light = beam(true);
     const monster = monsterAt(20, 20);
     const context = contextFor(built, 20, 8, { illumination: light });
 
+    // Two seconds is past the first blink, so this also covers the case the 0.5 s window
+    // introduced: sweeping the torch away *inside* a blink. The beam has to come clean on
+    // that tick, not when the window happens to run out.
     tickFor(monster, context, 2);
     expect(monster.flickerSeverity).toBeGreaterThan(0.6);
 
@@ -149,6 +157,7 @@ describe('Shadow Monster light interference (§5.2)', () => {
     monster.tick(TICK, context);
     expect(monster.flickerSeverity).toBe(0);
     expect(monster.beamFraction).toBe(1);
+    expect(monster.state).not.toBe('blink');
 
     light.on = true;
     monster.tick(TICK, context);
@@ -198,18 +207,24 @@ describe('Shadow Monster blink (§5.2)', () => {
     expect(m.position.x).toBeCloseTo(20, 6);
   });
 
-  it('covers no more than 2 m per blink, and takes 0.15 s to do it', () => {
+  it('holds the blink open for half a second and walks it, rather than jumping', () => {
     const built = world(OPEN);
     const light = beam(true);
     const monster = monsterAt(20, 20);
     const context = contextFor(built, 20, 8, { illumination: light });
 
+    // The ground a blink is worth is its own walking speed for its own duration — derived,
+    // not written down, because both are tuning values.
+    const walked = ENEMY.shadowMonster.pursueSpeed * BLINK.seconds;
+
     let blinkTicks = 0;
     let from: { x: number; y: number } | null = null;
     let longest = 0;
+    let perTick = 0;
     let blinks = 0;
     for (let t = 0; t < 8; t += TICK) {
       const wasBlinking = monster.state === 'blink';
+      const before = { x: monster.position.x, y: monster.position.y };
       monster.tick(TICK, context);
       if (monster.state === 'blink') {
         if (!wasBlinking) {
@@ -218,15 +233,77 @@ describe('Shadow Monster blink (§5.2)', () => {
           blinks += 1;
         }
         blinkTicks += 1;
+        perTick = Math.max(
+          perTick,
+          Math.hypot(monster.position.x - before.x, monster.position.y - before.y),
+        );
       } else if (wasBlinking && from) {
-        longest = Math.max(longest, Math.hypot(monster.position.x - from.x, monster.position.y - from.y));
-        // 0.15 s at 60 Hz is nine ticks; the tenth is the one that lands it.
+        longest = Math.max(
+          longest,
+          Math.hypot(monster.position.x - from.x, monster.position.y - from.y),
+        );
         expect(blinkTicks).toBeLessThanOrEqual(Math.round(BLINK.seconds / TICK) + 1);
       }
     }
+
     expect(blinks).toBeGreaterThan(0);
-    expect(longest).toBeLessThanOrEqual(BLINK.distance + 1e-6);
-    expect(longest).toBeGreaterThan(BLINK.distance * 0.9);
+    // Half a second of walking, and no more: it never covers ground it could not walk.
+    // The lower bound is loose on purpose — it starts each blink from a standstill, so the
+    // acceleration ramp (§5) spends roughly a third of the window getting up to speed.
+    expect(longest).toBeLessThanOrEqual(walked + 1e-6);
+    expect(longest).toBeGreaterThan(walked * 0.5);
+    // And no single tick is a jump. The old lurch moved 2 m in nine ticks — 0.22 m each,
+    // an order of magnitude more than a walking tick — so this is the check that would
+    // have failed on it.
+    expect(perTick).toBeLessThanOrEqual(ENEMY.shadowMonster.pursueSpeed * TICK + 1e-6);
+  });
+
+  it('keeps the beam alive through the blink instead of switching it off (§5.2)', () => {
+    const built = world(OPEN);
+    const light = beam(true);
+    const monster = monsterAt(20, 20);
+    const context = contextFor(built, 20, 8, { illumination: light });
+
+    let floor = 1;
+    let blinkFractions: number[] = [];
+    for (let t = 0; t < 8; t += TICK) {
+      monster.tick(TICK, context);
+      floor = Math.min(floor, monster.beamFraction);
+      if (monster.state === 'blink') blinkFractions.push(monster.beamFraction);
+    }
+
+    // The bug: the curve went negative at high severity and clamped to 0, which hides the
+    // spotlight outright. Nothing may take the beam below the floor, blink or flicker.
+    expect(floor).toBeGreaterThanOrEqual(FLICKER.floor - 1e-9);
+    expect(floor).toBeGreaterThan(0);
+    // And the blink itself is one steady dip, not a strobe inside a strobe.
+    expect(blinkFractions.length).toBeGreaterThan(0);
+    for (const fraction of blinkFractions) expect(fraction).toBeCloseTo(FLICKER.floor, 9);
+  });
+
+  it('can be heard walking while the beam is down', () => {
+    // The blink used to be silent, because a 2 m jump-cut is not eight strides. It is a
+    // walk now, and the footsteps are the only thing the player has in that half second.
+    const built = world(OPEN);
+    const light = beam(true);
+    const monster = monsterAt(20, 20);
+    const context = contextFor(built, 20, 8, { illumination: light });
+
+    let movedWhileBlinking = 0;
+    for (let t = 0; t < 8; t += TICK) {
+      const before = { x: monster.position.x, y: monster.position.y };
+      monster.tick(TICK, context);
+      if (monster.state === 'blink') {
+        movedWhileBlinking += Math.hypot(
+          monster.position.x - before.x,
+          monster.position.y - before.y,
+        );
+      }
+    }
+
+    // `MonsterFootsteps` plays one step per `strideMetres` of ground covered, and no
+    // longer suppresses the blink — so ground covered here is steps heard.
+    expect(movedWhileBlinking).toBeGreaterThan(ENEMY.shadowMonster.strideMetres);
   });
 
   it('cannot retrigger inside its cooldown', () => {
@@ -244,15 +321,18 @@ describe('Shadow Monster blink (§5.2)', () => {
       previous = monster.state;
     }
 
-    expect(blinkStarts.length).toBeGreaterThan(2);
+    expect(blinkStarts.length).toBeGreaterThan(1);
     for (let i = 1; i < blinkStarts.length; i += 1) {
+      // The dead time is measured from the *end* of the previous blink (§5.2), so two
+      // starts are at least a blink plus a cooldown apart. Measured from the start — the
+      // old rule — a cooldown no longer than the blink would allow them back to back.
       expect(blinkStarts[i]! - blinkStarts[i - 1]!).toBeGreaterThanOrEqual(
-        BLINK.cooldownSeconds - TICK,
+        BLINK.seconds + BLINK.cooldownSeconds - TICK,
       );
     }
   });
 
-  it('stops short at a wall rather than stepping through it', () => {
+  it('walks around a wall rather than through it', () => {
     // A wall two rows north of the monster, with the player beyond it.
     const rows = Array.from({ length: 16 }, () => ' '.repeat(16));
     rows[8] = '#'.repeat(16);
@@ -269,8 +349,9 @@ describe('Shadow Monster blink (§5.2)', () => {
       expect(built.grid.isWalkable(gx, gy)).toBe(true);
     }
     expect(monster.blinkCount).toBeGreaterThan(0);
-    // Stopped at the wall's face with its whole body clear of it, not with its centre on
-    // the last walkable point and half of it inside the brick.
+    // Held on the walkable side of the wall's face, with its whole body clear of it. It
+    // walks through the blink now, so what keeps it out is the same collider resolution
+    // that keeps it out at any other time — not a march that stopped short.
     expect(monster.position.y).toBeGreaterThanOrEqual(18 + ENEMY.shadowMonster.radius - 1e-6);
   });
 
