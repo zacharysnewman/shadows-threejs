@@ -35,11 +35,13 @@ export type EnemyKind = 'SpiderEnemy' | 'ShadowMonster';
  * - `frozen` — held still by light (§5.1, §5.2).
  * - `attack` — committed to a lunge and no longer advancing (§5.3).
  * - `recoil` — held after a strike, whether it landed or missed (§5.3).
- * - `blink`  — mid-lurch, moving under its own arithmetic rather than steering (§5.2).
+ * - `blink`  — the beam is down and the freeze has lifted: walking at pursue speed, in the
+ *   dark, for as long as the blink lasts (§5.2).
  *
- * The last four are all "pinned": nothing steers and velocity is zero. What differs is who
- * releases them — the light, the strike timer, the hold, or the lurch finishing. `blink` is
- * pinned and still moves: §5.2's step is a displacement over 0.15 s, not a walk.
+ * `frozen`, `attack` and `recoil` are "pinned": nothing steers and velocity is zero. What
+ * differs is who releases them — the light, the strike timer, or the hold. `blink` is not
+ * pinned; it steers exactly as `pursue` does, and only the timer that started it decides
+ * when it ends.
  */
 export type EnemyState =
   | 'wander'
@@ -157,9 +159,18 @@ export interface EnemyContext {
 
 /** The states in which nothing steers and velocity is zero (§5.1, §5.3). */
 function pinned(state: EnemyState): boolean {
-  return (
-    state === 'frozen' || state === 'attack' || state === 'recoil' || state === 'blink'
-  );
+  return state === 'frozen' || state === 'attack' || state === 'recoil';
+}
+
+/**
+ * The states that are coming for the player, and therefore steer the same way. `blink` is
+ * one of them (§5.2): the beam being down is what lets the monster move, not a different
+ * way of moving. Named rather than written out at each site, because the three places that
+ * ask this question have to agree — the first version of the blink walk missed `steer` and
+ * produced a monster that was unfrozen, pathing, and standing perfectly still.
+ */
+function hunting(state: EnemyState): boolean {
+  return state === 'pursue' || state === 'blink';
 }
 
 export class Enemy {
@@ -248,7 +259,10 @@ export class Enemy {
   setState(state: EnemyState, holdSeconds = 0): void {
     this._state = state;
     this.holdTimer = holdSeconds;
-    if (state !== 'pursue') this.path = [];
+    // A route survives only into the states that would walk it (§5.2): a blink resumes the
+    // hunt the freeze interrupted, so throwing the path away here would make it re-plan
+    // from scratch inside a window half a second long.
+    if (!hunting(state)) this.path = [];
   }
 
   /**
@@ -372,7 +386,10 @@ export class Enemy {
     // first could never begin a chase around a corner, which is most of what a chase is on
     // a map of buildings — and neither enemy is described as hunting by eye. Sight decides
     // only *how* it comes: straight, or routed.
-    if (this._state === 'pursue') {
+    // §5.2 — `blink` keeps its own name through this: the state is what tells the readout,
+    // the footsteps and the beam that the light is down, and re-acquiring into `pursue`
+    // here would lose that for the length of the blink.
+    if (hunting(this._state)) {
       // The gap between the two radii is what stops an enemy at the edge of its range
       // flickering between hunting and wandering.
       if (distance > this.profile.loseRadius) {
@@ -386,7 +403,7 @@ export class Enemy {
       this.sinceRepath = Number.POSITIVE_INFINITY;
     }
 
-    if (this._state === 'pursue') this.updatePursuitPath(context, visible);
+    if (hunting(this._state)) this.updatePursuitPath(context, visible);
     else this.updateWanderPath(dt, context);
   }
 
@@ -463,7 +480,7 @@ export class Enemy {
     const steer = _steer.set(0, 0);
     if (pinned(this._state)) return steer;
 
-    if (this._state === 'pursue' && this.path.length === 0) {
+    if (hunting(this._state) && this.path.length === 0) {
       // Straight at them.
       return steer.set(context.playerX - this.position.x, context.playerZ - this.position.y);
     }
@@ -513,6 +530,10 @@ export class Enemy {
   private speedForState(): number {
     switch (this._state) {
       case 'pursue':
+      // §5.2 — a blink is the monster walking while the beam is down, not a lurch with a
+      // speed of its own. It closes ground at the rate it always closes ground; what a
+      // blink changes is that it is allowed to.
+      case 'blink':
         return this.profile.pursueSpeed;
       case 'flee':
         return this.profile.fleeSpeed;
@@ -521,7 +542,6 @@ export class Enemy {
       case 'frozen':
       case 'attack':
       case 'recoil':
-      case 'blink':
         return 0;
       default:
         return 0;

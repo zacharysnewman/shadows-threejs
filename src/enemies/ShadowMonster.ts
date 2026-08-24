@@ -13,24 +13,31 @@
  * **So holding the light on it is both the answer and the mistake.** Sustained focus makes
  * the beam struggle, and the struggle ramps: `flickerSeverity` climbs 0.1 → 0.95 over three
  * seconds, and the blink threshold is only reachable past 0.5, about 1.4 s in. The first
- * stretch of watching it is free. After that every dip is a chance for it to be two metres
- * closer than it was, and the player is choosing between knowing where it is and keeping it
- * where it is. Letting go resets the ramp and loses the monster; holding on keeps it and
- * feeds it ground.
+ * stretch of watching it is free. After that the beam blinks — half a second in which it
+ * drops to almost nothing and the freeze lifts, and the monster simply *walks*, at the
+ * speed it always walks, towards the player. Letting go resets the ramp and loses the
+ * monster; holding on keeps it and feeds it ground half a second at a time.
+ *
+ * The blink is not a teleport and the beam does not go out. Both were true once and both
+ * were worse: a jump-cut is a thing the player is told about after the fact, and a beam at
+ * zero reads as the torch failing rather than as the monster reaching into it. What the
+ * player gets now is half a second of near-dark with heavy footsteps in it, and a shape
+ * that is closer when the light comes back.
  *
  * The one thing the beam cannot do is push it back. There is no deterrence timer here and
  * no flee — §5's table gives the monster no flee speed — and its contact is fatal at any
  * health (§5.3). Everything below is that asymmetry made arithmetic.
  */
 
-import { ENEMY } from '../config';
+import { ENEMY, FLICKER as FLICKER_CURVE } from '../config';
 import type { Rng } from '../core/rng';
 import { drawJitter, flickerFraction, severityAt } from '../lighting/flicker';
-import { moveCircle } from '../player/collision';
 import { Enemy, ENEMY_PROFILES, type EnemyContext } from './Enemy';
 
 const FLICKER = ENEMY.shadowMonster.flicker;
 const BLINK = ENEMY.shadowMonster.blink;
+/** What the beam holds at through a blink — the same floor the curve is clamped to. */
+const FLICKER_FLOOR = FLICKER_CURVE.floor;
 
 export class ShadowMonster extends Enemy {
   /** Seconds of *continuous* flashlight focus, driving the severity ramp (§5.2). */
@@ -39,14 +46,10 @@ export class ShadowMonster extends Enemy {
   private _beamFraction = 1;
   /** Consecutive ticks the beam has been under §5.2's threshold. */
   private dipTicks = 0;
-  /** Seconds left of the post-blink lockout. */
+  /** Seconds left of the post-blink lockout; it starts when the blink ends. */
   private blinkCooldown = 0;
-  /** Seconds left of the current lurch, and where it is carrying the monster. */
+  /** Seconds left of the current blink — the window the beam is down and it is free. */
   private blinkFor = 0;
-  private blinkFromX = 0;
-  private blinkFromZ = 0;
-  private blinkToX = 0;
-  private blinkToZ = 0;
   private _blinks = 0;
 
   constructor(key: string, spawnX: number, spawnZ: number, rng: Rng) {
@@ -90,12 +93,13 @@ export class ShadowMonster extends Enemy {
   }
 
   protected override decide(dt: number, context: EnemyContext): void {
-    this.blinkCooldown = Math.max(0, this.blinkCooldown - dt);
-
     if (this.state === 'blink') {
       this.advanceBlink(dt, context);
       return;
     }
+    // Only ticks down outside a blink, so the dead time is half a second of *beam*, not
+    // half a second that the blink itself has already spent.
+    this.blinkCooldown = Math.max(0, this.blinkCooldown - dt);
 
     const sample = context.illumination.sample(this.key, this.position.x, this.position.y);
 
@@ -120,11 +124,11 @@ export class ShadowMonster extends Enemy {
       return;
     }
 
-    this.interfere(dt, context);
+    this.interfere(dt);
   }
 
   /** §5.2 step 2 — the severity ramp, the curve, and the blink it eventually allows. */
-  private interfere(dt: number, context: EnemyContext): void {
+  private interfere(dt: number): void {
     this.focusFor += dt;
     // `t` is the focus time, not wall time: the sine has to start at a zero crossing when
     // the beam lands, or the first tick of focus can be a deep dip out of nowhere.
@@ -142,7 +146,7 @@ export class ShadowMonster extends Enemy {
 
     this.dipTicks += 1;
     if (this.dipTicks < BLINK.consecutiveTicks || this.blinkCooldown > 0) return;
-    this.beginBlink(context);
+    this.beginBlink();
   }
 
   /** Stop interfering with a beam this monster is no longer in. */
@@ -153,75 +157,70 @@ export class ShadowMonster extends Enemy {
   }
 
   /**
-   * §5.2 — up to 2 m straight at the player, stopping short at the first solid tile.
-   *
-   * Marched against the grid in sub-tile steps for the same reason §5.1's flee target is:
-   * testing only the far end would happily place the monster through a wall into whatever
-   * is behind it, and a creature that walks through geometry is a bug rather than a tell.
+   * §5.2 — the beam goes down and the freeze lifts. Nothing here places the monster
+   * anywhere: it is put into `blink`, and `blink` steers and walks exactly as `pursue`
+   * does, so the ground it covers is the ground its own legs cover in half a second, along
+   * a route the grid allows. That is the whole difference from the lurch this replaces —
+   * no march, no displacement, and no way to arrive somewhere it could not have walked.
    */
-  private beginBlink(context: EnemyContext): void {
-    const dx = context.playerX - this.position.x;
-    const dz = context.playerZ - this.position.y;
-    const length = Math.hypot(dx, dz);
-    if (length < 1e-4) return;
-
-    const ux = dx / length;
-    const uz = dz / length;
-    const reach = Math.min(BLINK.distance, length);
-
-    let toX = this.position.x;
-    let toZ = this.position.y;
-    for (let d = BLINK.searchStep; d <= reach; d += BLINK.searchStep) {
-      const x = this.position.x + ux * d;
-      const z = this.position.y + uz * d;
-      const { gx, gy } = context.grid.worldToGrid(x, z);
-      if (!context.grid.isWalkable(gx, gy)) break;
-      toX = x;
-      toZ = z;
-    }
-
-    this.blinkFromX = this.position.x;
-    this.blinkFromZ = this.position.y;
-    this.blinkToX = toX;
-    this.blinkToZ = toZ;
+  private beginBlink(): void {
     this.blinkFor = BLINK.seconds;
     this.dipTicks = 0;
+    // From this tick, not the next: the tick that triggers the blink is already part of it,
+    // and leaving the curve's value on the beam would put one bright frame at the front of
+    // a window whose whole job is to be dark.
+    this._beamFraction = FLICKER_FLOOR;
     this._blinks += 1;
-    // §5.2 — the freeze breaks for the step and nothing else. The lockout starts here
-    // rather than at the end, so the 0.5 s is measured from the blink the player saw.
-    this.blinkCooldown = BLINK.cooldownSeconds;
     this.setState('blink');
   }
 
   /**
-   * Carry the lurch. A displacement over a fixed 0.15 s rather than a velocity: it has to
-   * take exactly that long however far it is going, and steering towards the endpoint
-   * would overshoot the wall the march stopped at.
+   * Carry the blink: hold the beam at the floor and let the ordinary pursuit steering do
+   * the moving.
    *
-   * Each tick's step still goes through the collider resolution, though. The march tests
-   * the *centre* against the grid, which would leave a 0.55 m body half inside the wall it
-   * stopped at; `moveCircle` is what actually keeps a body out of geometry, here as
-   * everywhere else.
+   * The beam is pinned to `FLICKER.floor` for the whole window rather than left to the
+   * oscillating curve. A blink is one event the player reads — the light goes, they hear
+   * it coming, the light returns — and a beam still strobing through it would read as
+   * several small ones instead.
    */
   private advanceBlink(dt: number, context: EnemyContext): void {
+    const sample = context.illumination.sample(this.key, this.position.x, this.position.y);
+
+    // The beam has left it, or a lamp has caught it. Either ends the blink on this tick.
+    //
+    // A blink is half a second long and the player can sweep the torch away inside it —
+    // and §5.2 is absolute that a beam not on the monster is a clean beam. Running the
+    // window out regardless would hold their torch dimmed while it points at something
+    // else, and hold the severity ramp open across a break in focus that should have
+    // reset it. Both were true of the first version of this walk.
+    if (!sample.lit || sample.source !== 'flashlight') {
+      this.releaseBeam();
+      this.blinkFor = 0;
+      this.blinkCooldown = BLINK.cooldownSeconds;
+      // §5.2 step 1 — a lamp freezes it exactly as the beam did; nothing else does.
+      if (sample.lit) {
+        this.setState('frozen');
+        return;
+      }
+      this.setState('pursue');
+      super.decide(dt, context);
+      return;
+    }
+
     this.blinkFor = Math.max(0, this.blinkFor - dt);
-    const progress = 1 - this.blinkFor / BLINK.seconds;
-    const wantX = this.blinkFromX + (this.blinkToX - this.blinkFromX) * progress;
-    const wantZ = this.blinkFromZ + (this.blinkToZ - this.blinkFromZ) * progress;
+    this._beamFraction = FLICKER_FLOOR;
 
-    const result = moveCircle(
-      context.colliders,
-      this.position.x,
-      this.position.y,
-      wantX - this.position.x,
-      wantZ - this.position.y,
-      this.profile.radius,
-    );
-    this.position.set(result.x, result.z);
-    if (this.blinkFor > 0) return;
+    if (this.blinkFor > 0) {
+      // Free, and hunting. §5.2 — the beam is too far down to hold it, whatever the
+      // illumination service still calls "lit".
+      super.decide(dt, context);
+      return;
+    }
 
-    // Landed. Still in the beam, almost certainly — so it freezes again, and the ramp goes
-    // on from where it was: a blink is not a reprieve from the focus that caused it.
+    // The beam is back, and it is still in it — so it freezes again, the ramp goes on from
+    // where it was (a blink is not a reprieve from the focus that caused it), and the dead
+    // time starts now rather than half a second ago.
+    this.blinkCooldown = BLINK.cooldownSeconds;
     this.setState('frozen');
   }
 }

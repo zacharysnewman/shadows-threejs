@@ -548,12 +548,16 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     leaves it there is nothing there again. A faint visible body would be strictly worse: it
     would give the player a second, easier way to find the monster, and the whole design is
     that there is only the one hard way.
-  - **Animation: none.** A single pose is enough, because the monster is never both moving
-    and visible. It is invisible unless a light is on it, and a light on it freezes it
-    (below) — so every frame in which the player can see anything of it is a frame in which
-    it is standing still. The blink step is the one exception and wants no animation either:
-    §5.2 calls for a jump-cut rather than a walk, so the pose simply arrives somewhere else.
-    Nothing subtle would read anyway; what the player sees is a silhouette on the floor.
+  - **Animation: a walk cycle, for the blink only.** For almost all of a run a single pose
+    is enough: the monster is invisible unless a light is on it, and a light on it freezes
+    it, so every frame in which the player can see anything of it is a frame in which it is
+    standing still.
+
+    The blink is the exception, and it is a real one. The beam holds at 15% rather than
+    going out, so during those 0.5 s the monster is both moving *and* dimly lit — its shadow
+    is on the floor, sliding. That glimpse is wanted; a pose skating across the ground is
+    not. Until the art pass provides a cycle, the blink reads as a sliding silhouette, which
+    is recorded here as an art requirement rather than a thing to design around.
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a
@@ -579,12 +583,25 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
      - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus. Focus
        is continuous in the same sense as §5.1's deterrence timer: the instant the monster
        leaves the cone the beam is clean again and the ramp restarts from 0.1.
-     - **The "Blink" Movement:** during extreme flickers (when light intensity drops below
-       threshold for a few frames), the Shadow Monster breaks its freeze state and takes a
-       rapid, lurching step toward the player. Threshold: intensity below 35% of
-       `I_base` for 3 consecutive frames. The step covers up to 2.0 m toward the player
-       over 0.15 s, stopping short at the first solid tile, and cannot retrigger for
-       0.5 s. The step is instant enough to read as a jump-cut rather than a walk.
+     - **The beam never reaches zero.** The formula above goes negative at high severity on
+       a high jitter draw, so it is clamped to a floor of 15% of `I_base`. A beam held at
+       zero is not a beam struggling, it is a torch switched off, and the player reads it as
+       their equipment failing rather than as something reaching into their light. The
+       struggle is the information; blacking out throws it away. The same floor bounds a
+       lamp under strain (§4.2) — a lamp that has actually *failed* is dark, and that is a
+       different event.
+     - **The "Blink":** during extreme flickers — intensity below 35% of `I_base` for 3
+       consecutive ticks — the beam drops to the floor and **stays there for 0.5 s**, about
+       the length of a human blink. For the whole of that window the Shadow Monster's freeze
+       lifts and it simply *walks*, at its ordinary 1.8 m/s pursuit speed, along a route the
+       grid allows. Roughly 0.9 m of ground, and it can be heard covering it: the blink is a
+       walk, so it has footsteps (§4.3). Another blink cannot begin until 0.5 s after this
+       one **ends**, so the beam is reliable for at least that long in between.
+
+       It is a walk and not a teleport on purpose. A jump-cut is something the player is
+       told about after the fact — the shape was there, now it is here. Half a second of
+       near-dark with heavy footsteps in it is something they are *inside*, and the dread is
+       in the window rather than in the discovery afterwards.
 
        Those numbers interlock: the threshold is only reachable once `flickerSeverity`
        passes 0.5, which is about 1.4 s into the ramp. So the first stretch of holding the
