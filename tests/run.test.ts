@@ -7,6 +7,7 @@
  * time because the world has stopped, and that a run cannot end twice.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { HEALTH, RUN } from '../src/config';
 import { Health } from '../src/player/Health';
@@ -136,5 +137,26 @@ describe('what a run remembers (§6, Run Structure)', () => {
     const second = new RunOutcome();
     expect(second.state).toBe('playing');
     expect(second.cause).toBeNull();
+  });
+});
+
+describe('the frame loop (§7)', () => {
+  it('is owned by the shell alone: a run never drives itself', () => {
+    // §7 — two drivers on one clock scale every speed in §3.1 and §5 by however many
+    // drivers there are, and `requestAnimationFrame` hands its callback a *timestamp*, so
+    // a self-driving run also feeds `performance.now()` into a parameter measured in
+    // seconds. Both are invisible in a unit test and obvious in a source file, so this is
+    // checked where it is legible.
+    const run = readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8');
+    const code = run
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+    expect(code).not.toContain('requestAnimationFrame');
+    // And the guard is not vacuous: the string is what the bug looked like.
+    expect('requestAnimationFrame(frame);').toContain('requestAnimationFrame');
+
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    expect(main.match(/requestAnimationFrame/g)?.length).toBe(2); // the loop, and its start
   });
 });
