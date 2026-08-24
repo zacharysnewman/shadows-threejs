@@ -431,6 +431,56 @@ export const ENEMY = {
 } as const;
 
 /**
+ * §1 — where the prefab art came from.
+ *
+ * CC0 asks for nothing, so this is not a compliance record; it is a provenance one. The
+ * question that gets asked later is "can we ship this, and where do we get the next
+ * version", and the answer has to live somewhere that is not somebody's memory.
+ */
+export const PREFAB_SOURCE = {
+  kit: 'KayKit — Dungeon Remastered 1.0',
+  author: 'Kay Lousberg',
+  url: 'https://kaylousberg.com',
+  licence: 'CC0 1.0',
+  licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+  /** The author's own repository, pinned, so the exact files can be re-fetched. */
+  repo: 'KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
+  commit: 'b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07',
+  /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
+  attributionRequired: false,
+} as const;
+
+/**
+ * §1 — the two things prefab normalisation cannot infer.
+ *
+ * Everything else is a placement rule the loader applies to every prefab: centred on its
+ * tile in X and Z, and sitting on the ground plane. These are the per-prefab facts, and
+ * they are here rather than baked into the `.glb` files because editing a third-party kit
+ * means re-editing it on every update.
+ *
+ * The values below fit the kit `PREFAB_SOURCE` names. A prefab with no entry is used
+ * exactly as authored, which is the common case and what a kit built to the 2 m standard
+ * needs.
+ */
+export const PREFAB_FIT: Readonly<
+  Record<string, { node?: string; fitHeight?: number }>
+> = {
+  /**
+   * The kit has no standalone gate: the door is a child of a 4 m doorway wall, and taking
+   * the whole file would put a second wall on the gate's tile. `node` takes the door and
+   * discards its parent.
+   */
+  gate_wood: { node: 'wall_doorway_door', fitHeight: 2.2 },
+  /**
+   * A 4 m wall. Scaled to 3 m, which is what the placeholder established and what the
+   * camera's pitch (§3.2) and the occluder fade were tuned against.
+   */
+  wall_brick: { fitHeight: 3.0 },
+  /** A 1.1 m barrier where the level wants something at chest height to break sight over. */
+  fence_chainlink: { fitHeight: 1.6 },
+};
+
+/**
  * §5.3, §6 — the run's ending, and the state the player reads it through.
  */
 export const RUN = {

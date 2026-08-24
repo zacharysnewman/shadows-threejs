@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three';
-import { FLASHLIGHT, HEALTH, ILLUMINATION, INTERACTION, PLAYER, SIM } from './config';
+import { FLASHLIGHT, HEALTH, ILLUMINATION, INTERACTION, PLAYER, PREFAB_SOURCE, SIM } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -497,7 +497,15 @@ export async function createRun(
     overlay.addRow('warnings', () => `${loaded.data.warnings.length} (see console)`);
   }
   if (loaded.geometry.placeholders.length > 0) {
-    overlay.addRow('assets', () => `${loaded.geometry.placeholders.length} placeholder prefab(s)`);
+    overlay.addRow('assets', () => {
+      const missing = loaded.geometry.placeholders.length;
+      // §1 — the art's provenance, on screen. CC0 requires no attribution; this is here so
+      // the question "where did this come from" has an answer without a git archaeology
+      // session, and so a run on placeholder boxes is obvious rather than assumed.
+      return missing === 0
+        ? `${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`
+        : `${missing} placeholder prefab(s) · rest: ${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`;
+    });
   }
 
   // Hover readout: the walkability grid answering a query, live, at the cursor.

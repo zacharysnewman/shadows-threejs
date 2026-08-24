@@ -18,6 +18,19 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
   local avoidance.
 - **3D Asset Pipeline:** Low-poly `.glb` / `.gltf` modular grid assets (2 m × 2 m grid unit
   standard).
+
+  A kit authored by somebody else will not match that standard exactly, and editing the
+  files to make it would mean re-editing them every time the kit updates. So prefabs are
+  **normalised on load** instead, against one convention: a prefab is centred on its tile in
+  X and Z, and it sits *on* the ground — upright geometry starts at `y = 0` and floor
+  geometry ends there, so a floor tile's walkable surface is the ground plane rather than
+  something a few centimetres above it.
+
+  That is a placement rule and applies to every prefab. Two things it cannot infer are
+  authored per prefab instead: which node to take, when a module is bundled inside a larger
+  one (a door inside its wall), and a height to scale to, when a module's own is wrong for
+  this game (a 4 m wall where the level wants 3 m). Both are look decisions and neither is
+  something a loader should guess.
 - **Audio:** `THREE.PositionalAudio` for spatial 3D sound, crucial for tracking invisible
   threats.
 
