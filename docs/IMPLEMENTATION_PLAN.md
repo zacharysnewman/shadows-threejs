@@ -41,6 +41,8 @@ re-checked rather than taken on trust.
 | 9 — Interactables, Power & Objectives | **Done** |
 | 10 — Run Lifecycle | **Done** |
 | 11 — Content & Tuning | **In progress** — tooling landed, content outstanding |
+| 12 — Level Editor | Not started |
+| 13 — Shell: Title, Credits & Debug Mode | Not started |
 
 ## Phase 0 — Scaffold
 
@@ -779,6 +781,36 @@ exceptions, because "the assets are on-grid" turned out to be a thing the loader
   an edit in two places — but which way to move them is not knowable from here.
 - **§7's frame rates on both tiers**, which stay unverified for the same reason they have in
   every phase: this environment renders through a software rasteriser.
+
+## Phase 12 — Level Editor
+
+§9's tile editor, served from the same site: two tile layers with paint, erase and
+rectangle tools, entity placement with a properties sheet, undo/redo, the `facing` mount
+rule (§9.2), the audit running live, clipboard export, autosave, and the hand-off that
+plays a level without a round trip through the repository (§9.3).
+
+Ordered before the shell because it unblocks the thing nothing else can start without: the
+real level (§1, Phase 11). Every map in the repository is scaffolding until this exists.
+
+Touch-first, because §9 exists to be usable on a phone. That is a constraint on the whole
+design and not a coat of paint at the end: targets sized for a thumb, pan and pinch rather
+than scroll wheel and drag, and no interaction that needs a hover state to be discoverable.
+
+**Exit:** a level can be authored end to end on a phone — tiles, entities and their
+properties — and played from the editor without saving anything; the audit's findings are
+visible while editing; the exported JSON loads in the game unchanged; and a note cannot be
+placed where the camera could not read it.
+
+## Phase 13 — Shell: Title, Credits & Debug Mode
+
+§8: the title screen the audio context is armed from (§4.3), the credits generated from the
+constants the game already loads its assets by (§8.2), and debug mode moved from
+on-by-default to behind `?debug` (§8.3).
+
+**Exit:** a run is reachable only through the title; a fresh load shows no diagnostics and
+no debug keys; `?debug` restores everything the Cross-Cutting harness describes; the credits
+name the art, the libraries and the designer, and adding a dependency changes them without
+anybody editing a screen.
 
 ## Cross-Cutting
 
