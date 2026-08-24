@@ -19,6 +19,7 @@ const STATE_COLORS: Record<EnemyState, number> = {
   frozen: 0xa0e7e5,
   attack: 0xff2e2e,
   recoil: 0xd39bff,
+  blink: 0xffffff,
 };
 
 /** Waypoints per enemy the buffer has room for; paths longer than this are clipped. */

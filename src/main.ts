@@ -32,6 +32,7 @@ import { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
 import { Spider } from './enemies/Spider';
+import { MonsterFootsteps } from './enemies/MonsterFootsteps';
 import { SpiderVoices } from './enemies/SpiderVoices';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
@@ -50,6 +51,7 @@ import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
 import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
+import { LampVoices } from './lighting/LampVoices';
 import { IlluminationService } from './lighting/Illumination';
 import { Flashlight } from './lighting/Flashlight';
 import { CameraRig } from './player/CameraRig';
@@ -179,6 +181,14 @@ async function main(): Promise<void> {
   const footsteps = new FootstepCadence();
   // §5.1 — the spiders get a voice now that they have something to be heard doing.
   const voices = new SpiderVoices(audio, enemies.enemies);
+  // §5.2 — and the monster gets the only tell it has at range.
+  const monsterSteps = new MonsterFootsteps(audio);
+  // §4.2 — a straining lamp is audible from anywhere, which is the half of the tell that
+  // still works when the lamp is off screen.
+  const lampVoices = new LampVoices(audio, environment);
+  // §4.2's lamp flicker is randomised, and every randomised value comes from the run seed
+  // so a sabotage cycle replays identically (Cross-Cutting: determinism).
+  const sabotageRng = rng.stream('sabotage');
   const testEmitter = new AudioTestEmitter(audio);
 
   const rig = new CameraRig(viewport, loaded.bounds);
@@ -211,6 +221,14 @@ async function main(): Promise<void> {
       illumination,
       player,
     });
+
+    // §5.2 — the monsters decide what the beam is doing to itself, and the beam is told.
+    // Deliberately after the enemies tick and deliberately not through the battery: a
+    // monster interfering with the light is not the light running down (§4.1).
+    flashlight.intensityScale = enemies.beamInterference;
+    // §4.2 — the lamps find out who is standing under them.
+    environment.tick(dt, enemies.monsterPositions(), () => sabotageRng.float());
+    monsterSteps.tick(enemies.monsters);
     testEmitter.tick(dt, player.position.x, player.position.y);
   });
 
@@ -315,11 +333,31 @@ async function main(): Promise<void> {
     }
     return `off · ${charge}${battery.lockedOut ? ` · LOCKED OUT until ${FLASHLIGHT.reEnableCharge * 100}%` : ''}`;
   });
-  overlay.addRow('lamps', () =>
-    environment.lamps.length === 0
-      ? 'none on this map'
-      : `${environment.litCount}/${environment.lamps.length} lit · ${environment.shadowCasterCount} casting shadows`,
-  );
+  overlay.addRow('lamps', () => {
+    if (environment.lamps.length === 0) return 'none on this map';
+    // §4.2 — straining and failed are the tell, so they belong beside the lit count.
+    const sabotage =
+      environment.strainingCount > 0 || environment.failedCount > 0
+        ? ` · ${environment.strainingCount} STRAINING · ${environment.failedCount} out`
+        : '';
+    return (
+      `${environment.litCount}/${environment.lamps.length} lit · ` +
+      `${environment.shadowCasterCount} casting shadows${sabotage}`
+    );
+  });
+  // §5.2's lifecycle is entirely invisible from `state`: frozen is frozen whether the ramp
+  // is at 0.1 or one tick from a blink.
+  overlay.addRow('MONSTER', () => {
+    const monsters = enemies.monsters;
+    if (monsters.length === 0) return 'none on this map';
+    const nearest = monsters
+      .map((monster) => ({ monster, distance: monster.distanceTo(player.position.x, player.position.y) }))
+      .sort((a, b) => a.distance - b.distance)[0]!;
+    return (
+      `${monsters.length} · nearest ${nearest.distance.toFixed(1)}m · ${nearest.monster.state} · ` +
+      `${nearest.monster.lightStatus} · ${nearest.monster.blinkCount} blink(s)`
+    );
+  });
   overlay.addRow('audio', () => {
     const placeholders = audio.bank?.placeholders.length ?? 0;
     return (
@@ -524,6 +562,8 @@ async function main(): Promise<void> {
       occluders,
       enemies,
       voices,
+      monsterSteps,
+      lampVoices,
       rng,
       illumination,
     };
@@ -546,6 +586,7 @@ async function main(): Promise<void> {
     player.render(clock.alpha);
     enemies.render(clock.alpha);
     voices.update();
+    lampVoices.update();
     paths.update();
     // Bound to the interpolated position, not the tick position: a beam that stepped at
     // 60 Hz while the player moved smoothly would visibly swim around them.

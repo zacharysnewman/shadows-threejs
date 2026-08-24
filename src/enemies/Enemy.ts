@@ -34,11 +34,20 @@ export type EnemyKind = 'SpiderEnemy' | 'ShadowMonster';
  * - `frozen` — held still by light (§5.1, §5.2).
  * - `attack` — committed to a lunge and no longer advancing (§5.3).
  * - `recoil` — held after a strike, whether it landed or missed (§5.3).
+ * - `blink`  — mid-lurch, moving under its own arithmetic rather than steering (§5.2).
  *
- * The last three are all "pinned": velocity is zero and nothing steers. What differs is
- * who releases them — the light, the strike timer, or the hold.
+ * The last four are all "pinned": nothing steers and velocity is zero. What differs is who
+ * releases them — the light, the strike timer, the hold, or the lurch finishing. `blink` is
+ * pinned and still moves: §5.2's step is a displacement over 0.15 s, not a walk.
  */
-export type EnemyState = 'wander' | 'pursue' | 'flee' | 'frozen' | 'attack' | 'recoil';
+export type EnemyState =
+  | 'wander'
+  | 'pursue'
+  | 'flee'
+  | 'frozen'
+  | 'attack'
+  | 'recoil'
+  | 'blink';
 
 export interface EnemyProfile {
   kind: EnemyKind;
@@ -83,7 +92,19 @@ export const ENEMY_PROFILES: Readonly<Record<EnemyKind, EnemyProfile>> = {
  * ask, so a test can hand one an answer without a flashlight, a lamp or a scene.
  */
 export interface IlluminationSampler {
-  sample(key: string, x: number, z: number): { lit: boolean; amount: number };
+  sample(
+    key: string,
+    x: number,
+    z: number,
+  ): {
+    lit: boolean;
+    amount: number;
+    /**
+     * Which light is responsible. §5.2 needs it: the flashlight's interference blinks the
+     * monster and an environmental light's never does, so "lit" alone is not enough.
+     */
+    source: 'flashlight' | 'environment' | null;
+  };
 }
 
 /**
@@ -96,6 +117,12 @@ export interface PlayerActions {
   damage(amount: number): boolean;
   /** Shove the player `metres` directly away from a point. */
   knockBack(fromX: number, fromZ: number, metres: number): void;
+  /**
+   * §5.3 — kill outright, at any health. Its own verb rather than a large `damage`,
+   * because the Shadow Monster's contact is not a big hit: there is no armour, no
+   * threshold and no amount of health that survives it.
+   */
+  kill(): void;
 }
 
 /** What an enemy needs to know about the world on the tick it is updated. */
@@ -114,7 +141,9 @@ export interface EnemyContext {
 
 /** The states in which nothing steers and velocity is zero (§5.1, §5.3). */
 function pinned(state: EnemyState): boolean {
-  return state === 'frozen' || state === 'attack' || state === 'recoil';
+  return (
+    state === 'frozen' || state === 'attack' || state === 'recoil' || state === 'blink'
+  );
 }
 
 export class Enemy {
@@ -458,6 +487,7 @@ export class Enemy {
       case 'frozen':
       case 'attack':
       case 'recoil':
+      case 'blink':
         return 0;
       default:
         return 0;

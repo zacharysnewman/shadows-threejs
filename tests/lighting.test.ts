@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ENTITY_DEFAULTS, FLASHLIGHT, PLAYER, RENDER } from '../src/config';
+import { ENTITY_DEFAULTS, ENVIRONMENT_LIGHT, FLASHLIGHT, PLAYER, RENDER } from '../src/config';
 import { EnvironmentLights, selectShadowCasters } from '../src/lighting/EnvironmentLights';
 import { Flashlight } from '../src/lighting/Flashlight';
 import type { EnvironmentLightEntity } from '../src/map/types';
@@ -252,5 +252,116 @@ describe('EnvironmentLights', () => {
     expect(lights.litCount).toBe(2);
     expect(lights.toggleAll()).toBe(false);
     expect(lights.litCount).toBe(0);
+  });
+});
+
+describe('the sabotage lifecycle (§4.2)', () => {
+  const TICK = 1 / 60;
+  const SAB = ENVIRONMENT_LIGHT.sabotage;
+  /** Fixed jitter, so these test the *lifecycle* and not the curve tested in monster.test. */
+  const steady = () => 0.5;
+
+  /** A powered lamp at world (7, 7) with a 6 m pool, and a monster standing under it. */
+  function under() {
+    const lights = new EnvironmentLights([lamp(3, 3, 'Yard', 6)]);
+    lights.setGroupPowered('Yard', true);
+    return { lights, one: lights.lamps[0]!, here: [{ x: 7, z: 7 }] };
+  }
+
+  function run(lights: EnvironmentLights, occupants: { x: number; z: number }[], seconds: number) {
+    const ticks = Math.round(seconds / TICK);
+    for (let i = 0; i < ticks; i += 1) lights.tick(TICK, occupants, steady);
+  }
+
+  it('holds steady for the first two seconds of dwell', () => {
+    const { lights, one, here } = under();
+    run(lights, here, SAB.strainAfterSeconds - 0.1);
+    expect(one.sabotage).toBe('steady');
+    expect(one.light.visible).toBe(true);
+    expect(one.light.intensity).toBeCloseTo(ENVIRONMENT_LIGHT.baseIntensity);
+  });
+
+  it('strains, then fails, then comes back on §4.2\'s timings', () => {
+    const { lights, one, here } = under();
+
+    run(lights, here, SAB.strainAfterSeconds + 0.1);
+    expect(one.sabotage).toBe('strain');
+    expect(one.light.visible).toBe(true);
+    expect(one.light.intensity).toBeLessThan(ENVIRONMENT_LIGHT.baseIntensity);
+
+    run(lights, here, SAB.failAfterStrainSeconds);
+    expect(one.sabotage).toBe('failed');
+    expect(one.light.visible).toBe(false);
+
+    run(lights, here, SAB.recoverySeconds - 0.1);
+    expect(one.sabotage).toBe('failed');
+
+    run(lights, here, 0.2);
+    // Back at full intensity with the dwell reset — and straight into another cycle,
+    // because the monster never left (§4.2).
+    expect(one.light.visible).toBe(true);
+    expect(one.light.intensity).toBeCloseTo(ENVIRONMENT_LIGHT.baseIntensity);
+    expect(one.dwell).toBeLessThan(SAB.strainAfterSeconds);
+  });
+
+  it('gets worse the closer it is to going out', () => {
+    const { lights, one, here } = under();
+    run(lights, here, SAB.strainAfterSeconds + 0.05);
+    const early = one.flicker;
+    run(lights, here, SAB.failAfterStrainSeconds - 0.2);
+    // Severity has ramped, so a dip of the same shape now costs the lamp much more.
+    expect(one.flicker).toBeLessThan(early);
+  });
+
+  it('resets the dwell the moment the monster steps out of the pool (§4.2)', () => {
+    const { lights, one, here } = under();
+    run(lights, here, SAB.strainAfterSeconds + 0.5);
+    expect(one.sabotage).toBe('strain');
+
+    run(lights, [{ x: 40, z: 40 }], TICK);
+    expect(one.sabotage).toBe('steady');
+    expect(one.dwell).toBe(0);
+    expect(one.light.intensity).toBeCloseTo(ENVIRONMENT_LIGHT.baseIntensity);
+
+    // And the count starts again from zero rather than resuming.
+    run(lights, here, SAB.strainAfterSeconds - 0.1);
+    expect(one.sabotage).toBe('steady');
+  });
+
+  it('counts dwell by the pool a monster is standing in, not by the nearest lamp', () => {
+    const lights = new EnvironmentLights([lamp(3, 3, 'Yard', 6), lamp(12, 12, 'Yard', 6)]);
+    lights.setGroupPowered('Yard', true);
+    run(lights, [{ x: 7, z: 7 }], SAB.strainAfterSeconds + SAB.failAfterStrainSeconds + 0.1);
+    expect(lights.lamps[0]!.sabotage).toBe('failed');
+    expect(lights.lamps[1]!.sabotage).toBe('steady');
+    expect(lights.failedCount).toBe(1);
+  });
+
+  it('leaves the switch alone: a failure is a hazard, not lost progress (§4.2)', () => {
+    const { lights, one, here } = under();
+    run(lights, here, SAB.strainAfterSeconds + SAB.failAfterStrainSeconds + 0.1);
+    expect(one.sabotage).toBe('failed');
+    expect(one.light.visible).toBe(false);
+    // The group is still powered throughout — the PowerSwitch never learns about this.
+    expect(lights.isGroupPowered('Yard')).toBe(true);
+    expect(one.powered).toBe(true);
+  });
+
+  it('does not strain a lamp whose group is switched off', () => {
+    const lights = new EnvironmentLights([lamp(3, 3, 'Yard', 6)]);
+    run(lights, [{ x: 7, z: 7 }], 10);
+    expect(lights.lamps[0]!.sabotage).toBe('steady');
+    expect(lights.lamps[0]!.light.visible).toBe(false);
+  });
+
+  it('comes back clean after its group is switched off mid-strain', () => {
+    const { lights, one, here } = under();
+    run(lights, here, SAB.strainAfterSeconds + 0.5);
+    expect(one.sabotage).toBe('strain');
+
+    lights.setGroupPowered('Yard', false);
+    expect(one.sabotage).toBe('steady');
+    lights.setGroupPowered('Yard', true);
+    expect(one.light.intensity).toBeCloseTo(ENVIRONMENT_LIGHT.baseIntensity);
   });
 });

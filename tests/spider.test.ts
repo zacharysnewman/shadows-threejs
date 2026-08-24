@@ -10,18 +10,12 @@ import { ENEMY, HEALTH } from '../src/config';
 import { Rng } from '../src/core/rng';
 import { EnemyManager } from '../src/enemies/EnemyManager';
 import { Spider } from '../src/enemies/Spider';
-import { TICK, contextFor, fakePlayer, world } from './support/world';
+import { TICK, beam, contextFor, fakePlayer, world } from './support/world';
 
 const LIGHT = ENEMY.spider.light;
 const ATTACK = ENEMY.spider.attack;
 
 const OPEN = Array.from({ length: 16 }, () => ' '.repeat(16));
-
-/** A beam the test can switch on and off between ticks. */
-function beam(on = false) {
-  const state = { on, sample: () => ({ lit: state.on, amount: state.on ? 1 : 0 }) };
-  return state;
-}
 
 function spiderAt(x: number, z: number, seed = 1): Spider {
   return new Spider('spider#0', x, z, new Rng(seed));

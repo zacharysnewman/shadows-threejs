@@ -65,9 +65,18 @@ export function world(rows: string[], entities: unknown[] = [{ type: 'PlayerSpaw
   return { map, grid, colliders, registry: new EntityRegistry(map.entities) };
 }
 
-/** A light query that answers whatever the test wants; the dark is the default. */
-export function fakeIllumination(lit: () => boolean = () => false) {
-  return { sample: () => ({ lit: lit(), amount: lit() ? 1 : 0 }) };
+/**
+ * A light query that answers whatever the test wants; the dark is the default. The source
+ * matters to §5.2 — a monster under a lamp behaves differently to one in the beam — so it
+ * is settable too.
+ */
+export function fakeIllumination(
+  lit: () => boolean = () => false,
+  source: () => 'flashlight' | 'environment' = () => 'flashlight',
+) {
+  return {
+    sample: () => ({ lit: lit(), amount: lit() ? 1 : 0, source: lit() ? source() : null }),
+  };
 }
 
 /** A player that records what was done to it, for §5.3's two answers. */
@@ -75,12 +84,16 @@ export function fakePlayer() {
   return {
     damaged: [] as number[],
     shoves: [] as { fromX: number; fromZ: number; metres: number }[],
+    kills: 0,
     damage(amount: number): boolean {
       this.damaged.push(amount);
       return false;
     },
     knockBack(fromX: number, fromZ: number, metres: number): void {
       this.shoves.push({ fromX, fromZ, metres });
+    },
+    kill(): void {
+      this.kills += 1;
     },
   };
 }
@@ -112,4 +125,18 @@ export function contextFor(
 export function run(enemy: Enemy, context: EnemyContext, seconds: number): void {
   const ticks = Math.round(seconds / TICK);
   for (let i = 0; i < ticks; i += 1) enemy.tick(TICK, context);
+}
+
+/** A light the test can switch on and off between ticks, and re-source (§4.1, §5.2). */
+export function beam(on = false, source: 'flashlight' | 'environment' = 'flashlight') {
+  const state = {
+    on,
+    source,
+    sample: () => ({
+      lit: state.on,
+      amount: state.on ? 1 : 0,
+      source: state.on ? state.source : null,
+    }),
+  };
+  return state;
 }
