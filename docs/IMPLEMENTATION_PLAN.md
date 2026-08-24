@@ -801,6 +801,53 @@ properties — and played from the editor without saving anything; the audit's f
 visible while editing; the exported JSON loads in the game unchanged; and a note cannot be
 placed where the camera could not read it.
 
+**Status: done.**
+
+`?edit` boots the editor instead of a run. `src/editor/Document.ts` is the level as data —
+two layers and an entity list in §2's shape, with snapshot undo — and it is where the rules
+that can be tested without a browser live. `src/editor/palette.ts` holds the tile and entity
+choices and §9.2's mounting maths. `src/editor/TileCanvas.ts` draws and owns the gestures;
+`src/editor/EditorApp.ts` is the chrome around them.
+
+Three things are worth knowing about how it turned out.
+
+**A rectangle is one edit.** The tool previews while the finger is down and commits on
+release, so dragging out a building costs one undo rather than one per tile crossed. Painting
+still commits per tile entered, which is what a brush should do.
+
+**The audit is the game's own.** The editor runs `parseMap` and `auditMap` on every change
+rather than reimplementing either, so what the editor calls a valid level and what the game
+calls one cannot drift apart. It is also the check that catches an entity placed on a solid
+tile — it comes out as an unreachable note or switch, which is what that mistake actually is.
+
+**The palette is a contract with the tilesets.** The editor writes ids, and an id the map's
+`tileset.json` does not define renders as nothing (§2). Crates (id `6`) were in the palette
+and missing from three checked-in tilesets, including `example` — the one §9.3's playtest
+borrows — so a level drawn with crates would have played without them. All seven ids are now
+defined by every tileset, and `tests/editor.test.ts` fails naming the map and the id if that
+stops being true.
+
+*Verified in Chromium on an iPhone 13 profile (390×844, DPR 3, touch events), against the dev
+server.* Paint places one tile and erase clears it. A rectangle dragged (4,4)→(9,8) leaves
+nothing until release, then 30 tiles; one undo removes all 30 and one redo restores them. A
+note placed south of a wall block is offered `S` only — never `N`, which §9.2 forbids — and
+one placed in open ground is refused with the reason. An entity with an unset required
+property holds the status bar until it is filled. Every control clears a 44 px target and the
+toolbar scrolls rather than hiding Copy and Play at 390 px wide.
+
+The hand-off was driven end to end: `phase8-test`'s level opened in the editor (`1 warning ·
+666 tiles reachable`), Copy produced 19,395 characters whose layers are byte-identical to the
+file it came from, and Play loaded it into the game — `34×24 @ 2m`, 918 tiles in 4 instanced
+meshes, 666/816 walkable, 10 entities, `0 blocking`, with the debug overlay on. Standing still
+in the dark on that map, the monster caught the player, which is the level actually running
+rather than merely parsing.
+
+Two fixes went in beside the editor. `?map=playtest` with nothing in storage now says so,
+instead of fetching a `maps/playtest/` that does not exist and failing on the dev server's
+index page. And the tileset gap above.
+
+*Left to Phase 13.* The editor is reached by URL; the title screen is what will link to it.
+
 ## Phase 13 — Shell: Title, Credits & Debug Mode
 
 §8: the title screen the audio context is armed from (§4.3), the credits generated from the

@@ -23,17 +23,23 @@ import { MapValidationError } from './map/validate';
 import { Hud } from './ui/Hud';
 import { loadNotes } from './world/Notes';
 import { createRun, type Run } from './Run';
+import { EditorApp, PLAYTEST_KEY } from './editor/EditorApp';
 
 const DEFAULT_MAP = 'example';
+
+/**
+ * Built from `BASE_URL` rather than left document-relative: the site is served from a
+ * subpath on GitHub Pages, and a relative URL would resolve against whatever path the page
+ * happens to be on.
+ */
+function mapDirectory(name: string): string {
+  return `${import.meta.env.BASE_URL}maps/${name}/`;
+}
 
 function selectedMap(): string {
   const requested = new URLSearchParams(window.location.search).get('map');
   // Directory name only — no traversal out of `maps/`.
-  const safe = requested && /^[\w-]+$/.test(requested) ? requested : DEFAULT_MAP;
-  // Built from BASE_URL rather than left document-relative: the site is served from a
-  // subpath on GitHub Pages, and a relative URL would resolve against whatever path the
-  // page happens to be on.
-  return `${import.meta.env.BASE_URL}maps/${safe}/`;
+  return mapDirectory(requested && /^[\w-]+$/.test(requested) ? requested : DEFAULT_MAP);
 }
 
 function showFatal(message: string): void {
@@ -54,7 +60,36 @@ function showFatal(message: string): void {
   document.body.appendChild(panel);
 }
 
+/**
+ * §9 — the level editor, on the same site. `?edit` boots it instead of the game, so a level
+ * can be authored on the device it is being designed on without a second app or a build
+ * step.
+ */
+function editorRequested(): boolean {
+  return new URLSearchParams(window.location.search).has('edit');
+}
+
+/**
+ * §9.3 — a level handed straight from the editor to the game, through the browser rather
+ * than through the repository. `?map=playtest` reads it; nothing else does, and a player
+ * has no way to reach it.
+ */
+function playtestMap(): unknown | null {
+  if (new URLSearchParams(window.location.search).get('map') !== 'playtest') return null;
+  try {
+    const raw = localStorage.getItem(PLAYTEST_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 async function main(): Promise<void> {
+  if (editorRequested()) {
+    new EditorApp();
+    return;
+  }
+
   // --- The shell ----------------------------------------------------------
   // Everything here survives a death, a victory and a restart. The rule for what belongs
   // in this list is narrow: a device the browser gave us, or a cache that is expensive to
@@ -76,7 +111,16 @@ async function main(): Promise<void> {
     audio.load(),
   ]);
 
-  const directory = selectedMap();
+  // §9.3 — a playtest borrows the standard tileset and brings only its own layout.
+  const playtest = playtestMap();
+  if (playtest === null && new URLSearchParams(window.location.search).get('map') === 'playtest') {
+    // There is no `maps/playtest/` to fall through to, and a dev server answers a missing
+    // file with the index page — so without this the designer gets a JSON parse error
+    // instead of being told which browser their draft is in.
+    showFatal('No playtest level in this browser.\n\nOpen the editor (?edit) and press Play.');
+    return;
+  }
+  const directory = playtest ? mapDirectory(DEFAULT_MAP) : selectedMap();
   const pinnedSeed = new URLSearchParams(window.location.search).get('seed');
   let run: Run | null = null;
   // A run asks for the next one; the shell is what actually swaps them, because a run
@@ -102,7 +146,7 @@ async function main(): Promise<void> {
     run?.dispose();
     run = null;
     hud.reset();
-    run = await createRun(shell, directory, pinnedSeed);
+    run = await createRun(shell, directory, pinnedSeed, playtest ?? undefined);
     if (import.meta.env.DEV) {
       (window as unknown as { shadows: unknown }).shadows = { ...run.handle, restart: startRun };
     }

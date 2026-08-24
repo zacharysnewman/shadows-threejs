@@ -822,6 +822,12 @@ site (§1), rather than in a third-party tool. Three reasons, in order of weight
   an error, not silently written.
 - **Undo and redo** over every edit. A tile editor without undo is a tile editor that is
   used carefully instead of quickly.
+- **The palette is the standard tileset.** The editor writes tile ids, and ids mean nothing
+  without the `tileset.json` a map is loaded beside (§2). So the ids the palette offers —
+  `0` pit, `1` concrete, `2` wall, `3` fence, `4` dirt, `5` gate, `6` crate — are defined by
+  every `tileset.json` in the project, whether or not that map uses them. A level moved
+  between directories keeps its tiles; one played through §9.3 gets the same walls it was
+  drawn with.
 
 ### 9.2 Facing
 
