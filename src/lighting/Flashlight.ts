@@ -88,7 +88,7 @@ export class Flashlight {
     return this.battery.on;
   }
 
-  /** Toggle, refusing while the battery is flat or locked out (§4.1). */
+  /** Toggle, refusing once the battery is flat (§4.1) — which is for good. */
   toggle(): boolean {
     if (!this.held) return false;
     return this.battery.toggle();

@@ -1,14 +1,19 @@
 /**
  * Flashlight battery (§4.1).
  *
- * A 0.0–1.0 charge fraction that drains while the light is on and recharges, at half the
- * rate, while it is off — so sustained use costs twice what it returns, and the player is
- * pushed into moments of being in the dark on purpose rather than by accident.
+ * A 0.0–1.0 charge fraction that drains while the light is on and does not come back. It is
+ * the run's whole supply of light — ten minutes of it — rather than a cooldown between uses,
+ * so switching the beam off is not waiting for a meter to refill, it is banking what is
+ * left for somewhere that needs it more.
  *
- * The lockout is the part worth being careful with. Draining to empty does not just switch
- * the light off: it latches, and the light cannot be switched back on until the charge has
- * recovered to 0.15. Without that, a player could strobe the beam a frame at a time and
- * hold the Shadow Monster frozen indefinitely (§5.2) on almost no charge at all.
+ * That is what makes being in the dark a decision. A battery that recharges asks the player
+ * to spend a little time unlit and hands the light back; one that does not asks them to
+ * decide, every time, whether this stretch of corridor is worth part of the ending.
+ *
+ * There is no lockout, and none is needed. The strobe exploit a lockout would guard against
+ * — blinking the beam a frame at a time to hold the Shadow Monster frozen indefinitely
+ * (§5.2) — only pays when the charge comes back. Here every blink is spent for good, so the
+ * exploit is its own cost. A flat battery is flat for the rest of the run.
  *
  * Pure arithmetic on the fixed simulation clock (§7) — no Three.js, no rendering.
  */
@@ -18,8 +23,6 @@ import { FLASHLIGHT } from '../config';
 export class Battery {
   private _charge = 1;
   private _on = false;
-  /** Latched by a full drain; cleared once the charge recovers to `reEnableCharge`. */
-  private _lockedOut = false;
 
   get charge(): number {
     return this._charge;
@@ -29,19 +32,15 @@ export class Battery {
     return this._on;
   }
 
-  get lockedOut(): boolean {
-    return this._lockedOut;
-  }
-
-  /** False while the lockout holds or the battery is flat — a toggle would be refused. */
+  /** False once the battery is flat — a toggle would be refused, and always will be. */
   get canTurnOn(): boolean {
-    return !this._lockedOut && this._charge > 0;
+    return this._charge > 0;
   }
 
   /**
    * Beam brightness as a fraction of full, 0 when off (§4.1). Full above 0.25 charge and
-   * falling linearly to 40% at empty, so the reserve draining is something the player sees
-   * before it fails rather than a light that is fine until it is gone.
+   * falling linearly to 40% at empty, so the last of the light is something the player
+   * watches happen rather than a beam that is fine until it is gone.
    */
   get intensityFraction(): number {
     if (!this._on) return 0;
@@ -70,34 +69,21 @@ export class Battery {
   }
 
   tick(dt: number): void {
-    if (this._on) {
-      this._charge = Math.max(0, this._charge - FLASHLIGHT.drainPerSecond * dt);
-      if (this._charge === 0) {
-        // §4.1 — at 0.0 the light cuts out, and stays out until the charge recovers.
-        this._on = false;
-        this._lockedOut = true;
-      }
-      return;
-    }
+    if (!this._on) return;
 
-    this._charge = Math.min(1, this._charge + FLASHLIGHT.rechargePerSecond * dt);
-    if (this._lockedOut && this._charge >= FLASHLIGHT.reEnableCharge) this._lockedOut = false;
+    this._charge = Math.max(0, this._charge - FLASHLIGHT.drainPerSecond * dt);
+    // §4.1 — at 0.0 the light cuts out, and there is nothing to switch back on.
+    if (this._charge === 0) this._on = false;
   }
 
   /** Debug and run-restart affordance; nothing in the game sets the charge directly. */
   set(charge: number): void {
     this._charge = Math.min(1, Math.max(0, charge));
-    if (this._charge === 0) {
-      this._on = false;
-      this._lockedOut = true;
-    } else if (this._charge >= FLASHLIGHT.reEnableCharge) {
-      this._lockedOut = false;
-    }
+    if (this._charge === 0) this._on = false;
   }
 
   reset(): void {
     this._charge = 1;
     this._on = false;
-    this._lockedOut = false;
   }
 }

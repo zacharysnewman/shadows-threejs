@@ -19,8 +19,15 @@ import { INPUT } from '../config';
 
 export type AimSource = 'none' | 'pointer' | 'stick';
 
-/** Every action the game binds. Phase 2 consumes `interact` only through the debug harness. */
-export type ActionName = 'interact' | 'flashlight' | 'sprint';
+/**
+ * Every action the game binds. Exported as a list rather than only as a union so that the
+ * set is enumerable at run time: an action the player has a key for but nothing in the run
+ * ever reads is invisible to the type system, and is exactly how the flashlight ended up
+ * bound to `F` and reachable only from the debug harness (§8.3).
+ */
+export const ACTION_NAMES = ['interact', 'flashlight', 'sprint'] as const;
+
+export type ActionName = (typeof ACTION_NAMES)[number];
 
 const ACTION_KEYS: Readonly<Record<ActionName, readonly string[]>> = {
   interact: ['KeyE'],

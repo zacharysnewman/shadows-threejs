@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three';
-import { FLASHLIGHT, HEALTH, ILLUMINATION, INTERACTION, PLAYER, PREFAB_SOURCE, SIM } from './config';
+import { HEALTH, ILLUMINATION, INTERACTION, PLAYER, PREFAB_SOURCE, SIM } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -460,7 +460,9 @@ export async function createRun(
     if (battery.on) {
       return `ON · ${charge} · beam ${(battery.intensityFraction * 100).toFixed(0)}%`;
     }
-    return `off · ${charge}${battery.lockedOut ? ` · LOCKED OUT until ${FLASHLIGHT.reEnableCharge * 100}%` : ''}`;
+    // §4.1 — flat is flat for the rest of the run, which is worth saying outright rather
+    // than leaving the reader to notice that 0% never moves.
+    return `off · ${charge}${battery.canTurnOn ? '' : ' · DEAD'}`;
   });
   overlay.addRow('lamps', () => {
     if (environment.lamps.length === 0) return 'none on this map';
@@ -578,6 +580,20 @@ export async function createRun(
     if (result.message) console.info(`[interact] ${result.message}`);
   }
 
+  /**
+   * §4.1 — the torch's own action, `F` or gamepad `X`. It reads the same edge-triggered
+   * action the interact key does and lives beside it for the same reason: this is a key
+   * the *player* presses, and the debug harness is not what makes the game playable.
+   *
+   * Refused while a modal is up (§3.3, §6.2), because reading a note stops the world and a
+   * beam switched on behind it would be a change the player did not see happen.
+   */
+  function resolveFlashlight(): void {
+    if (hud.modalOpen || !input.wasPressed('flashlight')) return;
+    // §4.1 — refused outright, with no state change, once the battery is flat.
+    flashlight.toggle();
+  }
+
   /** §6.2 — reading pauses the world. The clock is paused here, where the clock lives. */
   function openNote(noteId: string): void {
     hud.openNoteModal(noteId, notes);
@@ -636,6 +652,7 @@ export async function createRun(
   // --- Debug keys ---------------------------------------------------------
   overlay.addBinding('WASD', 'move · mouse aims');
   overlay.addBinding('E', 'interact — pick up, read, throw a switch (§3.3)');
+  overlay.addBinding('F', 'flashlight (§4.1) — a player key, not a debug one');
   overlay.addBinding('Shift', 'sprint — aim locks to the way you are going');
   overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
   overlay.addBinding('O', 'occluder fade');
@@ -644,7 +661,6 @@ export async function createRun(
   overlay.addBinding('X', 'block/unblock the hovered tile (walkability only)');
   overlay.addBinding('Y', 'disable the enemies');
   overlay.addBinding('I', 'draw the Shadow Monster\'s body (§5.2 says never)');
-  overlay.addBinding('F', 'flashlight');
   overlay.addBinding('B', 'drain the battery to 5%');
   overlay.addBinding('L', 'debug override: power every light group, past the switches');
   overlay.addBinding('K', `debug damage (${HEALTH.spiderDamage})`);
@@ -703,16 +719,8 @@ export async function createRun(
       case 'KeyO':
         occluders.enabled = !occluders.enabled;
         break;
-      case 'KeyF':
-        // §4.1 — refused while the battery is flat or still locked out.
-        if (!flashlight.toggle() && flashlight.battery.lockedOut) {
-          console.info(
-            `[torch] locked out at ${(flashlight.battery.charge * 100).toFixed(0)}%; ` +
-              `needs ${FLASHLIGHT.reEnableCharge * 100}%`,
-          );
-        }
-        break;
       case 'KeyB':
+        // §4.1 — enough to watch the intensity falloff run out without waiting 10 minutes.
         flashlight.battery.set(0.05);
         break;
       case 'KeyL':
@@ -863,6 +871,7 @@ export async function createRun(
     } else if (outcome.inputEnabled) {
       updateAim();
       resolveInteraction();
+      resolveFlashlight();
     }
 
     // §7 — the simulation advances in fixed ticks; rendering is whatever the display gives.

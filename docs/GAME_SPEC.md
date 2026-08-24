@@ -286,6 +286,13 @@ two read differently at range:
 **A moon for shape.** One dim directional light, steeply angled, gives the gloom a direction
 so an unlit yard reads as a place rather than as a flat grey wash. It casts no shadow.
 
+**The ambient and the moon are one setting.** They are the whole of what lights the map with
+the beam off, and how dark the night is means the pair of them, not either one. So they are
+tuned together and changed together, at a fixed ratio. The moon is the larger half of what
+the ground is actually lit by: dropping the ambient alone leaves the floor tiles readable at
+*zero* ambient, which is the ceiling above (§4) quietly broken while the number that names it
+says otherwise.
+
 **Shadows exist only where a directed light does.** The flashlight casts and the
 environmental lamps cast; the ambient and the moon do not. A shadow on the ground is
 therefore information in itself — something is being lit — and it is what the Shadow Monster
@@ -316,18 +323,23 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   walls and leaves the floor dark around the player, which under the pitched camera (§3.2)
   reads as a hole rather than as a torch.
 - **Toggle:** `F` / gamepad `X` / the on-screen action button. A toggle is refused outright,
-  with no state change, while the battery is flat or the lockout below is holding.
-- **Battery Drain & Recharge (mechanic):**
+  with no state change, once the battery is flat.
+- **Battery Drain (mechanic):**
   - The flashlight has a finite charge capacity, expressed as a 0.0–1.0 charge fraction.
-  - When turned ON, the battery drains steadily: 1/45 per second, i.e. 45 s of continuous
-    light from full.
-  - When turned OFF, the battery auto-recharges over time at 1/90 per second — half the
-    drain rate, so sustained use costs twice what it returns. This forces the player into
-    terrifying moments of vulnerability in the dark.
-  - At 0.0 the light cuts out and cannot be switched back on until charge reaches 0.15,
-    preventing a strobe exploit against the Shadow Monster's freeze (§5.2).
+  - When turned ON, the battery drains steadily: 1/600 per second, i.e. **10 minutes of
+    continuous light from full**.
+  - **It does not recharge.** That charge is the run's entire supply of light, and time
+    spent in the dark buys nothing back — it only avoids spending more.
+  - At 0.0 the light cuts out and stays out for the rest of the run.
   - Beam intensity is full above 0.25 charge and falls off linearly to 40% at 0.0, so the
-    player feels the reserve draining before it fails.
+    last two and a half minutes are a beam visibly going out rather than one that is fine
+    until it is gone.
+
+  A recharging battery makes darkness a wait: stand still, get the light back, carry on. A
+  finite one makes it a decision — is this corridor worth part of the ending? — and that
+  decision is what §4's dark is for. It also settles the strobe exploit against the Shadow
+  Monster's freeze (§5.2) without a lockout rule: blinking the beam to hold the monster
+  costs exactly the light it produces, so it buys nothing that holding the beam would not.
 - **Optimized FOV Detection:**
   - Checks if an enemy target position `P_e` lies within distance `d ≤ range` and within
     angle `θ ≤ spotlightAngle / 2`.
