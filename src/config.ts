@@ -102,10 +102,10 @@ export const ENTITY_DEFAULTS = {
 
 /** §3.1 — player capsule and movement. */
 export const PLAYER = {
-  /** Walk speed in m/s (§3.1). */
-  walkSpeed: 3.0,
+  /** Walk speed in m/s (§3.1) — one 2 m tile a second, and §5's reference speed. */
+  walkSpeed: 2.0,
   /** Sprint speed in m/s, held rather than toggled (§3.1). */
-  sprintSpeed: 4.5,
+  sprintSpeed: 3.0,
   /**
    * Ceiling on how fast the beam swings, in degrees per second (§3.1) — a reversal takes a
    * third of a second. A rate rather than a smoothing time constant because angular speed
@@ -344,9 +344,9 @@ export const ENEMY = {
     /** Dog-sized (§5.1). */
     radius: 0.5,
     height: 0.7,
-    wanderSpeed: 1.2,
-    pursueSpeed: 2.4,
-    fleeSpeed: 3.6,
+    wanderSpeed: 0.8,
+    pursueSpeed: 1.6,
+    fleeSpeed: 2.4,
     /** §5 — acquires the player inside this range, whether or not it can see them. */
     detectRadius: 16,
     /**
@@ -394,8 +394,8 @@ export const ENEMY = {
   shadowMonster: {
     radius: 0.55,
     height: 2.2,
-    wanderSpeed: 1.4,
-    pursueSpeed: 1.8,
+    wanderSpeed: 0.9,
+    pursueSpeed: 1.2,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
     detectRadius: Number.POSITIVE_INFINITY,
     loseRadius: Number.POSITIVE_INFINITY,

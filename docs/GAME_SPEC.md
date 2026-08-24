@@ -160,7 +160,10 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
 - Top-down twin-stick control: keyboard `WASD` / arrows or left analog stick for movement,
   mouse position or right analog for aim (§4.1). The two are independent — the player can
   back away while keeping the beam on a threat.
-- Walk speed 3.0 m/s, with acceleration/deceleration smoothed over 0.1 s to avoid snapping.
+- Walk speed 2.0 m/s, with acceleration/deceleration smoothed over 0.1 s to avoid snapping.
+  A walk, not a jog: on a 2 m grid this is one tile a second, and it is the number every
+  speed in §5 and every distance in §4 is tuned against. Moving faster does not make the
+  game harder or easier so much as it makes the map smaller.
 - The player is a 0.4 m radius, 1.8 m tall capsule resolved by sliding along contact
   normals, so grazing a wall does not halt movement.
 - What stops the capsule is everything the walkability grid calls unwalkable (§2), not
@@ -170,7 +173,7 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   nothing.
 - The player faces their spawn's `rotation` (§2) until the first aim input arrives, so a
   run does not open with the character facing an arbitrary direction.
-- **Sprint** at 4.5 m/s while held, and **while sprinting the aim locks to the direction of
+- **Sprint** at 3.0 m/s while held, and **while sprinting the aim locks to the direction of
   travel**: the beam points where the player is going, and the pointer or aim stick is
   ignored until they let go.
 - Aim turns at a **maximum of 540°/s** — a reversal takes a third of a second — both onto
@@ -434,16 +437,16 @@ readable at any distance, and worth reading before the pool goes dark.
 Both enemies rely on a base A\* pathfinding logic that updates their target paths
 periodically (e.g. every 500 ms). The Shadow Monster ignores other entity colliders.
 
-Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
+Movement speeds, all in m/s, tuned against the player's 2.0 m/s (§3.1):
 
 | State | Spider | Shadow Monster |
 | --- | --- | --- |
-| Wander / idle | 1.2 | 1.4 |
-| Pursuing player | 2.4 | 1.8 |
-| Fleeing | 3.6 (1.5× pursue) | — |
+| Wander / idle | 0.8 | 0.9 |
+| Pursuing player | 1.6 | 1.2 |
+| Fleeing | 2.4 (1.5× pursue) | — |
 
-Neither enemy outruns the player. A walking player is faster than a pursuing spider and
-half again as fast as the Shadow Monster; only a *fleeing* spider (3.6) beats a walk, and
+Neither enemy outruns the player. A walking player is faster than a pursuing spider, and the
+Shadow Monster pursues at three fifths of a walk; only a *fleeing* spider (2.4) beats a walk, and
 nothing beats a sprint (§3.1). That is deliberate: an enemy that catches a player in a
 straight line would make the map a reflex test. They threaten by never stopping, by taking
 routes the player cannot, and by the corners and dead ends they force — and by what running
@@ -486,8 +489,8 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
   the sound says where a spider is *moving*, so a stunned or recoiling one gives nothing
   away, and a deterred one going quiet in the dark is not the same as a gone one.
 - **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
-  driven by the spider's actual speed, so a wandering spider (1.2 m/s), a pursuing one
-  (2.4 m/s) and a fleeing one (3.6 m/s) all place their legs on the ground instead of
+  driven by the spider's actual speed, so a wandering spider (0.8 m/s), a pursuing one
+  (1.6 m/s) and a fleeing one (2.4 m/s) all place their legs on the ground instead of
   skating. The attack animation is authored *to* the strike time in §5.3 — see there.
 - **Base Behavior:** wanders, or uses A\* pathfinding to approach the player.
 - **Light Reaction Lifecycle:**

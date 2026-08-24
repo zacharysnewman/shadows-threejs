@@ -776,9 +776,30 @@ exceptions, because "the assets are on-grid" turned out to be a thing the loader
 - **The audio pass.** Real files replacing the synthesised placeholders; the bank already
   falls back, so this is a drop-in. The placeholders themselves are ZzFX parameter sets now
   rather than bespoke DSP (below), which makes them cheap to iterate on in the meantime.
-- **The tuning pass.** Deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
-  speeds. Every one of them is a `config.ts` value citing its spec section, so a change is
-  an edit in two places — but which way to move them is not knowable from here.
+- **The tuning pass — locomotion done, the timers not.** Playtesting said the whole game
+  moved too fast, so every speed came down by a third: a walk is 2.0 m/s (one 2 m tile a
+  second) and a sprint 3.0, with the spider at 0.8/1.6/2.4 and the monster at 0.9/1.2. The
+  six numbers were rescaled together, because §5 states the *relationships* as design — a
+  walk outpaces a pursuing spider, only a fleeing one beats a walk, nothing beats a sprint,
+  the monster pursues at three fifths of a walk — and a pass that moves one number without
+  the others breaks a rule rather than tuning a value. `tests/player.test.ts` now asserts
+  those ratios, so the next pass cannot quietly drop one.
+
+  Two tests had a speed baked into them as a distance — "walks past x = 11", "closes 3 m in
+  two seconds" — and failed on the rescale for the right reason. Both now derive the
+  distance from the constant and the time.
+
+  Still outstanding: deterrence timers, attack wind-up, flicker ramp and battery rates. Each
+  is a `config.ts` value citing its section; which way to move them is a question for
+  playing, not for here.
+
+  **Speed was only half of what made it feel fast.** The camera's framing is authored to a
+  vertical FOV, so how much ground is visible sideways depends entirely on the window's
+  aspect: a 16:9 desktop sees 23 m across at the player, an iPhone in portrait sees 6.0 m —
+  three tiles. §3.2 says nothing about a minimum, and the phone case is the one the level is
+  being authored on. Left open deliberately: the fix is either a floor on visible width
+  (which pulls the camera back and shrinks the player) or the game asking for landscape, and
+  that is a design call rather than a bug fix.
 - **§7's frame rates on both tiers**, which stay unverified for the same reason they have in
   every phase: this environment renders through a software rasteriser.
 
