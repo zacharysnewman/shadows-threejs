@@ -1,3 +1,4 @@
+/// <reference types="vitest" />
 import { defineConfig } from 'vite';
 
 /**
@@ -18,4 +19,8 @@ export default defineConfig({
   base,
   server: { host: true },
   build: { target: 'es2022' },
+  test: {
+    // ZzFX builds an `AudioContext` at import; node has none. See the setup file.
+    setupFiles: ['./tests/support/setup.ts'],
+  },
 });

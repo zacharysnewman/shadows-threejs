@@ -133,15 +133,52 @@ describe('placeholder synthesis', () => {
   it('gives the monster a heavier step than the player, where "heavier" means lower', () => {
     // Not a mix note: §5.2 is tracked by ear before it is seen, and low frequencies are
     // what survive distance. Compared by zero crossings, which is cheap and enough.
-    const crossings = (name: 'footstep_light' | 'footstep_heavy'): number => {
+    //
+    // Measured across the part of the buffer that is *sounding*, not across the whole of
+    // it. The monster's step is both lower and longer, and a rate taken over the padded
+    // length would count its silence against it — which reads as the low sound being the
+    // high one.
+    const crossingRate = (name: 'footstep_light' | 'footstep_heavy'): number => {
       const { data } = synthesise(name, sampleRate);
+      let peak = 0;
+      for (const sample of data) peak = Math.max(peak, Math.abs(sample));
+      const floor = peak * 0.01;
+
       let count = 0;
+      let sounding = 0;
       for (let i = 1; i < data.length; i += 1) {
+        if (Math.abs(data[i] ?? 0) < floor) continue;
+        sounding += 1;
         if ((data[i - 1] ?? 0) <= 0 !== (data[i] ?? 0) <= 0) count += 1;
       }
-      return count / (data.length / sampleRate);
+      return count / (sounding / sampleRate);
     };
-    expect(crossings('footstep_heavy')).toBeLessThan(crossings('footstep_light'));
+    expect(crossingRate('footstep_heavy')).toBeLessThan(crossingRate('footstep_light'));
+  });
+
+  it('puts the monster\'s step where distance cannot take it: below 150 Hz', () => {
+    // The crossing rate above is a weak proxy — broadband noise dominates it, and both
+    // steps read around 2.5 kHz by it. What §4.3 actually claims is that the low end is
+    // what survives distance, so measure the low end: the share of a sound's energy that
+    // makes it through a one-pole low-pass at roughly 150 Hz.
+    const lowShare = (name: 'footstep_light' | 'footstep_heavy'): number => {
+      const { data } = synthesise(name, sampleRate);
+      // One-pole coefficient for a ~150 Hz corner at this rate.
+      const coefficient = 1 - Math.exp((-2 * Math.PI * 150) / sampleRate);
+      let filtered = 0;
+      let lowEnergy = 0;
+      let totalEnergy = 0;
+      for (const sample of data) {
+        filtered += coefficient * (sample - filtered);
+        lowEnergy += filtered * filtered;
+        totalEnergy += sample * sample;
+      }
+      return totalEnergy === 0 ? 0 : lowEnergy / totalEnergy;
+    };
+
+    const heavy = lowShare('footstep_heavy');
+    expect(heavy).toBeGreaterThan(lowShare('footstep_light') * 2);
+    expect(heavy).toBeGreaterThan(0.1);
   });
 });
 

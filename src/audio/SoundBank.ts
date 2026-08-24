@@ -2,18 +2,28 @@
  * Sound assets, and the placeholders standing in for them (§4.3).
  *
  * Same arrangement as the prefab loader: try for a real file, fall back to something
- * procedural so the systems above can be built and heard before any audio exists. A sound
- * bank of synthesised blips is not a soundtrack, but it is enough to answer this phase's
- * question — can an unseen source be located by ear — and swapping real files in later
- * changes nothing above this file.
+ * procedural so the systems above can be built and heard before any audio exists. Swapping
+ * real files in later changes nothing above this file.
  *
- * The synthesis itself is deliberately kept out of Web Audio: it fills a `Float32Array`
- * with plain arithmetic, so it can be exercised in tests where no `AudioContext` exists,
- * and it is seeded so two runs produce byte-identical buffers (Cross-Cutting:
- * determinism).
+ * **The synthesis is ZzFX's** (MIT, Frank Force) — a parameter set per sound rather than
+ * bespoke DSP per sound. Its `buildSamples` is a pure function from twenty-one numbers to
+ * an array of samples: no audio device, no side effects, callable in a test. That is the
+ * only part of the library used. ZzFX's own `play` is not, because §4.3 needs every sound
+ * to come out of a `THREE.PositionalAudio` — a threat that cannot be seen has to be
+ * locatable by ear, and ZzFX plays mono to a context of its own.
+ *
+ * **Every parameter set has `randomness` at 0.** ZzFX jitters the pitch of each shot by
+ * default; here each sound is built once into a buffer and replayed from it, so the jitter
+ * would not vary anything between plays — it would only make the buffer differ between
+ * runs, which is exactly what Cross-Cutting's determinism rule forbids.
+ *
+ * **Loops are composed rather than synthesised.** ZzFX makes one-shots, and a one-shot with
+ * a decay tail clicks when a `THREE.Audio` repeats it. A looping sound here is a fixed-length
+ * buffer with shots placed inside it — which is what a chitter and a failing ballast
+ * actually are.
  */
 
-import { mulberry32 } from '../core/rng';
+import { ZZFX } from 'zzfx';
 
 export const SOUND_NAMES = [
   'test_ping',
@@ -33,14 +43,121 @@ export interface SynthesisedSound {
   loop: boolean;
 }
 
-/** One-pole low-pass. Turns white noise into something with a body rather than a hiss. */
-function lowPass(data: Float32Array<ArrayBuffer>, coefficient: number): void {
-  let previous = 0;
-  for (let i = 0; i < data.length; i += 1) {
-    previous += coefficient * ((data[i] ?? 0) - previous);
-    data[i] = previous;
-  }
+/**
+ * One ZzFX shot placed in a buffer. The parameter order is ZzFX's own:
+ * `volume, randomness, frequency, attack, sustain, release, shape, shapeCurve, slide,
+ * deltaSlide, pitchJump, pitchJumpTime, repeatTime, noise, modulation, bitCrush, delay,
+ * sustainVolume, decay, tremolo, filter`.
+ */
+interface Shot {
+  /** Offset into the buffer, in seconds. */
+  at: number;
+  params: number[];
 }
+
+interface Recipe {
+  seconds: number;
+  loop: boolean;
+  shots: Shot[];
+}
+
+/** Shapes, by ZzFX's numbering, named so a parameter set can be read. */
+const SINE = 0;
+const TRIANGLE = 1;
+const SAW = 2;
+const NOISE_SHAPE = 3;
+
+const RECIPES: Readonly<Record<SoundName, Recipe>> = {
+  /**
+   * The locator (Cross-Cutting: debug harness): two short chirps and a gap, looping.
+   * Broadband and rhythmic on purpose — a continuous tone gives the ear far less to work
+   * with than repeated onsets do, and §4.3 is judged on whether a source can be placed.
+   */
+  test_ping: {
+    seconds: 1.0,
+    loop: true,
+    shots: [
+      { at: 0.0, params: [1, 0, 900, 0.01, 0.04, 0.12, SINE, 1.6, -220, 0, 0, 0, 0, 0.1, 0, 0, 0, 1, 0, 0, 0] },
+      { at: 0.16, params: [0.8, 0, 1200, 0.01, 0.03, 0.1, SINE, 1.6, -300, 0, 0, 0, 0, 0.1, 0, 0, 0, 1, 0, 0, 0] },
+    ],
+  },
+
+  /** The player's step (§4.3): a light scuff with a short body. */
+  footstep_light: {
+    seconds: 0.3,
+    loop: false,
+    shots: [
+      { at: 0, params: [1, 0, 260, 0.002, 0.02, 0.09, TRIANGLE, 1.2, -60, 0, 0, 0, 0, 1.4, 0, 0, 0, 0.6, 0.05, 0, 900] },
+    ],
+  },
+
+  /**
+   * The Shadow Monster's step (§5.2, §4.3): the same gesture an octave and a half down,
+   * with a long tail. Low frequencies are what survive distance, and being tracked by ear
+   * before it is seen is the whole of how this creature is played against.
+   */
+  footstep_heavy: {
+    seconds: 0.55,
+    loop: false,
+    shots: [
+      // Almost no noise: at anything above a trace it swamps the fundamental, and the
+      // low end is the whole point — measured, a noisy version puts 4% of its energy
+      // below 150 Hz where this puts 14%.
+      { at: 0, params: [1, 0, 55, 0.005, 0.08, 0.34, SINE, 0.9, -18, 0, 0, 0, 0, 0.03, 0, 0, 0, 0.7, 0.1, 0, 0] },
+    ],
+  },
+
+  /** The spider (§5.1): a run of dry clicks, looping. */
+  chitter: {
+    seconds: 0.5,
+    loop: true,
+    shots: [0.0, 0.06, 0.1, 0.19, 0.24, 0.28, 0.36, 0.43].map((at, index) => ({
+      at,
+      params: [
+        0.8 + (index % 3) * 0.06,
+        0,
+        1500 + (index % 4) * 260,
+        0.001,
+        0.004,
+        0.02,
+        NOISE_SHAPE,
+        1,
+        0, 0, 0, 0, 0,
+        2.4,
+        0, 0, 0, 1, 0, 0,
+        2600,
+      ],
+    })),
+  },
+
+  /**
+   * A lamp under strain (§4.2): mains hum with a failing ballast's rasp over it. Twice
+   * mains is what a magnetic ballast actually sings at, and §4.2 makes the buzz half of
+   * the tell that says where the monster is when the lamp is off screen.
+   */
+  lamp_buzz: {
+    seconds: 0.6,
+    loop: true,
+    shots: [
+      { at: 0, params: [0.7, 0, 100, 0, 0.6, 0, SAW, 1, 0, 0, 0, 0, 0, 0.12, 0, 0, 0, 1, 0, 0.08, 700] },
+      { at: 0, params: [0.35, 0, 200, 0, 0.6, 0, TRIANGLE, 1, 0, 0, 0, 0, 0, 0.05, 0, 0, 0, 1, 0, 0.12, 900] },
+    ],
+  },
+
+  /**
+   * §3.4 — the player's own heart, which is the only feedback the spec gives for health.
+   * Two thumps, the second softer, and nothing high enough to be heard on top of the map's
+   * audio rather than underneath it.
+   */
+  heartbeat: {
+    seconds: 0.5,
+    loop: false,
+    shots: [
+      { at: 0.0, params: [1, 0, 58, 0.002, 0.03, 0.14, SINE, 0.8, -30, 0, 0, 0, 0, 0.1, 0, 0, 0, 0.5, 0.1, 0, 180] },
+      { at: 0.17, params: [0.55, 0, 52, 0.002, 0.025, 0.12, SINE, 0.8, -26, 0, 0, 0, 0, 0.1, 0, 0, 0, 0.5, 0.1, 0, 180] },
+    ],
+  },
+};
 
 function normalise(data: Float32Array<ArrayBuffer>, peak = 0.9): void {
   let max = 0;
@@ -50,153 +167,34 @@ function normalise(data: Float32Array<ArrayBuffer>, peak = 0.9): void {
   for (let i = 0; i < data.length; i += 1) data[i] = (data[i] ?? 0) * scale;
 }
 
-interface Recipe {
-  seconds: number;
-  loop: boolean;
-  seed: number;
-  render(data: Float32Array<ArrayBuffer>, sampleRate: number, random: () => number): void;
-}
-
-const RECIPES: Readonly<Record<SoundName, Recipe>> = {
-  /**
-   * The locator: two short chirps and a gap, looping. Broadband and rhythmic on purpose —
-   * a continuous tone gives the ear far less to work with than repeated onsets do.
-   */
-  test_ping: {
-    seconds: 1.0,
-    loop: true,
-    seed: 1,
-    render(data, sampleRate) {
-      for (const [start, frequency] of [
-        [0, 900],
-        [0.14, 1350],
-      ] as const) {
-        const offset = Math.floor(start * sampleRate);
-        const length = Math.floor(0.09 * sampleRate);
-        for (let i = 0; i < length && offset + i < data.length; i += 1) {
-          const t = i / sampleRate;
-          const envelope = Math.exp(-t * 26);
-          data[offset + i] = (data[offset + i] ?? 0) + Math.sin(2 * Math.PI * frequency * t) * envelope;
-        }
-      }
-    },
-  },
-
-  /** The player's own step: a short, bright scuff. */
-  footstep_light: {
-    seconds: 0.16,
-    loop: false,
-    seed: 2,
-    render(data, sampleRate, random) {
-      for (let i = 0; i < data.length; i += 1) {
-        const t = i / sampleRate;
-        data[i] = (random() * 2 - 1) * Math.exp(-t * 42);
-      }
-      lowPass(data, 0.5);
-    },
-  },
-
-  /**
-   * The Shadow Monster's step (§5.2): heavy, slow, and with a low thump under the scuff,
-   * because it is heard long before it is seen.
-   */
-  footstep_heavy: {
-    seconds: 0.42,
-    loop: false,
-    seed: 3,
-    render(data, sampleRate, random) {
-      for (let i = 0; i < data.length; i += 1) {
-        const t = i / sampleRate;
-        const thump = Math.sin(2 * Math.PI * 58 * t) * Math.exp(-t * 11);
-        const scuff = (random() * 2 - 1) * Math.exp(-t * 20) * 0.6;
-        data[i] = thump + scuff;
-      }
-      lowPass(data, 0.18);
-    },
-  },
-
-  /**
-   * A lamp under strain (§4.2): mains hum with the rasp of a failing ballast over it.
-   * Looping, and only ever played by a lamp that is actually straining — §4.2 makes the
-   * buzz half of the tell, and a lamp that hummed all the time would be no tell at all.
-   */
-  lamp_buzz: {
-    seconds: 0.6,
-    loop: true,
-    seed: 11,
-    render(data, sampleRate, random) {
-      // 100 Hz — twice mains, which is what a magnetic ballast actually sings at — plus
-      // its harmonics, plus a little noise so it rasps rather than tones.
-      for (let i = 0; i < data.length; i += 1) {
-        const t = i / sampleRate;
-        const hum =
-          Math.sin(2 * Math.PI * 100 * t) * 0.6 +
-          Math.sin(2 * Math.PI * 200 * t) * 0.25 +
-          Math.sin(2 * Math.PI * 300 * t) * 0.12;
-        data[i] = hum + (random() * 2 - 1) * 0.18;
-      }
-      lowPass(data, 0.5);
-      normalise(data, 0.55);
-    },
-  },
-
-  /**
-   * §3.4 — the player's own heart, which is the only feedback the spec gives for health.
-   * Two thumps, the second softer, and nothing above 90 Hz: it has to be felt underneath
-   * the map's audio rather than heard on top of it.
-   */
-  heartbeat: {
-    seconds: 0.5,
-    loop: false,
-    seed: 17,
-    render(data, sampleRate, random) {
-      const thump = (start: number, gain: number): void => {
-        const from = Math.floor(start * sampleRate);
-        for (let i = 0; from + i < data.length && i < sampleRate * 0.22; i += 1) {
-          const t = i / sampleRate;
-          // A pitch that falls as it decays, which is what makes a thump a thump rather
-          // than a tone with an envelope on it.
-          const frequency = 62 - t * 26;
-          const envelope = Math.exp(-t * 22);
-          data[from + i] =
-            (data[from + i] ?? 0) +
-            (Math.sin(2 * Math.PI * frequency * t) * 0.9 + (random() * 2 - 1) * 0.06) *
-              envelope *
-              gain;
-        }
-      };
-      thump(0.0, 1.0);
-      thump(0.17, 0.55);
-      lowPass(data, 0.09);
-      normalise(data, 0.85);
-    },
-  },
-
-  /** The spider (§5.1): a run of dry clicks. */
-  chitter: {
-    seconds: 0.5,
-    loop: true,
-    seed: 4,
-    render(data, sampleRate, random) {
-      let cursor = 0;
-      while (cursor < data.length) {
-        const length = Math.floor((0.004 + random() * 0.006) * sampleRate);
-        for (let i = 0; i < length && cursor + i < data.length; i += 1) {
-          const t = i / sampleRate;
-          data[cursor + i] = (random() * 2 - 1) * Math.exp(-t * 320);
-        }
-        cursor += length + Math.floor((0.02 + random() * 0.06) * sampleRate);
-      }
-      lowPass(data, 0.75);
-    },
-  },
-};
-
-/** Render a placeholder sound to raw mono samples. No Web Audio involved. */
+/**
+ * Build one sound. Deterministic: every parameter set pins ZzFX's `randomness` to 0, so
+ * two runs produce byte-identical buffers (Cross-Cutting: determinism).
+ *
+ * ZzFX reads its sample rate off the shared object, so it is set here rather than assumed
+ * — a context running at 22.05 kHz has to get a buffer built for 22.05 kHz or every sound
+ * plays at the wrong pitch.
+ */
 export function synthesise(name: SoundName, sampleRate: number): SynthesisedSound {
   const recipe = RECIPES[name];
   const data = new Float32Array(Math.max(1, Math.floor(recipe.seconds * sampleRate)));
-  recipe.render(data, sampleRate, mulberry32(recipe.seed));
+
+  const previousRate = ZZFX.sampleRate;
+  ZZFX.sampleRate = sampleRate;
+  try {
+    for (const shot of recipe.shots) {
+      const samples = ZZFX.buildSamples(...shot.params);
+      const offset = Math.floor(shot.at * sampleRate);
+      // Mixed rather than written, so overlapping shots layer — which is what the lamp's
+      // hum and its harmonic are — and so a tail running past the end is simply cut.
+      for (let i = 0; i < samples.length && offset + i < data.length; i += 1) {
+        data[offset + i] = (data[offset + i] ?? 0) + (samples[i] ?? 0);
+      }
+    }
+  } finally {
+    ZZFX.sampleRate = previousRate;
+  }
+
   normalise(data);
   return { data, sampleRate, loop: recipe.loop };
 }
@@ -205,11 +203,6 @@ export function isLooping(name: SoundName): boolean {
   return RECIPES[name].loop;
 }
 
-/**
- * Decoded buffers by name, fetched where a real file exists and synthesised where it does
- * not. Everything is prepared up front: a sound that has to be fetched at the moment it is
- * needed arrives after the thing it was meant to announce.
- */
 export class SoundBank {
   private readonly buffers = new Map<SoundName, AudioBuffer>();
   private readonly missing = new Set<SoundName>();

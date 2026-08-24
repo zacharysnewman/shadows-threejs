@@ -717,6 +717,25 @@ visible; the Shadow Monster deliberately has none (§5.2 — one pose).
 | Spider walking at 2.4 m/s | bob range 0.068 m, leg swing range 0.994 rad against a 0.5 rad amplitude |
 | Spider caught by a beam | swing settles from 0.994 rad to 0.001 over two seconds — eased, not snapped |
 
+*The placeholder audio is a library's now.* `SoundBank` synthesises through ZzFX's
+`buildSamples` (MIT, zero dependencies) — a parameter set per sound instead of hand-rolled
+oscillators and filters. Only the pure half of the library is used: ZzFX's own `play` builds
+a mono `AudioContext` of its own, and §4.3 needs every sound to come out of a
+`THREE.PositionalAudio` or an unseen thing cannot be located by ear. Every parameter set
+pins ZzFX's `randomness` to 0, because each sound is built once into a buffer and replayed
+from it — the jitter would vary nothing between plays and only make the buffer differ
+between runs, which Cross-Cutting forbids. Loops are composed from shots placed in a
+fixed-length buffer rather than synthesised, because a one-shot with a decay tail clicks
+when `THREE.Audio` repeats it.
+
+*A test that was measuring the wrong thing.* "The monster's step is lower than the player's"
+was checked by zero crossings per second of buffer — which counts a longer sound's silence
+against it, and reported the low sound as the high one the moment the two durations
+diverged. It now measures crossings per second of *sounding* signal, and a second test
+measures what §4.3 actually claims: the share of a sound's energy below 150 Hz, which is
+what survives distance. That one failed at first and was right to — the heavy step's noise
+was swamping its fundamental, putting 4% of its energy in the low end where it now puts 14%.
+
 *Sent back to the spec.* Nothing. This phase built tools for the passes that will amend it;
 the amendments themselves come out of the tuning, which needs someone playing.
 
@@ -727,7 +746,8 @@ the amendments themselves come out of the tuning, which needs someone playing.
 - **The art pass.** Real `.glb` prefabs, and the spider's two clips driven by `Gait`. The
   monster needs one pose (§5.2).
 - **The audio pass.** Real files replacing the synthesised placeholders; the bank already
-  falls back, so this is a drop-in.
+  falls back, so this is a drop-in. The placeholders themselves are ZzFX parameter sets now
+  rather than bespoke DSP (below), which makes them cheap to iterate on in the meantime.
 - **The tuning pass.** Deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
   speeds. Every one of them is a `config.ts` value citing its spec section, so a change is
   an edit in two places — but which way to move them is not knowable from here.
