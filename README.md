@@ -18,7 +18,12 @@ npm run build      # typecheck + production build
 npm test           # unit tests
 ```
 
-`?map=<name>` selects a map from `public/maps/`:
+A session opens on the **title screen** (§8): `Play` starts a run and is also the gesture
+the audio context is started from, so there is no way past it. Debug mode is **off** — no
+readout, no debug keys — until `?debug` is on the URL, which is also what unlocks `?map=`
+and `?seed=` below. `?edit` opens the level editor and needs no `?debug`.
+
+`?debug&map=<name>` selects a map from `public/maps/`:
 
 - `/` — the 50×50 example map (default)
 - `/?map=phase1-test` — a small map that deliberately contains authoring errors, to
@@ -38,20 +43,36 @@ npm test           # unit tests
   across, a pit that light crosses and walking does not, two lamps in two groups so one
   can be sabotaged while the other stays as a control, and two spiders for the comparison
 
-The objective chain (§6) lives on the example map: `?map=example` is the one to play. A run
-is one life: dying or escaping ends it, and `E` or a click starts another from a clean map.
+The objective chain (§6) lives on the example map, which is what `Play` loads. A run is one
+life: dying or escaping ends it, and `E` or a click starts another from a clean map.
 
-`?seed=<word|number>` replays a run's randomised values; without one a seed is picked and
-logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
+`?debug&seed=<word|number>` replays a run's randomised values; without one a seed is picked
+and logged. Every map here is a **prototype**, not the level — see `CLAUDE.md`.
 
 The `scripts/gen-*-map.mjs` generators regenerate those maps' layer data.
 
 ## Authoring a level
 
-Export from a 2D tile editor (§1) into `public/maps/<name>/` as `map.json` beside a
-`tileset.json`, then open `?map=<name>`. The loader warns about anything it had to skip, and
-the **audit** answers the question after that one — can the level be finished? It reports in
-the console at load and on the `audit` row of the debug readout:
+Levels are authored in the editor built into this project (§9) — `?edit`, on the same site,
+so it works on a phone:
+
+1. **Draw the map.** Two layers, floor and obstacles, with paint, erase and a rectangle
+   tool. A building is a block of wall tiles, not a separate kind of thing.
+2. **Place entities.** The spawn, the exit, switches, lamps, gates, notes, spiders and the
+   Shade, each with a properties sheet for the fields §2 requires. A note or a switch mounts
+   on a solid neighbour, and the editor refuses a note the camera could never read (§9.2).
+3. **Watch the status bar.** It runs the game's own validator and audit on every edit, so a
+   level that cannot be finished says so while you are placing the thing that broke it.
+4. **`Play`** hands the level straight to the game — no file, no commit, no reload.
+5. **`Copy`** puts the whole `map.json` on the clipboard when you want to keep it.
+
+To keep a level, paste that JSON into `public/maps/<name>/map.json` and copy any existing
+`tileset.json` beside it (they all define the same seven tile ids). Note text goes in
+`public/notes.json`, keyed by the `noteId` you gave the note. Then `?debug&map=<name>`.
+
+The **audit** answers the question the loader does not — can the level be finished? It
+reports in the editor's status bar, in the console at load, and on the `audit` row of the
+debug readout:
 
 - a gate whose only switch is behind itself, or an exit needing more `latch` switches than
   the map has (**blocking** — the level cannot be completed)
@@ -63,6 +84,9 @@ the console at load and on the `audit` row of the debug readout:
 Reachability is worked out the way a player earns it: flood from the spawn, open any gate
 whose switch is in reach, flood again, repeat. `npm test` runs the same audit over every
 checked-in map.
+
+The editor autosaves a draft to the browser it is open in, so the phone's draft and the
+laptop's are different levels. `Copy` is how one moves between them.
 
 ## Credits
 
@@ -111,6 +135,9 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 
 ## Debug harness
 
+**Off by default** (§8.3). None of the keys below do anything, and no readout is drawn,
+unless the URL carries `?debug` — a player who presses `V` should not find a free camera.
+
 | Key | |
 | --- | --- |
 | `WASD` / arrows | move; the mouse aims |
@@ -118,7 +145,7 @@ a base-path mistake shows up locally rather than as a wall of 404s after deployi
 | `V` | hand the camera to the debug free camera — `WASD` then pans, wheel zooms |
 | `F` | flashlight on/off |
 | `B` | drain the battery to 5%, to reach the cut-out and lockout without waiting 45 s |
-| `L` | power every light group — Phase 9 replaces this with the switches |
+| `L` | power every light group, past the switches that normally gate them |
 | `O` | occluder fade (geometry between the camera and the player) |
 | `Z` | orbit a test emitter off-screen — audio only, nothing to see |
 | `N` | enemy paths, coloured by state |
@@ -154,46 +181,55 @@ Hovering the map reports the tile under the cursor and whether it is walkable.
 
 ## Status
 
-Phases 0–6 are implemented:
+**Every code phase in `docs/IMPLEMENTATION_PLAN.md` is built** — Phases 0 to 13. The map
+pipeline, the player and camera, the lighting and the flashlight's battery, spatial audio,
+navigation, the shared illumination query, both enemies and their opposite reactions to
+light, interaction and the objective chain, the run lifecycle, the level editor, and the
+shell around it all.
 
-- **Phase 0** — fixed-timestep simulation clock and render loop, viewport and debug readout.
-- **Phase 1** — the map pipeline: `map.json` / `tileset.json` loading and validation,
-  instanced prefab geometry, merged box colliders, the walkability grid, and a typed entity
-  registry. Entities other than the player spawn are parsed and indexed but not yet spawned
-  beyond debug markers.
-- **Phase 2** — the player: input abstraction over keyboard/mouse, gamepad and touch;
-  movement with the spec's speeds and smoothing, including the sprint that trades
-  independent aim for speed; the 0.4 m capsule sliding along contact
-  normals against walls, floor holes and the map edge; the camera rig with its bounds
-  clamp; and the health pool with its regeneration delay and refill, driven by a debug
-  damage key until enemies exist.
+The plan carries the per-phase detail: what landed, how each exit criterion was shown to be
+met, and what was deliberately left for later.
 
-- **Phase 3** — the lighting: the map is dark, and lit by the flashlight bound to the
-  player's aim — with its battery drain, recharge, intensity falloff and re-enable
-  lockout — plus environmental lamps that light in groups, of which at most two cast
-  shadows at a time.
+One criterion is outstanding and cannot be met here: **§7's frame rates on both tiers.**
+This environment renders through a software rasteriser, so any figure measured in it is
+meaningless. It needs a real machine and a real phone.
 
-- **Phase 4** — spatial audio: the listener rides the player, sources come from a pool,
-  §4.3's two distance models are in place, and the `AudioContext` waits for a gesture.
-  Sounds are synthesised placeholders until real files exist.
+## What is left, and it is not code
 
-- **Phase 5** — navigation and the enemy base: grid A\* with line-of-sight straightening,
-  the state machine both AIs are built on, §5's movement speeds, local avoidance, spawning
-  from map entities, and the shared contact check. No light reactions yet.
+The remaining work is content and judgement — the four passes no one can do who is not
+looking at the game.
 
-- **Phase 6** — the shared illumination query: one service answering whether an entity is
-  lit and by how much, with the cone and lamp-pool tests, occlusion against the same
-  obstacles that block walking, and the confirming raycast throttled to 10 Hz per entity.
-  Both AIs will consume it; neither will implement its own.
+**The level.** Every map in `public/maps/` is a prototype: `example` exercises the pipeline
+at full size and each `phaseN-test` exercises one phase's mechanics. **None of them is the
+level.** Author it in `?edit` (see *Authoring a level* above), and let the audit tell you
+whether it can be finished before a playthrough does.
 
-Not yet built: the light reactions that make each enemy itself (Phases 7 and 8), interaction
-and objectives (Phase 9), and the run lifecycle (Phase 10) — health reaching zero currently
-logs and nothing more. Nothing yet asks whether an entity is *lit*; that shared query is Phase 6.
-Prefab `.glb` assets do not exist yet, so the asset loader stands in coloured placeholder
-boxes sized by prefab name prefix.
+**The art.** The map prefabs are real — a CC0 kit, vendored with its licence — but the two
+enemies are still procedural meshes, and the spider has no clips. `Gait` already computes
+what a clip would be driven by: the cycle advances with ground covered, and the attack's
+contact frame is placed where `strike` reaches 1, so re-exporting art cannot move when
+damage lands. Dropping a `.glb` into `public/prefabs/` is the whole of the change; a prefab
+with no file falls back to a placeholder box.
 
-`docs/IMPLEMENTATION_PLAN.md` carries the per-phase detail, including what each finished
-phase deliberately left for later.
+A caveat worth knowing: the kit is medieval stone while the prefab names say concrete and
+chain-link, so the game currently looks like a dungeon. That is a `tileset.json` decision,
+not a code one — swapping kits is replacing six files.
+
+**The audio.** Every sound is synthesised at runtime by ZzFX as a placeholder. The bank
+already falls back, so real files are a drop-in.
+
+**The tuning.** Deterrence timers, attack wind-up, the flicker ramp, battery rates, enemy
+speeds. Every one is a value in `src/config.ts` citing the spec section it comes from, so a
+change is an edit in two places — the spec and the config — rather than thirty. Which way to
+move them is a question for playing.
+
+Two design questions are open rather than outstanding:
+
+- **Portrait framing.** The camera frames by vertical FOV, so how much ground is visible
+  sideways depends on the window's shape: 23 m across on a 16:9 desktop, 6 m on a phone held
+  upright. Either the game asks for landscape, or the camera pulls back on narrow screens and
+  the player shrinks.
+- **Music** for the title and the credits, which §8 does not specify.
 
 ## Layout
 
