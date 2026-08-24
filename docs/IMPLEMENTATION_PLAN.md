@@ -736,15 +736,41 @@ measures what §4.3 actually claims: the share of a sound's energy below 150 Hz,
 what survives distance. That one failed at first and was right to — the heavy step's noise
 was swamping its fundamental, putting 4% of its energy in the low end where it now puts 14%.
 
-*Sent back to the spec.* Nothing. This phase built tools for the passes that will amend it;
-the amendments themselves come out of the tuning, which needs someone playing.
+*A third-party kit does not fit a project's conventions, and should not be edited to.*
+`AssetLoader` normalises prefabs on load instead: centred on the tile in X and Z, and sitting
+on the ground plane — upright geometry starting at `y = 0`, floor geometry ending there. That
+was a real gap rather than a nicety. The placeholder path had always grounded its boxes
+carefully; the `.glb` path took the merged geometry raw, so any real asset would have landed
+misplaced. This kit would have put every wall a metre east of its tile and the player five
+centimetres underground.
+
+Two things normalisation cannot infer are authored per prefab in `PREFAB_FIT`: which node to
+take, because the kit's gate is modelled as a child of a 4 m doorway wall, and a height to
+scale to, because its walls are 4 m where this game wants 3. `fitHeight` scales **height
+only** — the first version scaled uniformly, which would have shrunk a 2 m wall to 1.5 m and
+left a half-metre gap between every tile on a wall run.
+
+*Sent back to the spec.* §1 asserted that assets are 2 m modular and said nothing about what
+happens when a kit is not. It now carries the normalisation rule and the two per-prefab
+exceptions, because "the assets are on-grid" turned out to be a thing the loader has to
+*make* true rather than something it can assume.
 
 *Outstanding — the phase's actual content.*
 
 - **The real level.** Authored in the external editors §1 names and dropped into
   `public/maps/`. Every map in the repo is scaffolding and none of them is the level.
-- **The art pass.** Real `.glb` prefabs, and the spider's two clips driven by `Gait`. The
-  monster needs one pose (§5.2).
+- **The art pass — the map prefabs are done, the enemies are not.** `public/prefabs/` now
+  holds a real CC0 kit (KayKit Dungeon Remastered 1.0, Kay Lousberg, CC0 1.0), pinned to a
+  commit and vendored with its licence; the six prefab roles all load from `.glb` and no
+  placeholder box remains on the example map. Still outstanding: the enemy bodies, which are
+  procedural meshes, and the spider's two clips, which `Gait` already drives the timing of.
+
+  **The kit is medieval stone, and the prefab names are not.** `floor_concrete` is a
+  flagstone and `fence_chainlink` is a timber barrier. The names are the *roles* the map
+  pipeline asks for and predate the kit, so this is a map-data question (`tileset.json`) and
+  not a code one — but it does mean the game currently looks like a dungeon rather than the
+  modern-industrial place the names imply. Swapping kits is deleting six files: a prefab
+  with no `.glb` falls back to a placeholder box, which is how it looked before.
 - **The audio pass.** Real files replacing the synthesised placeholders; the bank already
   falls back, so this is a drop-in. The placeholders themselves are ZzFX parameter sets now
   rather than bespoke DSP (below), which makes them cheap to iterate on in the meantime.

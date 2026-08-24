@@ -1,6 +1,17 @@
 /**
  * Prefab asset loader (§1, §2).
  *
+ * **Where the art comes from.** The `.glb` files in `public/prefabs/` are KayKit's
+ * *Dungeon Remastered 1.0* by Kay Lousberg (https://kaylousberg.com), released **CC0 1.0** —
+ * public domain, no attribution required. The credit is here anyway, because six months from
+ * now the question "where did these come from and are we allowed to ship them" needs an
+ * answer that does not depend on anyone remembering.
+ *
+ * Pulled from the author's own repository at a pinned commit:
+ * `KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0` @ `b0ca9bd9`. The licence text ships
+ * beside the files as `public/prefabs/LICENSE-kaykit.txt`, and
+ * `public/prefabs/README.md` maps our prefab names onto the kit's filenames.
+ *
  * Phase 1 has no art bundle yet, so this is the stub the plan calls for: it *tries* to
  * load `assets/prefabs/<name>.glb` and falls back to a procedural placeholder box whose
  * footprint and height are derived from the prefab's name prefix. Swapping in real assets
@@ -15,6 +26,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { PREFAB_FIT } from '../config';
 
 export interface Prefab {
   name: string;
@@ -50,6 +62,55 @@ const DEFAULT_KIND = { height: 1.0, footprint: 0.8, color: 0x9b59b6, sunken: fal
 
 function kindFor(name: string) {
   return PLACEHOLDER_KINDS.find((k) => name.startsWith(k.prefix)) ?? DEFAULT_KIND;
+}
+
+/**
+ * Fit a loaded prefab to this project's conventions (§1), in place. Returns its height.
+ *
+ * A kit authored by somebody else sits wherever its author left it: this one has walls
+ * running from x = 0 rather than centred, and floor slabs whose top surface is 5 cm above
+ * the ground plane. Neither is wrong of the kit — both are wrong *here*, where the map
+ * builder places one module per tile centre and everything else assumes the floor is y = 0.
+ *
+ * Normalising on load rather than editing the files keeps the kit swappable: a newer
+ * version drops in without redoing the edits, and a different kit needs no edits at all.
+ *
+ * `fitHeight` scales **height only**. On a modular grid the footprint is the part that
+ * cannot move: a 2 m wall scaled uniformly to three-quarters is a 1.5 m wall, and a run of
+ * them has a half-metre gap between every tile. Height is the axis with slack in it, which
+ * is why the fit is expressed as one number and why it is opt-in per prefab (§1) rather
+ * than something applied by default.
+ */
+export function normalisePrefab(
+  geometry: THREE.BufferGeometry,
+  name: string,
+  fitHeight?: number,
+): number {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (!box) return 1;
+
+  if (fitHeight && fitHeight > 0) {
+    const current = box.max.y - box.min.y;
+    if (current > 1e-6) {
+      geometry.scale(1, fitHeight / current, 1);
+      geometry.computeBoundingBox();
+    }
+  }
+
+  const fitted = geometry.boundingBox ?? box;
+  const height = fitted.max.y - fitted.min.y;
+  // Floors end at the ground plane and everything else starts there, which is the same
+  // contract the placeholder boxes are built to (`sunken` above).
+  const groundedY = kindFor(name).sunken ? -fitted.max.y : -fitted.min.y;
+  geometry.translate(
+    -(fitted.min.x + fitted.max.x) / 2,
+    groundedY,
+    -(fitted.min.z + fitted.max.z) / 2,
+  );
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return height;
 }
 
 export class AssetLoader {
@@ -102,11 +163,19 @@ export class AssetLoader {
   }
 
   private fromScene(name: string, scene: THREE.Object3D, tileSize: number): Prefab {
+    const fit = PREFAB_FIT[name] ?? {};
     const geometries: THREE.BufferGeometry[] = [];
     let material: THREE.Material | null = null;
 
     scene.updateMatrixWorld(true);
-    scene.traverse((node) => {
+
+    // §1 — a module bundled inside a larger one: take the named node and discard the rest,
+    // or the gate's tile gets the wall the gate was modelled inside.
+    const root = fit.node ? scene.getObjectByName(fit.node) : scene;
+    if (!root) {
+      console.warn(`[assets] prefab "${name}": no node "${fit.node}"; using the whole scene`);
+    }
+    (root ?? scene).traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       const geometry = node.geometry.clone();
       geometry.applyMatrix4(node.matrixWorld);
@@ -125,9 +194,8 @@ export class AssetLoader {
       geometries.length === 1
         ? (geometries[0] as THREE.BufferGeometry)
         : (BufferGeometryUtils.mergeGeometries(geometries, false) ?? geometries[0]!);
-    merged.computeBoundingBox();
-    const height = merged.boundingBox ? merged.boundingBox.max.y - merged.boundingBox.min.y : 1;
 
+    const height = normalisePrefab(merged, name, fit.fitHeight);
     return { name, geometry: merged, material, height, placeholder: false };
   }
 

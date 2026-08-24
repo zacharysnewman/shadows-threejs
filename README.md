@@ -64,6 +64,18 @@ Reachability is worked out the way a player earns it: flood from the spawn, open
 whose switch is in reach, flood again, repeat. `npm test` runs the same audit over every
 checked-in map.
 
+## Credits
+
+The 3D prefabs in `public/prefabs/` are **KayKit — Dungeon Remastered 1.0** by
+[Kay Lousberg](https://kaylousberg.com), released under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Attribution is not required;
+this credit is voluntary. The licence text ships beside the files as
+`public/prefabs/LICENSE-kaykit.txt`, and `public/prefabs/README.md` records which kit file
+each of our prefab names maps to and the commit they were pulled from.
+
+Sound effects are synthesised at runtime with [ZzFX](https://github.com/KilledByAPixel/ZzFX)
+by Frank Force (MIT).
+
 ## CI
 
 `.github/workflows/ci.yml` runs the tests and the build on every pull request — the same

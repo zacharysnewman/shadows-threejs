@@ -24,11 +24,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/project-map.jsonl');
 
 /**
- * Files that are inputs to the toolchain rather than parts of the project, and whose
- * contents nobody reads. A lockfile in the map is ten thousand lines of noise standing in
- * for one fact already stated by `package.json`.
+ * Files the map does not describe.
+ *
+ * A lockfile is ten thousand lines of noise standing in for one fact `package.json`
+ * already states. The map itself is excluded for a harder reason: its own record carries a
+ * line count, so including it makes regenerating change the file, which changes the count,
+ * which changes the file. There is no fixed point, and the staleness check never passes.
  */
-const SKIP = new Set(['package-lock.json']);
+const SKIP = new Set(['package-lock.json', 'docs/project-map.jsonl']);
 
 /** What a file is, decided by where it lives. Order matters: the first match wins. */
 const KINDS = [

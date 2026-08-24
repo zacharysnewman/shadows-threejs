@@ -57,7 +57,13 @@ describe('docs/project-map.jsonl', () => {
     const tracked = new Set(
       execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
         .split('\n')
-        .filter((path) => path.length > 0 && path !== 'package-lock.json'),
+        // The same two exclusions the generator makes, and for the same reasons: a
+        // lockfile says nothing, and the map cannot describe itself without its own line
+        // count making every regeneration differ from the last.
+        .filter(
+          (path) =>
+            path.length > 0 && path !== 'package-lock.json' && path !== 'docs/project-map.jsonl',
+        ),
     );
     const mapped = new Set(readMap().map((record) => record.path));
 

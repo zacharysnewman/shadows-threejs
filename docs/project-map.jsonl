@@ -3,9 +3,9 @@
 {"path":".github/workflows/deploy.yml","kind":"ci","lines":63}
 {"path":".gitignore","kind":"config","lines":6}
 {"path":"CLAUDE.md","kind":"doc","lines":137,"sections":["Working in this repository","The spec is the source of truth","Recording progress","The project map","Constants","Commands","Verifying","Maps","Layout","Conventions"]}
-{"path":"README.md","kind":"doc","lines":202,"sections":["shadows-threejs","Running","Authoring a level","CI","Deployment","Debug harness","Status","Layout"]}
-{"path":"docs/GAME_SPEC.md","kind":"doc","lines":732,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets"]}
-{"path":"docs/IMPLEMENTATION_PLAN.md","kind":"doc","lines":777,"sections":["Implementation Plan","Ordering Principle","Progress","Phase 0 — Scaffold","Phase 1 — Map Pipeline","Phase 2 — Player Controller & Camera","Phase 3 — Lighting Core & Flashlight","Phase 4 — Audio Core","Phase 5 — Navigation & Enemy Base","Phase 6 — Illumination Detection Service","Phase 7 — Spider AI","Phase 8 — Shadow Monster","Phase 9 — Interactables, Power & Objectives","Phase 10 — Run Lifecycle","Phase 11 — Content & Tuning","Cross-Cutting"]}
+{"path":"README.md","kind":"doc","lines":214,"sections":["shadows-threejs","Running","Authoring a level","Credits","CI","Deployment","Debug harness","Status","Layout"]}
+{"path":"docs/GAME_SPEC.md","kind":"doc","lines":745,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets"]}
+{"path":"docs/IMPLEMENTATION_PLAN.md","kind":"doc","lines":803,"sections":["Implementation Plan","Ordering Principle","Progress","Phase 0 — Scaffold","Phase 1 — Map Pipeline","Phase 2 — Player Controller & Camera","Phase 3 — Lighting Core & Flashlight","Phase 4 — Audio Core","Phase 5 — Navigation & Enemy Base","Phase 6 — Illumination Detection Service","Phase 7 — Spider AI","Phase 8 — Shadow Monster","Phase 9 — Interactables, Power & Objectives","Phase 10 — Run Lifecycle","Phase 11 — Content & Tuning","Cross-Cutting"]}
 {"path":"index.html","kind":"config","lines":20}
 {"path":"package.json","kind":"config","lines":26}
 {"path":"public/.nojekyll","kind":"config","lines":1}
@@ -24,20 +24,29 @@
 {"path":"public/maps/phase8-test/map.json","kind":"map","lines":142,"width":34,"height":24,"tileSize":2,"entities":{"EnvironmentLight":2,"Flashlight":1,"PlayerSpawn":1,"PowerSwitch":2,"ShadowMonster":2,"SpiderEnemy":2}}
 {"path":"public/maps/phase8-test/tileset.json","kind":"tileset","lines":12}
 {"path":"public/notes.json","kind":"data","lines":11}
+{"path":"public/prefabs/LICENSE-kaykit.txt","kind":"config","lines":33}
+{"path":"public/prefabs/README.md","kind":"doc","lines":40,"sections":["Prefabs","Source","Fitting"]}
+{"path":"public/prefabs/fence_chainlink.glb","kind":"config","lines":35}
+{"path":"public/prefabs/floor_concrete.glb","kind":"config","lines":36}
+{"path":"public/prefabs/floor_dirt.glb","kind":"config","lines":54}
+{"path":"public/prefabs/gate_wood.glb","kind":"config","lines":163}
+{"path":"public/prefabs/prop_crate.glb","kind":"config","lines":53}
+{"path":"public/prefabs/wall_brick.glb","kind":"config","lines":66}
 {"path":"scripts/gen-example-map.mjs","kind":"script","lines":139,"summary":"Regenerates `public/maps/example/map.json` (§2).","spec":["§2","§6","§7"]}
 {"path":"scripts/gen-phase2-map.mjs","kind":"script","lines":159,"summary":"Regenerates `public/maps/phase2-test/map.json` (§2).","spec":["§2","§3.1","§3.2"]}
 {"path":"scripts/gen-phase3-map.mjs","kind":"script","lines":157,"summary":"Regenerates `public/maps/phase3-test/map.json` (§2).","spec":["§2","§5.2","§6","§7"]}
 {"path":"scripts/gen-phase5-map.mjs","kind":"script","lines":151,"summary":"Regenerates `public/maps/phase5-test/map.json` (§2).","spec":["§2","§5","§6"]}
 {"path":"scripts/gen-phase7-map.mjs","kind":"script","lines":166,"summary":"Regenerates `public/maps/phase7-test/map.json` (§2).","spec":["§2","§4.1","§5.1","§5.3"]}
 {"path":"scripts/gen-phase8-map.mjs","kind":"script","lines":164,"summary":"Regenerates `public/maps/phase8-test/map.json` (§2).","spec":["§2","§3.1","§4.1","§4.2","§5","§5.2"]}
-{"path":"src/Run.ts","kind":"source","lines":919,"summary":"One run of the game (§6, Run Structure).","exports":["RestartRequest","Run","RunShell","createRun"],"spec":["§2","§3.1","§3.2","§3.3","§3.4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§6.1","§6.2","§6.3","§6.4","§7"]}
+{"path":"scripts/gen-project-map.mjs","kind":"script","lines":162,"summary":"Regenerates `docs/project-map.jsonl` — one JSON record per tracked file."}
+{"path":"src/Run.ts","kind":"source","lines":927,"summary":"One run of the game (§6, Run Structure).","exports":["RestartRequest","Run","RunShell","createRun"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§6.1","§6.2","§6.3","§6.4","§7"]}
 {"path":"src/audio/AudioCore.ts","kind":"source","lines":235,"summary":"Spatial audio (§4.3).","exports":["AudioCore","AudioState","Emitter"],"spec":["§3.2","§4.3","§5.2","§6"]}
 {"path":"src/audio/Footsteps.ts","kind":"source","lines":32,"summary":"Step cadence (§4.3).","exports":["FootstepCadence"],"spec":["§4.3","§7"]}
 {"path":"src/audio/SoundBank.ts","kind":"source","lines":255,"summary":"Sound assets, and the placeholders standing in for them (§4.3).","exports":["SOUND_NAMES","SoundBank","SoundName","SynthesisedSound","isLooping","synthesise"],"spec":["§3.4","§4.2","§4.3","§5.1","§5.2"]}
 {"path":"src/audio/profiles.ts","kind":"source","lines":57,"summary":"Distance models and the cues they produce (§4.3).","exports":["AUDIO_PROFILES","DistanceProfile","ProfileName","attenuationAt","stereoBias"],"spec":["§3.2","§4.3"]}
 {"path":"src/audio/zzfx.d.ts","kind":"types","lines":20,"summary":"Types for `zzfx` (MIT, Frank Force), which ships as plain JavaScript.","spec":["§4.3"]}
-{"path":"src/config.ts","kind":"source","lines":476,"summary":"Single source of constants, mirroring `docs/GAME_SPEC.md`.","exports":["AMBIENT","AUDIO","CAMERA","ENEMY","ENTITY_DEFAULTS","ENVIRONMENT_LIGHT","FLASHLIGHT","FLICKER","FOG","GRID","HEALTH","ILLUMINATION","INPUT","INTERACTION","MAP_LIMITS","MOON","PLAYER","RENDER","RUN","SIM"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§7"]}
-{"path":"src/core/AssetLoader.ts","kind":"source","lines":161,"summary":"Prefab asset loader (§1, §2).","exports":["AssetLoader","Prefab"],"spec":["§1","§2","§7"]}
+{"path":"src/config.ts","kind":"source","lines":526,"summary":"Single source of constants, mirroring `docs/GAME_SPEC.md`.","exports":["AMBIENT","AUDIO","CAMERA","ENEMY","ENTITY_DEFAULTS","ENVIRONMENT_LIGHT","FLASHLIGHT","FLICKER","FOG","GRID","HEALTH","ILLUMINATION","INPUT","INTERACTION","MAP_LIMITS","MOON","PLAYER","PREFAB_FIT","PREFAB_SOURCE","RENDER","RUN","SIM"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§7"]}
+{"path":"src/core/AssetLoader.ts","kind":"source","lines":229,"summary":"Prefab asset loader (§1, §2).","exports":["AssetLoader","Prefab","normalisePrefab"],"spec":["§1","§2","§7"]}
 {"path":"src/core/Input.ts","kind":"source","lines":408,"summary":"Input abstraction (§3.1, §3.3).","exports":["ActionName","AimSource","Input","applyDeadzone"],"spec":["§3.1","§3.2","§3.3"]}
 {"path":"src/core/OccluderFade.ts","kind":"source","lines":135,"summary":"Fades static geometry standing between the camera and the player (§3.2).","exports":["OccluderFade"],"spec":["§3.2","§4","§7"]}
 {"path":"src/core/SimClock.ts","kind":"source","lines":121,"summary":"Fixed-timestep simulation clock (§7).","exports":["SimClock","TickListener"],"spec":["§6","§7"]}
@@ -105,6 +114,8 @@
 {"path":"tests/monster.test.ts","kind":"test","lines":344,"summary":"The Shadow Monster: the freeze, the flicker ramp, the blink, and its fatal contact (§5.2, §5.3). The sabotage lifecycle it triggers is in `lighting.test.ts`, with the lamp that owns it.","spec":["§4.2","§5","§5.2","§5.3"]}
 {"path":"tests/objectives.test.ts","kind":"test","lines":399,"summary":"Interaction targeting (§3.3) and the objective chain it drives (§6): both switch modes, the gate they open, the exit counter, and what a run remembers.","spec":["§3.3","§6","§6.1","§6.2","§6.3","§6.4","§6.5"]}
 {"path":"tests/player.test.ts","kind":"test","lines":378,"summary":"Player movement, wall sliding and the spawn facing (§3.1, §3.4).","spec":["§2","§3.1","§3.2","§3.4","§5","§5.3","§7"]}
+{"path":"tests/prefabs.test.ts","kind":"test","lines":123,"summary":"Fitting third-party prefabs to this project's grid (§1).","spec":["§1"]}
+{"path":"tests/project-map.test.ts","kind":"test","lines":129,"summary":"`docs/project-map.jsonl` has to be current, and a convention nobody can check is a convention that is wrong within a week.","spec":["§4.1","§5.1","§6"]}
 {"path":"tests/run.test.ts","kind":"test","lines":141,"summary":"How a run ends (§5.3, §6): the outcome state machine, and the health feedback curves it is read through (§3.4).","spec":["§3.4","§5.3","§6"]}
 {"path":"tests/simclock.test.ts","kind":"test","lines":65,"summary":"Fixed-timestep simulation clock (§7).","spec":["§7"]}
 {"path":"tests/spider.test.ts","kind":"test","lines":410,"summary":"The spider's light reaction lifecycle and its attack (§5.1, §5.3).","spec":["§3.4","§4.1","§5.1","§5.3"]}
