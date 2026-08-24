@@ -161,6 +161,8 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   mouse position or right analog for aim (§4.1). The two are independent — the player can
   back away while keeping the beam on a threat.
 - Walk speed 3.0 m/s, with acceleration/deceleration smoothed over 0.1 s to avoid snapping.
+  It is the number every speed in §5 and every distance in §4 is tuned against, so it moves
+  with them or not at all.
 - The player is a 0.4 m radius, 1.8 m tall capsule resolved by sliding along contact
   normals, so grazing a wall does not halt movement.
 - What stops the capsule is everything the walkability grid calls unwalkable (§2), not
@@ -442,8 +444,8 @@ Movement speeds, all in m/s, tuned against the player's 3.0 m/s (§3.1):
 | Pursuing player | 2.4 | 1.8 |
 | Fleeing | 3.6 (1.5× pursue) | — |
 
-Neither enemy outruns the player. A walking player is faster than a pursuing spider and
-half again as fast as the Shadow Monster; only a *fleeing* spider (3.6) beats a walk, and
+Neither enemy outruns the player. A walking player is faster than a pursuing spider, and the
+Shadow Monster pursues at three fifths of a walk; only a *fleeing* spider (3.6) beats a walk, and
 nothing beats a sprint (§3.1). That is deliberate: an enemy that catches a player in a
 straight line would make the map a reflex test. They threaten by never stopping, by taking
 routes the player cannot, and by the corners and dead ends they force — and by what running
@@ -739,7 +741,13 @@ constraint and not a polish-phase concern.
 - Static Layer 0/1 geometry is merged or instanced per prefab at load time — a 50×50 map is
   2,500 floor tiles and must not be 2,500 draw calls.
 - Simulation runs on a fixed 60 Hz timestep decoupled from rendering, so AI timers (§4.1,
-  §5) behave identically regardless of frame rate.
+  §5) behave identically regardless of frame rate. A long frame is clamped rather than
+  caught up on, so a backgrounded tab does not come back to a spiral of catch-up ticks.
+- **One loop drives the game, and the shell owns it.** The clock is advanced from exactly
+  one place, with the real time since the last advance. Two drivers on one clock is not a
+  performance problem but a correctness one: the world runs at a multiple of real time,
+  every speed in §3.1 and §5 is silently scaled by however many drivers there are, and the
+  clamp above — which exists to bound one long frame — becomes the size of the multiple.
 - Budget for the whole level to be resident at once: the map is a single continuous space
   (§2) with no streaming and no loading screens after the initial load.
 

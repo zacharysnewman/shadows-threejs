@@ -102,7 +102,7 @@ export const ENTITY_DEFAULTS = {
 
 /** §3.1 — player capsule and movement. */
 export const PLAYER = {
-  /** Walk speed in m/s (§3.1). */
+  /** Walk speed in m/s (§3.1) — §5's reference speed. */
   walkSpeed: 3.0,
   /** Sprint speed in m/s, held rather than toggled (§3.1). */
   sprintSpeed: 4.5,

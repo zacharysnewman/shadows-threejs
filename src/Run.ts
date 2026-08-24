@@ -830,6 +830,18 @@ export async function createRun(
   }
 
   // --- The frame ----------------------------------------------------------
+  /**
+   * One rendered frame: advance the simulation by whatever real time has passed, then draw.
+   *
+   * **Driven from outside, and it does not drive itself** (§7). The shell owns the one
+   * `requestAnimationFrame` loop in the game (`main.ts`) and hands this the delta. A run
+   * that re-registered its own loop would be a second driver on the same clock — every
+   * cycle advancing the simulation twice — and because rAF hands its callback a
+   * *timestamp* rather than a delta, that second driver fed `performance.now()` in
+   * milliseconds into a parameter measured in seconds. `SimClock`'s clamp turned each of
+   * those into a whole `maxFrameSeconds` of simulation, so the world ran at a multiple of
+   * real time and the player crossed the map in lurches.
+   */
   function frame(realDelta: number): void {
 
     // Sampled once per frame, before the ticks: a frame that runs three ticks applies the
@@ -902,8 +914,6 @@ export async function createRun(
     // After the render, so the renderer's counters are this frame's rather than the last.
     frameStats.sample(realDelta);
     input.endFrame();
-
-    requestAnimationFrame(frame);
   }
 
   function dispose(): void {

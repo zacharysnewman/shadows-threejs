@@ -779,6 +779,33 @@ exceptions, because "the assets are on-grid" turned out to be a thing the loader
 - **The tuning pass.** Deterrence timers, attack wind-up, flicker ramp, battery rates, enemy
   speeds. Every one of them is a `config.ts` value citing its spec section, so a change is
   an edit in two places — but which way to move them is not knowable from here.
+
+  A first pass rescaled every speed down by a third, on playtest feedback that movement was
+  insane. It was reverted: the report was real but the cause was not the numbers — see the
+  frame-loop bug below — and compensating for a bug by editing the design would have left
+  the game a third too slow the moment it was fixed. What survived is what was true either
+  way: `tests/player.test.ts` asserts §5's *ratios* rather than its values, and two tests
+  that had a speed baked in as a distance ("walks past x = 11", "closes 3 m in two seconds")
+  now derive it from the constant and the time.
+
+- **A second frame loop, running the world at a multiple of real time.** Reported as
+  "instantly moving from corner to corner of the map"; found by counting `SimClock.advance`
+  calls per animation frame in the browser. `Run` re-registered its own
+  `requestAnimationFrame` at the end of every frame while `main.ts` was already driving it,
+  so the clock had two drivers. Worse, rAF hands its callback a *timestamp*, so the second
+  driver passed `performance.now()` in milliseconds into a parameter measured in seconds —
+  and the clamp in `advance`, which exists to bound one long frame, turned each of those
+  into a whole 0.25 s of simulation. Measured before the fix: **12.75 simulation seconds in
+  8 real ones**, with 51 `advance` calls across 6 animation frames and deltas up to 10,561.
+  After: one call per frame, deltas 0.167–0.200 s, and **8.03 simulation seconds in 8 real
+  ones**. Nothing stopped the stale loops on teardown either, so every restart added another
+  driver and the game got faster the longer it was played.
+
+  The debug readout had been saying so for weeks — `frame 9579604.10 ms (0 fps)` is
+  `performance.now()` read as a frame time — and it was dismissed as a software-rasteriser
+  artefact every time it appeared in a screenshot. §7 now states the rule the code was
+  breaking, and `tests/run.test.ts` fails if a run drives itself again.
+
 - **§7's frame rates on both tiers**, which stay unverified for the same reason they have in
   every phase: this environment renders through a software rasteriser.
 

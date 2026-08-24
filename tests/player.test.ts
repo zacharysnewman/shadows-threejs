@@ -145,8 +145,11 @@ describe('Player', () => {
 
     expect(player.touchingWall).toBe(true);
     expect(player.position.y).toBeCloseTo(2 + PLAYER.radius, 2);
-    // Still travelling along the wall rather than stalled against it.
-    expect(player.position.x).toBeGreaterThan(11);
+    // Still travelling along the wall rather than stalled against it. Expressed against
+    // walk speed, not as a coordinate: the distance covered is a speed times a time, and a
+    // literal here is a test that fails the next time §3.1 is tuned.
+    const ideal = PLAYER.walkSpeed * Math.SQRT1_2 * 1.5;
+    expect(player.position.x - 9).toBeGreaterThan(ideal * 0.8);
     expect(player.speed).toBeGreaterThan(PLAYER.walkSpeed * 0.5);
   });
 
@@ -328,6 +331,16 @@ describe('sprint (§3.1)', () => {
     expect(PLAYER.walkSpeed).toBeGreaterThan(ENEMY.spider.pursueSpeed);
     expect(PLAYER.walkSpeed).toBeGreaterThan(ENEMY.shadowMonster.pursueSpeed);
     expect(ENEMY.spider.fleeSpeed).toBeGreaterThan(PLAYER.walkSpeed);
+  });
+
+  it('keeps §5\'s ratios through a tuning pass', () => {
+    // §5 states these as design, not as consequences of six numbers that happen to be
+    // where they are — so a pass that rescales the game has to keep them (§5, Phase 11).
+    expect(ENEMY.shadowMonster.pursueSpeed / PLAYER.walkSpeed).toBeCloseTo(0.6, 5);
+    expect(ENEMY.spider.fleeSpeed).toBeCloseTo(ENEMY.spider.pursueSpeed * 1.5, 5);
+    // The monster ambles faster than a spider does, which is how it closes on a player who
+    // has stopped to read (§5.2).
+    expect(ENEMY.shadowMonster.wanderSpeed).toBeGreaterThan(ENEMY.spider.wanderSpeed);
   });
 });
 

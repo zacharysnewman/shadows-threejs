@@ -34,9 +34,13 @@ describe('Enemy movement', () => {
     const built = world(OPEN);
     const enemy = spider(5, 5);
     const before = enemy.distanceTo(18, 5);
-    run(enemy, contextFor(built, 18, 5), 2);
+    const seconds = 2;
+    run(enemy, contextFor(built, 18, 5), seconds);
 
-    expect(enemy.distanceTo(18, 5)).toBeLessThan(before - 3);
+    // Against §5's pursue speed rather than a metre count: how far two seconds of chasing
+    // covers is a speed times a time, and a literal here breaks on the next tuning pass.
+    const closed = ENEMY.spider.pursueSpeed * seconds * 0.8;
+    expect(enemy.distanceTo(18, 5)).toBeLessThan(before - closed);
   });
 
   it('drifts at wander speed when there is nobody to chase', () => {
