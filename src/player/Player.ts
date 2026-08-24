@@ -49,6 +49,8 @@ export class Player {
   readonly aim = new THREE.Vector2();
 
   readonly health = new Health();
+  /** §5.3 — set by whichever contact resolution emptied the pool. */
+  private _killedBy: 'SpiderEnemy' | 'ShadowMonster' | null = null;
 
   /** Scene graph node — a placeholder capsule until the art pass (Phase 11). */
   readonly object = new THREE.Group();
@@ -219,7 +221,13 @@ export class Player {
    * the player to find it; true when this deduction is the one that killed them.
    */
   damage(amount: number): boolean {
-    return this.health.damage(amount);
+    const dead = this.health.damage(amount);
+    // §5.3 divides contact between the two enemies as *damage* and *kill*, so the pool
+    // being emptied by a deduction already names the spider — nothing has to be told. The
+    // debug damage key borrows that attribution, which is the price of not threading a
+    // source argument through an interface the enemies share.
+    if (dead && this._killedBy === null) this._killedBy = 'SpiderEnemy';
+    return dead;
   }
 
   /**
@@ -230,7 +238,13 @@ export class Player {
    * the jump-scare are the run lifecycle's (Phase 10); the pool reaching zero is this.
    */
   kill(): void {
+    this._killedBy = 'ShadowMonster';
     this.health.set(0);
+  }
+
+  /** Which enemy ended the run, for §5.3's two jump-scares. Null while alive. */
+  get killedBy(): 'SpiderEnemy' | 'ShadowMonster' | null {
+    return this._killedBy;
   }
 
   /**

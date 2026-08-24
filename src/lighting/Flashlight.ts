@@ -51,6 +51,8 @@ export class Flashlight {
   private readonly aimDistance: number;
   /** How far in front of the player the beam is emitted, clear of their own capsule. */
   private readonly originOffset = PLAYER.radius + 0.15;
+  /** The target the `SpotLight` was constructed with, kept only so it can be removed. */
+  private readonly defaultTarget: THREE.Object3D;
 
   constructor(scene: THREE.Scene) {
     // Three.js takes the half angle from the beam axis; §4.1 quotes the full cone.
@@ -77,7 +79,8 @@ export class Flashlight {
     this.light.shadow.bias = -0.0006;
     this.light.shadow.normalBias = 0.02;
 
-    scene.add(this.light, this.light.target, this.target);
+    this.defaultTarget = this.light.target;
+    scene.add(this.light, this.defaultTarget, this.target);
     this.light.target = this.target;
   }
 
@@ -120,6 +123,11 @@ export class Flashlight {
   }
 
   dispose(): void {
+    // Three separate objects went into the scene, and the third is easy to miss: a
+    // `SpotLight` is built with a default target, which is what gets added on the line
+    // below before `this.target` replaces it. Leaving it behind is an empty `Object3D`
+    // accumulating one per run (§6, Run Structure).
+    this.defaultTarget.removeFromParent();
     this.light.removeFromParent();
     this.target.removeFromParent();
     this.light.dispose();

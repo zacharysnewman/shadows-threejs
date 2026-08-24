@@ -98,6 +98,9 @@ export async function loadMap(directory: string, loader: AssetLoader): Promise<L
     bounds,
     dispose() {
       geometry.dispose();
+      // `MapGeometry.dispose` empties the group; taking it out of the scene is the
+      // caller's, and a run that leaves it behind leaves an empty group per life.
+      geometry.root.removeFromParent();
     },
   };
 }

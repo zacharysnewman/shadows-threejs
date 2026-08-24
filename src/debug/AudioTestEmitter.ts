@@ -74,4 +74,12 @@ export class AudioTestEmitter {
       `gain ${(gain * 100).toFixed(0)}%`
     );
   }
+  /**
+   * Give the emitter back. A run being torn down must not leave a source orbiting: it
+   * would go on making noise over the next run, from a position nothing updates.
+   */
+  dispose(): void {
+    this.emitter?.dispose();
+    this.emitter = null;
+  }
 }

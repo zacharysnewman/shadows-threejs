@@ -1,69 +1,28 @@
 /**
- * Entry point.
+ * Entry point: the shell a run is played inside (§6, Run Structure).
  *
- * Phase 6 adds the one query both AIs will ask: *is this entity lit, and by how much*
- * (§4.1). Nothing acts on the answer yet — the reactions are what make each enemy itself,
- * and they are Phases 7 and 8 — but the readout reports it per entity, which is how the
- * query is checked before anything depends on it.
- *
- * Phase 5 put enemies on the map: A\* over the walkability grid, the state machine both
- * AIs are built on, and the shared contact check (§5). They pursue and they wander; they do
- * not yet react to light, which is the whole of what makes each of them itself (Phases 7
- * and 8).
- *
- * Phase 4 added ears. Phase 3 turned the lights out; The map the Phase 1 pipeline builds and the player Phase 2
- * drives are now lit only by the flashlight bound to the player's aim and by environmental
- * lights whose groups have been powered (§4) — the debug harness stands in for the switches
- * that arrive in Phase 9, and hands the player the flashlight the pick-up will hand them.
- *
- * with the map dark, the spatial audio in §4.3 is how an unseen thing is located at all —
- * the listener rides the player, sources come from a pool, and a debug emitter orbits
- * off-screen so the cue can be checked before there is anything real to hear.
- *
- * No enemies yet (Phase 5), and nothing consumes the beam as a detection query yet: that
- * shared "is this entity lit" service is Phase 6, built once for both AIs.
+ * A run is a single life over one map, and this file owns only what outlives one — the
+ * renderer, the input devices, the decoded sound bank, the HUD shell and the debug
+ * readout. Everything else is built by `createRun` and taken back down by its `dispose`,
+ * which is what §5.3\'s "the only continuation is a new game" is made of: death and
+ * victory both come back here, tear the world down, and build another.
  *
  * `?map=<directory>` selects which map under `maps/` to load, so the per-phase test maps
- * are reachable without a rebuild.
+ * are reachable without a rebuild. `?seed=<word|number>` pins the run\'s randomness; with
+ * one pinned, every restart replays identically, and without one each life draws a fresh
+ * seed and logs it.
  */
 
-import * as THREE from 'three';
 import { AudioCore } from './audio/AudioCore';
-import { FootstepCadence } from './audio/Footsteps';
-import { EnemyManager } from './enemies/EnemyManager';
-import { Spider } from './enemies/Spider';
-import { MonsterFootsteps } from './enemies/MonsterFootsteps';
-import { SpiderVoices } from './enemies/SpiderVoices';
 import { AssetLoader } from './core/AssetLoader';
 import { Input } from './core/Input';
-import { OccluderFade } from './core/OccluderFade';
-import { Rng } from './core/rng';
-import { SimClock } from './core/SimClock';
 import { Viewport } from './core/Viewport';
-import { ColliderOverlay } from './debug/ColliderOverlay';
 import { DebugOverlay } from './debug/DebugOverlay';
-import { EntityMarkers } from './debug/EntityMarkers';
 import { FreeCamera } from './debug/FreeCamera';
-import { AudioTestEmitter } from './debug/AudioTestEmitter';
-import { PathOverlay } from './debug/PathOverlay';
-import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
-import { loadMap, type LoadedMap } from './map/MapLoader';
 import { MapValidationError } from './map/validate';
-import { addNightAmbient } from './lighting/Ambient';
-import { EnvironmentLights } from './lighting/EnvironmentLights';
-import { LampVoices } from './lighting/LampVoices';
 import { Hud } from './ui/Hud';
-import { Gates } from './world/Gates';
-import { findTarget, isInteractable, type Interactable } from './world/Interaction';
 import { loadNotes } from './world/Notes';
-import { Objectives } from './world/Objectives';
-import { Props } from './world/Props';
-import { IlluminationService } from './lighting/Illumination';
-import { Flashlight } from './lighting/Flashlight';
-import { CameraRig } from './player/CameraRig';
-import { ColliderIndex } from './player/collision';
-import { Player } from './player/Player';
-import { FLASHLIGHT, HEALTH, ILLUMINATION, INTERACTION, PLAYER } from './config';
+import { createRun, type Run } from './Run';
 
 const DEFAULT_MAP = 'example';
 
@@ -75,15 +34,6 @@ function selectedMap(): string {
   // subpath on GitHub Pages, and a relative URL would resolve against whatever path the
   // page happens to be on.
   return `${import.meta.env.BASE_URL}maps/${safe}/`;
-}
-
-/**
- * The run's seed (Cross-Cutting: determinism). `?seed=<word or number>` replays a run's
- * randomised values — wander targets now, deterrence timers and flicker later (§5.1, §5.2).
- * Without one a seed is picked and reported, so a run that goes wrong can be repeated.
- */
-function selectedSeed(): Rng {
-  return Rng.from(new URLSearchParams(window.location.search).get('seed'));
 }
 
 function showFatal(message: string): void {
@@ -105,684 +55,83 @@ function showFatal(message: string): void {
 }
 
 async function main(): Promise<void> {
+  // --- The shell ----------------------------------------------------------
+  // Everything here survives a death, a victory and a restart. The rule for what belongs
+  // in this list is narrow: a device the browser gave us, or a cache that is expensive to
+  // rebuild and identical between runs.
   const viewport = new Viewport();
   const overlay = new DebugOverlay();
-  const clock = new SimClock();
   const assets = new AssetLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
-  const rng = selectedSeed();
   const audio = new AudioCore(viewport.scene);
+  const hud = new Hud();
   // §4.3 — the context starts suspended until the player touches something.
   audio.armGesture();
 
-  const night = addNightAmbient(viewport.scene);
-
-  // Sounds are decoded up front, alongside the map: one that has to be fetched when it is
-  // needed arrives after the thing it was meant to announce.
-  const audioReady = audio.load();
+  // Decoded once. A sound that has to be fetched when it is needed arrives after the thing
+  // it was meant to announce, and re-decoding the bank on every death would be worse.
+  const [notes] = await Promise.all([
+    loadNotes(`${import.meta.env.BASE_URL}notes.json`),
+    audio.load(),
+  ]);
 
   const directory = selectedMap();
-  let loaded: LoadedMap;
+  const pinnedSeed = new URLSearchParams(window.location.search).get('seed');
+  let run: Run | null = null;
+  // A run asks for the next one; the shell is what actually swaps them, because a run
+  // cannot be the thing that disposes itself.
+  const shell = {
+    viewport,
+    overlay,
+    input,
+    assets,
+    audio,
+    freeCamera,
+    hud,
+    notes,
+    onRestart: () => void startRun(),
+  };
+
+  /**
+   * Tear down whatever is running and build another (§5.3, §6). The order matters: the old
+   * run is disposed *before* the new one is built, so the two never coexist and a leak
+   * shows up as something still in the scene rather than as a doubled frame rate cost.
+   */
+  async function startRun(): Promise<void> {
+    run?.dispose();
+    run = null;
+    hud.reset();
+    run = await createRun(shell, directory, pinnedSeed);
+    if (import.meta.env.DEV) {
+      (window as unknown as { shadows: unknown }).shadows = { ...run.handle, restart: startRun };
+    }
+  }
+
   try {
-    loaded = await loadMap(directory, assets);
+    await startRun();
   } catch (error) {
     const detail = error instanceof MapValidationError ? error.message : String(error);
     showFatal(`Failed to load ${directory}\n\n${detail}`);
     throw error;
   }
 
-  viewport.scene.add(loaded.root);
-
-  // §3.2 — nothing between the camera and the player may hide the player. Attached to the
-  // static geometry's shared materials, so it survives the instancing §7 requires.
-  const occluders = new OccluderFade();
-  occluders.attach(loaded.root);
-
-  const walkability = new WalkabilityOverlay(loaded.grid);
-  const colliders = new ColliderOverlay(loaded.colliders);
-  const markers = new EntityMarkers(loaded.entities);
-  viewport.scene.add(walkability.object, colliders.object, markers.object);
-
-  // --- Player -------------------------------------------------------------
-  const colliderIndex = new ColliderIndex(
-    loaded.colliders,
-    loaded.data.width,
-    loaded.data.height,
-    loaded.data.tileSize,
-  );
-  const player = new Player(loaded.entities.playerSpawn, colliderIndex);
-  viewport.scene.add(player.object);
-
-  // --- Lighting -----------------------------------------------------------
-  const flashlight = new Flashlight(viewport.scene);
-  const environment = new EnvironmentLights(loaded.entities.byType('EnvironmentLight'));
-  viewport.scene.add(environment.root);
-
-  // §5 — enemies spawn from the map's entities, on the grid the Phase 1 pipeline derived.
-  const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
-  viewport.scene.add(enemies.root);
-
-  // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
-  // that what blocks light is exactly what blocks walking.
-  const illumination = new IlluminationService(flashlight, environment, colliderIndex);
-
-  // §6 — the run's world state, the props that make it findable, and the swing that opens
-  // a gate. Built before the HUD, because the HUD only ever reads them.
-  const objectives = new Objectives(loaded.entities);
-  const props = new Props(loaded.entities.all.filter(isInteractable));
-  viewport.scene.add(props.root);
-  const gates = new Gates(
-    loaded.geometry,
-    loaded.grid,
-    colliderIndex,
-    loaded.data.width,
-    loaded.data.tileSize,
-  );
-  const notes = await loadNotes(`${import.meta.env.BASE_URL}notes.json`);
-  const hud = new Hud();
-
-  // §6.1 — the torch is a pick-up on maps that author one, and in hand on maps that do not.
-  flashlight.held = objectives.hasFlashlight;
-  // §6.3/§6.4 — the switches act through these, so nothing else has to know what a
-  // `targetId` might name.
-  objectives.onGateOpen((gate) => gates.open(gate));
-  objectives.onPowerChange((groupId, on) => environment.setGroupPowered(groupId, on));
-
-  const paths = new PathOverlay(enemies, loaded.grid);
-  viewport.scene.add(paths.object);
-
-  // §5.3 — the check reports contact and each enemy resolves it: a spider starts a lunge
-  // (§5.3), and the Shadow Monster's kill is Phase 8's. This listener is the readout's, and
-  // logs the monster's unresolved touches so the gap is visible rather than silent.
-  const contacted = new Set<string>();
-  enemies.onContact((enemy, distance) => {
-    if (enemy.profile.kind === 'SpiderEnemy' || contacted.has(enemy.key)) return;
-    contacted.add(enemy.key);
-    console.info(
-      `[contact] ${enemy.profile.kind} ${enemy.key} at ${distance.toFixed(2)}m — ` +
-        `resolution is Phase 8's (§5.3)`,
-    );
-  });
-
-  await audioReady;
-  const footsteps = new FootstepCadence();
-  // §5.1 — the spiders get a voice now that they have something to be heard doing.
-  const voices = new SpiderVoices(audio, enemies.enemies);
-  // §5.2 — and the monster gets the only tell it has at range.
-  const monsterSteps = new MonsterFootsteps(audio);
-  // §4.2 — a straining lamp is audible from anywhere, which is the half of the tell that
-  // still works when the lamp is off screen.
-  const lampVoices = new LampVoices(audio, environment);
-  // §4.2's lamp flicker is randomised, and every randomised value comes from the run seed
-  // so a sabotage cycle replays identically (Cross-Cutting: determinism).
-  const sabotageRng = rng.stream('sabotage');
-  const testEmitter = new AudioTestEmitter(audio);
-
-  const rig = new CameraRig(viewport, loaded.bounds);
-  rig.snapTo(player.position.x, player.position.y);
-  // The free camera starts where the player is, so toggling to it does not jump the view.
-  freeCamera.lookAt(player.position.x, player.position.y, FreeCamera.fitDistance(40));
-
-  // §7 — everything with a timer runs on the fixed clock, movement included, so the
-  // distance covered in a second does not depend on the frame rate.
-  clock.onTick((dt) => {
-    // While the free camera has the keys, the player gets no movement intent (§ debug
-    // harness) — otherwise panning the debug view walks the player across the map.
-    const moveX = freeCamera.enabled ? 0 : input.moveX;
-    const moveZ = freeCamera.enabled ? 0 : input.moveZ;
-    const sprinting = !freeCamera.enabled && input.isHeld('sprint');
-    const before = player.position.clone();
-    player.tick(dt, moveX, moveZ, sprinting);
-    flashlight.tick(dt);
-
-    // The pool's first customer: a step every stride of ground actually covered, so a
-    // player stopped against a wall makes no noise however hard they walk into it.
-    if (footsteps.tick(before.distanceTo(player.position))) {
-      audio.playAt('footstep_light', player.position.x, player.position.y);
-    }
-
-    illumination.tick(dt);
-    enemies.tick(dt, {
-      playerX: player.position.x,
-      playerZ: player.position.y,
-      illumination,
-      player,
-    });
-
-    // §5.2 — the monsters decide what the beam is doing to itself, and the beam is told.
-    // Deliberately after the enemies tick and deliberately not through the battery: a
-    // monster interfering with the light is not the light running down (§4.1).
-    flashlight.intensityScale = enemies.beamInterference;
-    // §4.2 — the lamps find out who is standing under them.
-    environment.tick(dt, enemies.monsterPositions(), () => sabotageRng.float());
-    monsterSteps.tick(enemies.monsters);
-    // §6.4 — a swing is the one piece of map geometry that moves, and it runs on the
-    // simulation clock like everything else with a timer, so a note modal stops it too.
-    gates.tick(dt);
-    testEmitter.tick(dt, player.position.x, player.position.y);
-  });
-
-  // --- Debug readout ------------------------------------------------------
-  const tileCount = loaded.data.width * loaded.data.height;
-  overlay.addRow('sim', () =>
-    `tick ${clock.tick} · ${clock.elapsed.toFixed(1)}s · ${clock.paused ? 'PAUSED' : `×${clock.timeScale.toFixed(2)}`}`,
-  );
-  overlay.addRow('map', () =>
-    `${loaded.data.width}×${loaded.data.height} @ ${loaded.data.tileSize}m · ${loaded.data.layers.length} layers`,
-  );
-  overlay.addRow('static', () =>
-    `${loaded.geometry.instanceCount} tiles in ${loaded.geometry.instancedMeshCount} instanced meshes`,
-  );
-  overlay.addRow('grid', () => {
-    const walkable = loaded.grid.walkableCount();
-    const pct = ((walkable / tileCount) * 100).toFixed(0);
-    return `${walkable}/${tileCount} walkable (${pct}%) · v${loaded.grid.version}`;
-  });
-  overlay.addRow('colliders', () => {
-    const gaps = loaded.colliders.filter((collider) => collider.kind === 'gap').length;
-    return `${loaded.colliders.length} boxes (${gaps} floor gap${gaps === 1 ? '' : 's'})`;
-  });
-  overlay.addRow('entities', () =>
-    `${loaded.entities.count} · ${loaded.entities
-      .countsByType()
-      .map(([type, n]) => `${type}×${n}`)
-      .join(' ')}`,
-  );
-  overlay.addRow('player', () => {
-    const { gx, gy } = loaded.grid.worldToGrid(player.position.x, player.position.y);
-    return (
-      `(${player.position.x.toFixed(2)}, ${player.position.y.toFixed(2)}) tile (${gx}, ${gy}) · ` +
-      `${player.speed.toFixed(2)} m/s${player.sprinting ? ' · SPRINT' : ''}` +
-      `${player.touchingWall ? ' · wall' : ''}`
-    );
-  });
-  overlay.addRow('aim', () =>
-    `(${player.aim.x.toFixed(2)}, ${player.aim.y.toFixed(2)}) · ` +
-    `${player.sprinting ? 'locked to movement (§3.1)' : input.aimSource}`,
-  );
-  overlay.addRow('health', () => {
-    const { health } = player;
-    if (health.dead) return '0.00 · DEAD';
-    const state = health.regenerating
-      ? `regen +${HEALTH.regenRate.toFixed(2)}/s`
-      : health.value >= HEALTH.max
-        ? 'full'
-        : `regen in ${health.regenDelayRemaining.toFixed(1)}s`;
-    return `${health.value.toFixed(2)} · ${state}${health.critical ? ' · CRITICAL' : ''}`;
-  });
-  overlay.addRow('enemies', () =>
-    enemies.count === 0
-      ? 'none on this map'
-      : `${enemies.count} · ${enemies.countsByState()}${enemies.enabled ? '' : ' · DISABLED'}`,
-  );
-  overlay.addRow('nearest', () => {
-    const nearest = enemies.enemies
-      .map((enemy) => ({ enemy, distance: enemy.distanceTo(player.position.x, player.position.y) }))
-      .sort((a, b) => a.distance - b.distance)[0];
-    if (!nearest) return '—';
-    return (
-      `${nearest.enemy.profile.kind} ${nearest.distance.toFixed(1)}m · ${nearest.enemy.state}` +
-      ` · ${nearest.enemy.speed.toFixed(1)} m/s · ${nearest.enemy.waypoints.length} waypoints`
-    );
-  });
-  // §4.1's exit criterion is this readout: lit/unlit per entity, and the raycast budget it
-  // costs. Sampled here rather than in the tick because reading it must not change it.
-  overlay.addRow('lit', () => {
-    if (enemies.count === 0) return 'no entities to light';
-    const parts = enemies.enemies.slice(0, 4).map((enemy) => {
-      const sample = illumination.sample(enemy.key, enemy.position.x, enemy.position.y);
-      const tag = enemy.profile.kind === 'SpiderEnemy' ? 'spider' : 'MONSTER';
-      if (!sample.lit) return `${tag}:dark`;
-      return `${tag}:${sample.source === 'flashlight' ? 'beam' : 'lamp'} ${(sample.amount * 100).toFixed(0)}%`;
-    });
-    return parts.join(' · ');
-  });
-  // §5.1's lifecycle is four steps and only one of them shows up in `state`; without the
-  // timers beside it, "stunned" and "about to flee" look identical.
-  overlay.addRow('spider', () => {
-    const spiders = enemies.enemies.filter((enemy): enemy is Spider => enemy instanceof Spider);
-    if (spiders.length === 0) return 'none on this map';
-    const nearest = spiders
-      .map((spider) => ({ spider, distance: spider.distanceTo(player.position.x, player.position.y) }))
-      .sort((a, b) => a.distance - b.distance)[0]!;
-    return (
-      `${spiders.length} · nearest ${nearest.distance.toFixed(1)}m · ` +
-      `${nearest.spider.state} · ${nearest.spider.lightStatus}`
-    );
-  });
-  overlay.addRow('rays', () =>
-    `${illumination.raycastsPerSecond}/s across ${illumination.subjectCount} subject(s)` +
-    ` · budget ${ILLUMINATION.raycastHz}/s each`,
-  );
-  // §6 — the objective chain, which is otherwise entirely invisible from the scene: a
-  // latched switch and an unpressed one look the same until the exit opens.
-  overlay.addRow('objective', () => {
-    const { fired, required, unlocked } = objectives.exitProgress();
-    if (required === 0) return 'no exit on this map';
-    return (
-      `exit ${fired}/${required} routed${unlocked ? ' · OPEN' : ''} · ` +
-      `notes ${objectives.notesRead}/${objectives.noteCount}` +
-      `${objectives.hasFlashlight ? '' : ' · no torch yet'}`
-    );
-  });
-  overlay.addRow('props', () => {
-    const total = props.count;
-    if (total === 0) return 'none on this map';
-    const target = interactTarget ? `${interactTarget.type} — ${objectives.promptFor(interactTarget)}` : '—';
-    return `${props.present.length}/${total} present · in reach: ${target}`;
-  });
-  overlay.addRow('gates', () =>
-    loaded.entities.byType('Gate').length + loaded.entities.byType('ExitGate').length === 0
-      ? 'none on this map'
-      : `${gates.openedCount} opened · ${gates.swingingCount} swinging`,
-  );
-  overlay.addRow('seed', () => `${rng.seed}`);
-  overlay.addRow('torch', () => {
-    const { battery } = flashlight;
-    const charge = `${(battery.charge * 100).toFixed(0)}%`;
-    if (battery.on) {
-      return `ON · ${charge} · beam ${(battery.intensityFraction * 100).toFixed(0)}%`;
-    }
-    return `off · ${charge}${battery.lockedOut ? ` · LOCKED OUT until ${FLASHLIGHT.reEnableCharge * 100}%` : ''}`;
-  });
-  overlay.addRow('lamps', () => {
-    if (environment.lamps.length === 0) return 'none on this map';
-    // §4.2 — straining and failed are the tell, so they belong beside the lit count.
-    const sabotage =
-      environment.strainingCount > 0 || environment.failedCount > 0
-        ? ` · ${environment.strainingCount} STRAINING · ${environment.failedCount} out`
-        : '';
-    return (
-      `${environment.litCount}/${environment.lamps.length} lit · ` +
-      `${environment.shadowCasterCount} casting shadows${sabotage}`
-    );
-  });
-  // §5.2's lifecycle is entirely invisible from `state`: frozen is frozen whether the ramp
-  // is at 0.1 or one tick from a blink.
-  overlay.addRow('MONSTER', () => {
-    const monsters = enemies.monsters;
-    if (monsters.length === 0) return 'none on this map';
-    const nearest = monsters
-      .map((monster) => ({ monster, distance: monster.distanceTo(player.position.x, player.position.y) }))
-      .sort((a, b) => a.distance - b.distance)[0]!;
-    return (
-      `${monsters.length} · nearest ${nearest.distance.toFixed(1)}m · ${nearest.monster.state} · ` +
-      `${nearest.monster.lightStatus} · ${nearest.monster.blinkCount} blink(s)`
-    );
-  });
-  overlay.addRow('audio', () => {
-    const placeholders = audio.bank?.placeholders.length ?? 0;
-    return (
-      `${audio.state} · ${audio.playingCount} playing` +
-      (placeholders > 0 ? ` · ${placeholders} placeholder sound(s)` : '')
-    );
-  });
-  overlay.addRow('emitter', () => testEmitter.describe());
-  overlay.addRow('camera', () =>
-    `(${rig.targetX.toFixed(1)}, ${rig.targetZ.toFixed(1)})${freeCamera.enabled ? ' · FREE' : ''}`,
-  );
-  if (loaded.data.warnings.length > 0) {
-    overlay.addRow('warnings', () => `${loaded.data.warnings.length} (see console)`);
-  }
-  if (loaded.geometry.placeholders.length > 0) {
-    overlay.addRow('assets', () => `${loaded.geometry.placeholders.length} placeholder prefab(s)`);
-  }
-
-  // Hover readout: the walkability grid answering a query, live, at the cursor.
-  const pointer = new THREE.Vector2();
-  const raycaster = new THREE.Raycaster();
-  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-  const hit = new THREE.Vector3();
-  let hovered = '—';
-  let hoveredTile: { gx: number; gy: number } | null = null;
-  viewport.renderer.domElement.addEventListener('pointermove', (event) => {
-    pointer.set(
-      (event.clientX / window.innerWidth) * 2 - 1,
-      -(event.clientY / window.innerHeight) * 2 + 1,
-    );
-    raycaster.setFromCamera(pointer, viewport.camera);
-    if (!raycaster.ray.intersectPlane(groundPlane, hit)) {
-      hovered = '—';
-      hoveredTile = null;
-      return;
-    }
-    const { gx, gy } = loaded.grid.worldToGrid(hit.x, hit.z);
-    const inside = loaded.grid.inBounds(gx, gy);
-    hoveredTile = inside ? { gx, gy } : null;
-    hovered = inside
-      ? `(${gx}, ${gy}) ${loaded.grid.isWalkable(gx, gy) ? 'walkable' : 'blocked'}`
-      : 'off-map';
-  });
-  overlay.addRow('hover', () => hovered);
-
-  /** The one thing `E` would act on right now, or null (§3.3). */
-  let interactTarget: Interactable | null = null;
-
-  /**
-   * §3.3 — pick a target and act on it. Runs per frame rather than per tick because it is
-   * driven by an input edge, and the edge is cleared at the end of the frame it happened
-   * in.
-   */
-  function resolveInteraction(): void {
-    // §3.3 — interaction is disabled while a modal is up, and the modal's own key is the
-    // only thing the action does there.
-    if (hud.modalOpen) {
-      interactTarget = null;
-      if (input.wasPressed('interact')) closeNote();
-      return;
-    }
-
-    interactTarget = freeCamera.enabled
-      ? null
-      : findTarget(props.present, {
-          playerX: player.position.x,
-          playerZ: player.position.y,
-          aimX: player.aim.x,
-          aimZ: player.aim.y,
-        });
-
-    if (!interactTarget || !input.wasPressed('interact')) return;
-
-    const target = interactTarget;
-    const result = objectives.use(target);
-    if (result.kind === 'flashlight') {
-      props.collect(target);
-      flashlight.held = true;
-    }
-    if (result.kind === 'note' && result.noteId) openNote(result.noteId);
-    if (result.message) console.info(`[interact] ${result.message}`);
-  }
-
-  /** §6.2 — reading pauses the world. The clock is paused here, where the clock lives. */
-  function openNote(noteId: string): void {
-    hud.openNoteModal(noteId, notes);
-    clock.paused = true;
-  }
-
-  function closeNote(): void {
-    hud.closeNoteModal();
-    clock.paused = false;
-  }
-
-  /** Project the prompt anchor into pixels and hand the HUD everything it draws (§6). */
-  function updateHud(): void {
-    let screen: { x: number; y: number } | null = null;
-    if (interactTarget) {
-      _promptAnchor.set(
-        interactTarget.wx,
-        props.anchorFor(interactTarget) + INTERACTION.promptHeight,
-        interactTarget.wz,
-      );
-      _promptAnchor.project(viewport.camera);
-      // Behind the camera projects to a point in front of it; a prompt for something the
-      // player cannot see would be a prompt pinned to the wrong place on screen.
-      if (_promptAnchor.z <= 1) {
-        const size = viewport.renderer.domElement;
-        screen = {
-          x: ((_promptAnchor.x + 1) / 2) * size.clientWidth,
-          y: ((1 - _promptAnchor.y) / 2) * size.clientHeight,
-        };
-      }
-    }
-    hud.showPrompt(interactTarget ? objectives.promptFor(interactTarget) : null, screen);
-    hud.showObjective(objectives.exitProgress(), {
-      read: objectives.notesRead,
-      total: objectives.noteCount,
-    });
-  }
-
-  /**
-   * Resolve aim intent to a world direction (§3.1). A pointer names a screen position, so
-   * it has to be projected onto the ground plane through the current camera; a stick
-   * already names a direction. Run per rendered frame so aim tracks the cursor at display
-   * rate rather than at the 60 Hz tick.
-   */
-  function updateAim(): void {
-    if (input.aimSource === 'stick') {
-      player.aimTowards(input.aimX, input.aimZ);
-      return;
-    }
-    if (input.aimSource !== 'pointer') return;
-    pointer.set(input.pointerNdcX, input.pointerNdcY);
-    raycaster.setFromCamera(pointer, viewport.camera);
-    if (raycaster.ray.intersectPlane(groundPlane, hit)) player.aimAt(hit.x, hit.z);
-  }
-
-  // --- Debug keys ---------------------------------------------------------
-  overlay.addBinding('WASD', 'move · mouse aims');
-  overlay.addBinding('E', 'interact — pick up, read, throw a switch (§3.3)');
-  overlay.addBinding('Shift', 'sprint — aim locks to the way you are going');
-  overlay.addBinding('V', 'free camera (WASD pans, wheel zooms)');
-  overlay.addBinding('O', 'occluder fade');
-  overlay.addBinding('Z', 'orbit a test emitter off-screen (audio)');
-  overlay.addBinding('N', 'enemy paths');
-  overlay.addBinding('X', 'block/unblock the hovered tile (walkability only)');
-  overlay.addBinding('Y', 'disable the enemies');
-  overlay.addBinding('I', 'draw the Shadow Monster\'s body (§5.2 says never)');
-  overlay.addBinding('F', 'flashlight');
-  overlay.addBinding('B', 'drain the battery to 5%');
-  overlay.addBinding('L', 'debug override: power every light group, past the switches');
-  overlay.addBinding('K', `debug damage (${HEALTH.spiderDamage})`);
-  overlay.addBinding('J', 'heal to full');
-  overlay.addBinding('G', 'walkability overlay');
-  overlay.addBinding('C', 'collider overlay');
-  overlay.addBinding('M', 'entity markers');
-  overlay.addBinding('P', 'pause simulation');
-  overlay.addBinding('.', 'step one tick');
-  overlay.addBinding('[ ]', 'time scale');
-  overlay.addBinding('H', 'hide this overlay');
-
+  // One listener for the whole session, forwarding to whichever run is current. A listener
+  // per run would be a listener per death, each holding its run alive.
   window.addEventListener('keydown', (event) => {
     if (event.repeat) return;
-    switch (event.code) {
-      case 'KeyV':
-        freeCamera.enabled = !freeCamera.enabled;
-        if (freeCamera.enabled) {
-          freeCamera.lookAt(player.position.x, player.position.y);
-        } else {
-          // Snap rather than smooth: returning from the far side of the map would
-          // otherwise sail the camera across it.
-          rig.snapTo(player.position.x, player.position.y);
-        }
-        break;
-      case 'KeyN':
-        paths.toggle();
-        break;
-      case 'KeyY':
-        enemies.enabled = !enemies.enabled;
-        break;
-      case 'KeyI':
-        // §5.2 — the Shadow Monster's body is never drawn. This draws it anyway, because
-        // the harness cannot debug a thing by staring at where it is not.
-        console.info(`[debug] invisible bodies ${enemies.toggleRevealBodies() ? 'shown' : 'hidden'}`);
-        break;
-      case 'KeyX': {
-        // Flips walkability under the cursor without touching geometry, which is what a
-        // gate does when it opens (§6) — and the cheapest way to watch enemies pick up a
-        // grid rebuild mid-path (§2).
-        if (!hoveredTile) break;
-        const { gx, gy } = hoveredTile;
-        const blocked = !loaded.grid.isWalkable(gx, gy);
-        loaded.grid.setOverride(gx, gy, blocked ? null : false);
-        console.info(`[grid] (${gx}, ${gy}) ${blocked ? 'restored' : 'blocked'} · v${loaded.grid.version}`);
-        break;
-      }
-      case 'KeyZ':
-        testEmitter.toggle(player.position.x, player.position.y);
-        break;
-      case 'KeyO':
-        occluders.enabled = !occluders.enabled;
-        break;
-      case 'KeyF':
-        // §4.1 — refused while the battery is flat or still locked out.
-        if (!flashlight.toggle() && flashlight.battery.lockedOut) {
-          console.info(
-            `[torch] locked out at ${(flashlight.battery.charge * 100).toFixed(0)}%; ` +
-              `needs ${FLASHLIGHT.reEnableCharge * 100}%`,
-          );
-        }
-        break;
-      case 'KeyB':
-        flashlight.battery.set(0.05);
-        break;
-      case 'KeyL':
-        environment.toggleAll();
-        break;
-      case 'KeyK':
-        // §3.4 — one spider's worth of damage, the only damage source until Phase 7.
-        if (player.health.damage()) console.info('[player] health reached 0 (Phase 10 owns death)');
-        break;
-      case 'KeyJ':
-        player.health.reset();
-        break;
-      case 'KeyG':
-        walkability.toggle();
-        break;
-      case 'KeyC':
-        colliders.toggle();
-        break;
-      case 'KeyM':
-        markers.toggle();
-        break;
-      case 'KeyP':
-        clock.paused = !clock.paused;
-        // §4.3 — the world going quiet is part of pausing it.
-        audio.setPaused(clock.paused);
-        break;
-      case 'Period':
-        clock.stepOnce();
-        break;
-      case 'BracketLeft':
-        clock.timeScale = Math.max(0.05, clock.timeScale / 2);
-        break;
-      case 'BracketRight':
-        clock.timeScale = Math.min(8, clock.timeScale * 2);
-        break;
-      case 'Escape':
-        // §6.2 — the modal's other way out. Not an action binding: `Escape` closing a
-        // dialogue is not something a player should have to be told.
-        if (hud.modalOpen) closeNote();
-        break;
-      case 'KeyH':
-        overlay.toggle();
-        break;
-      default:
-        break;
-    }
+    run?.debugKey(event.code);
   });
-
-  /**
-   * Debug handle (Cross-Cutting: debug harness). Everything the overlay reports, reachable
-   * from the console and from automated checks — which is how some of this is verified at
-   * all: "locatable by ear" (§4.3) cannot be asserted from a test runner, but the audio
-   * graph can be tapped from here and measured.
-   *
-   * Development builds only. `import.meta.env.DEV` is a compile-time constant, so the
-   * whole block — and the references keeping those systems reachable from a global — is
-   * dead code the bundler removes from a production build. Reaching the handle therefore
-   * means driving `npm run dev`, not `npm run preview`.
-   */
-  if (import.meta.env.DEV) {
-    (window as unknown as { shadows: unknown }).shadows = {
-      clock,
-      input,
-      loaded,
-      player,
-      rig,
-      flashlight,
-      environment,
-      audio,
-      testEmitter,
-      occluders,
-      enemies,
-      objectives,
-      props,
-      gates,
-      hud,
-      notes,
-      voices,
-      monsterSteps,
-      lampVoices,
-      rng,
-      illumination,
-    };
-  }
 
   // --- Render loop --------------------------------------------------------
   let previous = performance.now();
   const frame = (now: number): void => {
     const realDelta = (now - previous) / 1000;
     previous = now;
-
-    // Sampled once per frame, before the ticks: a frame that runs three ticks applies the
-    // same input snapshot to all three rather than three different reads of the hardware.
-    input.update();
-    updateAim();
-    resolveInteraction();
-
-    // §7 — the simulation advances in fixed ticks; rendering is whatever the display gives.
-    clock.advance(realDelta);
-
-    player.render(clock.alpha);
-    enemies.render(clock.alpha);
-    voices.update();
-    lampVoices.update();
-    paths.update();
-    // Bound to the interpolated position, not the tick position: a beam that stepped at
-    // 60 Hz while the player moved smoothly would visibly swim around them.
-    flashlight.update(
-      player.object.position.x,
-      player.object.position.z,
-      player.aim.x,
-      player.aim.y,
-    );
-    // §7 — the moon's shadow camera is fitted to what is on screen, so it travels with the
-    // player rather than trying to cover the level.
-    night.follow(player.object.position.x, player.object.position.z);
-
-    // The listener rides the player, not the camera (§4.3): every distance in the spec is
-    // measured from where the player stands, and the camera is 14 m away from that.
-    audio.update(player.object.position.x, player.object.position.z);
-
-    // Fed the interpolated position for the same reason the beam is: it is a visual
-    // effect, and following the tick position would make the window stutter.
-    occluders.update(
-      viewport.camera,
-      player.object.position.x,
-      PLAYER.height * 0.5,
-      player.object.position.z,
-    );
-
-    if (freeCamera.enabled) {
-      freeCamera.update(realDelta);
-    } else {
-      // Follows the *interpolated* position for the same reason it runs on the render
-      // delta: both are presentation, and following the tick position would reintroduce
-      // the 60 Hz staircase the interpolation just removed.
-      rig.update(realDelta, player.object.position.x, player.object.position.z);
-    }
-
-    environment.update(viewport.camera);
-    props.refresh(objectives);
-    updateHud();
-    overlay.update(realDelta);
-    viewport.render();
-    input.endFrame();
-
+    run?.frame(realDelta);
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
-
-  console.info(`[run] seed ${rng.seed} — replay with ?seed=${rng.seed}`);
-  console.info(
-    `[map] loaded ${directory}: ${loaded.data.width}×${loaded.data.height}, ` +
-      `${loaded.entities.count} entities, ${loaded.colliders.length} colliders, ` +
-      `${loaded.data.warnings.length} warning(s)`,
-  );
 }
-
-/** Scratch for projecting the prompt anchor; allocating one per frame is a per-frame GC. */
-const _promptAnchor = new THREE.Vector3();
 
 void main();
