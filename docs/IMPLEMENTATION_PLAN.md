@@ -478,10 +478,54 @@ the beam dimmed and the severity ramp open, because the window ran to completion
 A 0.15 s window hid that; a 0.5 s one would not have. A blink now ends on the tick the beam
 leaves.
 
-Sent back to the spec: the floor and why it is not zero; the blink as a window rather than a
-step; and the one thing this costs — the monster is now dimly lit *while moving*, so "the
-monster is never both moving and visible" is no longer true and §5.2 records a walk cycle
-for the blink as an art requirement rather than pretending one pose still covers it.
+Sent back to the spec: the flicker's floor and why it is not zero, and the blink as a window
+rather than a step.
+
+*Revised again — the blink is the light going out, and the rule is physical.* The blink held
+the beam at the flicker's 15% floor, which is plenty of light to cast a shadow by. §5.2's
+hard rule — never both moving and visible — was therefore enforced *against* the renderer,
+by switching the monster's shadow off underneath a beam that was still lit. That keeps the
+rule and breaks the world: a creature standing in light and casting nothing is a special case
+that has to be remembered every time anything else about it changes.
+
+A blink now puts the beam out. The torch emits nothing for the window, so there is nothing to
+cast by and nothing to suppress, and the monster **always casts** — whenever a light is on
+it, its shadow is on the floor. The floor stays where it was for the flicker, which is a
+different thing: an oscillation down to nothing reads as the torch dying, and the struggle is
+the information.
+
+*The bug that made possible.* `IlluminationService` read the battery's charge and not what
+the torch was *emitting*, so it had no idea the beam was flickering at all — which is why
+`advanceBlink` had to carry the line "whatever the illumination service still calls lit". A
+light emitting nothing now lights nothing, and every rule written in terms of light agrees
+with what the player can see. It also closed a hole: a lamp reaching the monster mid-blink
+was invisible to the sampler, because the flashlight won the source with a beam that was out,
+so the monster could have walked under a lamp — lit, moving, and casting.
+
+That leaves one question the sampler could not answer, and `LitSample.inBeam` answers it. The
+monster is the one thing that can put the torch out, so asking "is there light on me" during
+its own blink returns the darkness it caused and ends the window a tick after it opened. It
+asks instead whether the player still has the torch on and pointed here.
+
+*A consequence worth stating.* An honest sampler means a blink is genuinely dark for
+*everyone*, and §5.1's spider grace (`resumeDelaySeconds`, 0.2 s) is shorter than the 0.5 s
+window — so a spider held at bay breaks free partway through every blink and its deterrence
+timer restarts. Measured in a browser with one spider 4 m down the beam: **57% of samples
+fleeing with no monster in the beam, 8% with one blinking it, and 31% in `pursue`** — a
+Shadow Monster in your light now makes spiders substantially harder to deter. That is what
+the light going out means, and it is a balance change §11 should look at rather than a bug;
+raising the grace above the blink's length would undo it without making the lighting dishonest
+again.
+
+*Verified in a browser* on `phase5-test`, monster held in the beam for six seconds:
+
+| Case | Measured |
+| --- | --- |
+| Beam fraction during a blink | `0`, and no other value across 61 samples |
+| `light.visible` during a blink | `false` |
+| `light.intensity` during a blink | `0` |
+| Beam fraction outside a blink | never below `0.15` — the flicker keeps its floor |
+| Shadow casting, any state | never switched off, in any of 120 samples |
 
 *Verified.* 290 unit tests (up from 256): 21 in `tests/monster.test.ts` for the curve, the
 freeze, the ramp and the blink, 8 more in `tests/lighting.test.ts` for the sabotage

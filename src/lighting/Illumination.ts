@@ -28,8 +28,17 @@ import type { Flashlight } from './Flashlight';
 export type LightSource = 'flashlight' | 'environment';
 
 export interface LitSample {
-  /** §4.1 — geometric: inside a light's reach, with a clear line to it. */
+  /** §4.1 — inside a light's reach, with a clear line to it, and that light is emitting. */
   lit: boolean;
+  /**
+   * §5.2 — the torch is switched on and pointed here with a clear line, *whatever its
+   * current intensity*. Distinct from `lit`, and only during a blink do the two disagree.
+   *
+   * The Shadow Monster needs the difference and nothing else does. It is the one thing that
+   * can put the beam out, so asking "is there light on me" during its own blink would answer
+   * "no" — the darkness it caused — and end the blink on the tick after it began.
+   */
+  inBeam: boolean;
   /** 0–1 strength of the strongest source at this point. Never decides `lit`. */
   amount: number;
   /** Which source is responsible, or `null` when nothing is. */
@@ -38,7 +47,7 @@ export interface LitSample {
   confirmedAgo: number;
 }
 
-const UNLIT: LitSample = { lit: false, amount: 0, source: null, confirmedAgo: 0 };
+const UNLIT: LitSample = { lit: false, inBeam: false, amount: 0, source: null, confirmedAgo: 0 };
 
 /**
  * Strength of a cone at a point, 0–1, ignoring occlusion and whether the light is on.
@@ -159,8 +168,14 @@ export class IlluminationService {
     let best: LitSample = { ...UNLIT };
 
     // --- Flashlight ---------------------------------------------------------
-    const beam = this.flashlight.battery.intensityFraction;
-    if (beam > 0) {
+    //
+    // §4.1 — what the torch is *emitting*, charge and interference together. A light putting
+    // out nothing lights nothing, and every rule written in terms of light being on a thing
+    // has to agree with what the player can see. Reading the charge alone would have the
+    // spider deterred by a beam that is out and the monster frozen by darkness.
+    const charge = this.flashlight.battery.intensityFraction;
+    const beam = charge * this.flashlight.intensityScale;
+    if (charge > 0) {
       const light = this.flashlight.light;
       const origin = light.position;
       const target = this.flashlight.target.position;
@@ -192,9 +207,10 @@ export class IlluminationService {
         if (state.flashlightClear) {
           const amount = strength * beam;
           best = {
-            lit: true,
+            lit: amount > 0,
+            inBeam: true,
             amount,
-            source: 'flashlight',
+            source: amount > 0 ? 'flashlight' : null,
             confirmedAgo: state.sinceConfirm,
           };
         }
@@ -243,12 +259,24 @@ export class IlluminationService {
       // Lit is lit; the amount is the strongest source, so a player standing in a lamp pool
       // with a beam on them reports whichever is doing more.
       if (!best.lit || strength > best.amount) {
-        best = { lit: true, amount: strength, source: 'environment', confirmedAgo: state.sinceConfirm };
+        best = {
+          lit: true,
+          // Carried, not recomputed: a lamp winning on strength says nothing about whether
+          // the torch is also pointed here, and the monster's blink turns on that answer.
+          inBeam: best.inBeam,
+          amount: strength,
+          source: 'environment',
+          confirmedAgo: state.sinceConfirm,
+        };
       }
     }
 
     if (due) state.sinceConfirm = 0;
-    if (best.amount < ILLUMINATION.amountFloor && !best.lit) return { ...UNLIT };
+    // Too little light to count is unlit — but *being in the beam* survives it, because a
+    // blinking torch is emitting nothing and is still pointed where the player put it.
+    if (best.amount < ILLUMINATION.amountFloor && !best.lit) {
+      return { ...UNLIT, inBeam: best.inBeam };
+    }
     return best;
   }
 

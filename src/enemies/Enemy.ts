@@ -117,6 +117,12 @@ export interface IlluminationSampler {
     z: number,
   ): {
     lit: boolean;
+    /**
+     * §5.2 — the torch is on and pointed here, whatever its intensity. Only the Shadow
+     * Monster asks: it is the one thing that can put the beam out, so during its own blink
+     * "is there light on me" answers with the darkness it caused.
+     */
+    inBeam?: boolean;
     amount: number;
     /**
      * Which light is responsible. §5.2 needs it: the flashlight's interference blinks the
@@ -248,18 +254,6 @@ export class Enemy {
     return Math.hypot(this.position.x - x, this.position.y - z);
   }
 
-  /**
-   * Whether the body throws its shadow at all.
-   *
-   * For the Shadow Monster the shadow *is* the body (§5.2), so this is the switch between
-   * being a thing on the floor and being nothing whatsoever — and §5.2's hard rule, that it
-   * is never both moving and visible, is enforced through it.
-   */
-  protected setCasting(casting: boolean): void {
-    this.object.traverse((node) => {
-      if (node instanceof THREE.Mesh) node.castShadow = casting;
-    });
-  }
 
   /**
    * Draw a body that §5.2 says is never drawn. Debug harness only — finding the Shadow

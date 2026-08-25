@@ -492,8 +492,22 @@ Monster would be a bug nobody could see, only feel.
   with a clear line to it: within the beam's range *and* half-angle for the flashlight
   (above), or within a lamp's ground radius for an environmental light (§4.2). §5.1 says
   the spider stuns "the instant the beam hits" it, so a dim beam still counts — brightness
-  never decides, only geometry. A beam that is off and a lamp that is unpowered light
-  nothing.
+  never decides, only geometry.
+- **A light emitting nothing lights nothing.** Geometry decides *where* the light reaches;
+  whether it is on at all is a separate question and it is asked first. A torch that is off,
+  a battery that is flat, a lamp that is unpowered or has failed (§4.2), and a beam that is
+  out for a blink (§5.2) all light nothing, however well aimed.
+
+  This is what keeps every rule written in terms of light agreeing with what the player can
+  see. Reading the *charge* instead would have a spider deterred by a beam that is out and
+  the Shadow Monster frozen by darkness, and §5.2's hard rule turns on it exactly: the
+  window the monster walks in is a window nothing is lighting it, so there is no shadow to
+  give it away and none to suppress.
+- **Being in the beam is a different question, and only §5.2 asks it.** The Shadow Monster
+  is the one thing that can put the torch out, so "is there light on me" during its own
+  blink answers with the darkness it caused. It asks instead whether the player still has
+  the torch switched on and still has it pointed here, which is what decides when the blink
+  ends.
 - **The amount** is reported beside it: 0–1, the strongest single source's strength at that
   point, falling off with distance and towards the edge of a cone, scaled by the beam's
   battery falloff (§4.1) or the lamp's authored intensity (§4.2). Nothing in §5 keys off it
@@ -678,12 +692,17 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     run the rule keeps itself: every frame in which the player can see anything of it is a
     frame in which it is standing still.
 
-    The blink is the one case that has to enforce it deliberately. The beam holds at 15%
-    through that window rather than going out, and 15% is enough light to cast by — so for
-    the length of a blink **the monster casts no shadow at all**. It is not dimly visible
-    and it is not a silhouette sliding across the floor; it is nothing, exactly as it is
-    everywhere the light is not. The shape on the ground goes out, and comes back somewhere
-    else half a second later.
+    The blink is the one case where the rule has to be designed for, and it is designed for
+    by **putting the beam out**. For that window the torch emits nothing at all, so there is
+    no light to cast by and nothing on the floor to see — not a faint shadow, not a
+    silhouette sliding across the ground, nothing, exactly as everywhere the light is not.
+    The shape goes out, and comes back somewhere else half a second later.
+
+    That is a rule enforced by the lighting rather than against it. The alternative — hold
+    the beam at 15% and switch the monster's shadow off underneath it — keeps the rule and
+    breaks the world: the creature is standing in light and casting nothing, which is a
+    special case that has to be remembered every time anything else about it changes. **The
+    monster always casts.** Whenever a light is on it, its shadow is on the floor.
 
     Anything that would put a moving image of this creature on screen is wrong, however
     faint, and no amount of it is a glimpse worth having: a second way to see the monster
@@ -721,15 +740,18 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
      - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus. Focus
        is continuous in the same sense as §5.1's deterrence timer: the instant the monster
        leaves the cone the beam is clean again and the ramp restarts from 0.1.
-     - **The beam never reaches zero.** The formula above goes negative at high severity on
-       a high jitter draw, so it is clamped to a floor of 15% of `I_base`. A beam held at
-       zero is not a beam struggling, it is a torch switched off, and the player reads it as
-       their equipment failing rather than as something reaching into their light. The
-       struggle is the information; blacking out throws it away. The same floor bounds a
-       lamp under strain (§4.2) — a lamp that has actually *failed* is dark, and that is a
-       different event.
+     - **The flicker never reaches zero.** The formula above goes negative at high severity
+       on a high jitter draw, so it is clamped to a floor of 15% of `I_base`. A beam
+       oscillating down to nothing is not a beam struggling, it is a torch switched off, and
+       the player reads it as their equipment failing rather than as something reaching into
+       their light. The struggle is the information; blacking out throws it away. The same
+       floor bounds a lamp under strain (§4.2) — a lamp that has actually *failed* is dark,
+       and that is a different event.
+
+       The floor is the flicker's, not the blink's. A blink is not a deep dip, it is the
+       light going out, and it goes all the way out.
      - **The "Blink":** during extreme flickers — intensity below 35% of `I_base` for 3
-       consecutive ticks — the beam drops to the floor and **stays there for 0.5 s**, about
+       consecutive ticks — the beam **goes out, and stays out for 0.5 s**, about
        the length of a human blink. For the whole of that window the Shadow Monster's freeze
        lifts and it simply *walks*, at its ordinary 1.8 m/s pursuit speed, along a route the
        grid allows. Roughly 0.9 m of ground, and it can be heard covering it: the blink is a
