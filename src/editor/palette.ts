@@ -27,6 +27,22 @@ export interface EntityChoice {
   required: string[];
   /** Defaults filled in on placement, so a fresh entity is already valid where it can be. */
   defaults: Record<string, string | number>;
+  /**
+   * §2 — properties that take one of a fixed set of values, and what that set is.
+   *
+   * A property with a handful of legal values is not a text field. `mode` is the case that
+   * proved it: §6.5 needs `latch` switches and the audit says so out loud, but the only way
+   * to make one was to know the word and type it into a box that gave no hint it wanted a
+   * word at all. A property nobody can find is a property the level cannot use.
+   */
+  choices?: Record<string, readonly string[]>;
+  /**
+   * Properties naming something else on the map, and where the names come from. The editor
+   * offers what the level already contains — a lamp's `groupId` is only ever useful if some
+   * switch names it back (§4.2, §6.3), and a name typed twice with a typo is a lamp that
+   * never comes on.
+   */
+  namesEntity?: Record<string, 'target' | 'group' | 'own'>;
   /** §9.2 — mounts on a solid neighbour, and carries a `facing`. */
   mounts?: boolean;
   /** §9.2 — must face the camera, so its solid neighbour cannot be to the south. */
@@ -78,6 +94,8 @@ export const ENTITIES: EntityChoice[] = [
     colour: '#63d18a',
     required: ['targetId'],
     defaults: { targetId: '', mode: 'toggle', facing: 0 },
+    choices: { mode: ['toggle', 'latch'] },
+    namesEntity: { targetId: 'target' },
     mounts: true,
   },
   {
@@ -87,6 +105,7 @@ export const ENTITIES: EntityChoice[] = [
     colour: '#ffe9a8',
     required: ['groupId'],
     defaults: { groupId: '', radius: 6, intensity: 1 },
+    namesEntity: { groupId: 'group' },
   },
   {
     type: 'Gate',
@@ -95,6 +114,8 @@ export const ENTITIES: EntityChoice[] = [
     colour: '#c79a52',
     required: ['id', 'targetId'],
     defaults: { id: '', targetId: '', locked: 'true' },
+    choices: { locked: ['true', 'false'] },
+    namesEntity: { id: 'own', targetId: 'target' },
   },
   {
     type: 'ExitGate',
@@ -103,6 +124,8 @@ export const ENTITIES: EntityChoice[] = [
     colour: '#8ff0b4',
     required: ['id'],
     defaults: { id: 'MainExit', locked: 'true', requiredSwitches: 3 },
+    choices: { locked: ['true', 'false'] },
+    namesEntity: { id: 'own' },
     unique: true,
   },
   { type: 'SpiderEnemy', label: 'Spider', glyph: 'sp', colour: '#c86a6a', required: [], defaults: {} },
@@ -167,4 +190,33 @@ export function missingProperties(entity: AuthoredEntity): string[] {
     const value = entity.properties[key];
     return value === undefined || value === null || value === '';
   });
+}
+
+/**
+ * The names on this map a property of this role could sensibly take (§9.1).
+ *
+ * Offered rather than enforced: a level part-way through being built names things that do
+ * not exist yet, and an editor that refused an unknown id would refuse the order most
+ * people work in. What it stops is the other failure — a lamp on `Yard` and a switch on
+ * `yard`, which the audit reports as two separate warnings and neither of them says
+ * "you meant these to be the same thing".
+ */
+export function nameSuggestions(
+  entities: readonly AuthoredEntity[],
+  role: 'target' | 'group' | 'own',
+): string[] {
+  // Its own id is a name somebody is inventing; there is nothing to suggest.
+  if (role === 'own') return [];
+
+  const names = new Set<string>();
+  for (const entity of entities) {
+    const text = (key: string): string => String(entity.properties[key] ?? '').trim();
+    if (entity.type === 'EnvironmentLight' && text('groupId') !== '') names.add(text('groupId'));
+    if (role !== 'target') continue;
+    // §6.3 — a switch acts on a light group, a gate or the exit, so all three are targets.
+    if ((entity.type === 'Gate' || entity.type === 'ExitGate') && text('id') !== '') {
+      names.add(text('id'));
+    }
+  }
+  return [...names].sort();
 }

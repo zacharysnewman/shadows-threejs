@@ -18,6 +18,7 @@ import {
   facingIsVisible,
   missingProperties,
   mountOptions,
+  nameSuggestions,
   normalise,
 } from '../src/editor/palette';
 import { parseMap, parseTileset } from '../src/map/validate';
@@ -224,5 +225,60 @@ describe('the palette (§9.1)', () => {
     expect(ENTITIES.filter((c) => c.mounts).map((c) => c.type)).toEqual(['Note', 'PowerSwitch']);
     // And only the note has to be legible from where the camera is.
     expect(ENTITIES.filter((c) => c.mustBeVisible).map((c) => c.type)).toEqual(['Note']);
+  });
+});
+
+describe('the properties sheet (§9.1)', () => {
+  it('offers §6.3\'s two switch modes rather than asking for the word', () => {
+    // The bug this is the fix for: §6.5 needs `latch` switches, the audit says so, and the
+    // only way to make one was to know the word and type it into a bare text box.
+    const modes = entityChoice('PowerSwitch')?.choices?.['mode'];
+    expect(modes).toEqual(['toggle', 'latch']);
+    // The default stays `toggle` (§2): an unannotated switch must not silently be
+    // irreversible progress.
+    expect(entityChoice('PowerSwitch')?.defaults['mode']).toBe('toggle');
+  });
+
+  it('gives every fixed-value property its values, and only those properties', () => {
+    for (const choice of ENTITIES) {
+      for (const [key, options] of Object.entries(choice.choices ?? {})) {
+        expect(options.length, `${choice.type}.${key}`).toBeGreaterThan(1);
+        // A choice list that does not contain the default is a sheet that opens with
+        // nothing selected and no way to get back to where it started.
+        const fallback = String(choice.defaults[key] ?? '');
+        expect(options, `${choice.type}.${key} default`).toContain(fallback);
+      }
+    }
+  });
+
+  it('suggests the light groups a switch could be wired to', () => {
+    // §4.2 — a lamp only ever comes on if a switch names its group back, and a name typed
+    // twice is a name spelled two ways.
+    const entities = [
+      { type: 'EnvironmentLight', x: 1, y: 1, properties: { groupId: 'Yard' } },
+      { type: 'EnvironmentLight', x: 2, y: 1, properties: { groupId: 'Yard' } },
+      { type: 'EnvironmentLight', x: 3, y: 1, properties: { groupId: 'Dock' } },
+      { type: 'Gate', x: 4, y: 1, properties: { id: 'SideGate', targetId: '' } },
+      { type: 'ExitGate', x: 5, y: 1, properties: { id: 'MainExit' } },
+    ];
+    expect(nameSuggestions(entities, 'group')).toEqual(['Dock', 'Yard']);
+    // §6.3 — a switch acts on a light group, a gate or the exit.
+    expect(nameSuggestions(entities, 'target')).toEqual(['Dock', 'MainExit', 'SideGate', 'Yard']);
+    // An id somebody is inventing has nothing to suggest.
+    expect(nameSuggestions(entities, 'own')).toEqual([]);
+  });
+
+  it('suggests nothing on a map that names nothing yet', () => {
+    expect(nameSuggestions([{ type: 'EnvironmentLight', x: 1, y: 1, properties: {} }], 'group'))
+      .toEqual([]);
+  });
+
+  it('points every id-naming property at a role that can answer it', () => {
+    for (const choice of ENTITIES) {
+      for (const [key, role] of Object.entries(choice.namesEntity ?? {})) {
+        expect(Object.keys(choice.defaults), `${choice.type}.${key}`).toContain(key);
+        expect(['target', 'group', 'own']).toContain(role);
+      }
+    }
   });
 });

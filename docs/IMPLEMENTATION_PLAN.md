@@ -844,6 +844,48 @@ happens when a kit is not. It now carries the normalisation rule and the two per
 exceptions, because "the assets are on-grid" turned out to be a thing the loader has to
 *make* true rather than something it can assume.
 
+*The fit is to the ground a model stands on, not to its silhouette.* Centring on the middle
+of the bounding box is right for a box and wrong for anything wider up top: measured off the
+files, the tree's canopy pulled its trunk **1.22 m** off its tile — more than half of a 2 m
+tile, and the collider stayed where the tile was. The hoop's backboard did the same for
+0.86 m. Prefabs are now lined up on their **footing**, the half-metre slab at the height they
+meet the ground (`PREFAB_FOOTING`), which moves those two and leaves every other prefab in
+the kit bit-identical.
+
+The other axis of the same mistake is grounding on the model's lowest vertex. The tree's is
+four vertices collapsed onto **one point** 0.14 m under the trunk — a root tip with no
+footprint at all — and `fitHeight` scales that gap up with everything else, so the tree hung
+**0.26 m** in the air. `floor_dirt` is the same shape of error the other way up: its flat top
+is `y = 0` in the file and its scattered stones stand 0.086 m proud of it, so sinking the
+tile by its highest stone put the ground the player walks on 8.6 cm *under* the ground plane
+— everything standing on dirt floated by that much, and a dirt tile beside a concrete one was
+a step. `PREFAB_FIT.contact` states the height each of those two actually meets the ground at.
+
+*The tiles that are a length of something now know which way they run.* A wall, a fence and a
+gate are all modelled as a 2 m run across x with only enough depth to be solid. Placed
+unturned, a north–south run of them is a row of disconnected rungs with a metre of daylight
+between each — which is what every vertical fence and every vertical wall in the game looked
+like. `MapGeometry` reads a facing off the solid neighbours: a module whose footing is longer
+than it is deep turns a quarter where the run goes north–south. It is presentation only, and
+deliberately so — the tile is solid across its whole square whichever way the model faces, so
+the collider merge, the walkability grid and the map format see exactly what they saw before,
+which is what lets §2 keep its rule that tiles carry no rotation *in the data*.
+
+*Where the torch is held is now five knobs rather than a pose in the code.* `FLASHLIGHT.hold`
+— height, forward, lateral, a pitch trim on the derived declination and a yaw trim off the
+aim — all five on the §8.3 panel, all five defaulting to exactly the beam §4.1 derives, so
+the spec's beam is where the sliders start rather than somewhere they happen to reach. The
+forward offset was a literal in `Flashlight` (`PLAYER.radius + 0.15`), which is the kind of
+number CLAUDE.md says belongs in the config; it does now. Where the torch is held and where
+it points stay separate: the yaw trim turns the beam and leaves the origin alone.
+
+*A lamp you can see.* §4.2's environmental lights were a pool of light coming out of nothing,
+so an unpowered one was not dim, it was *absent* — a level with lamps and no switch wired to
+them looked like a level with no lamps in it. There is a post and a shade now, and the head
+lights with the lamp and gutters with it through §4.2's strain, which keeps the flicker
+readable as the tell §4.2 says it is. Neither piece casts: the light is a point at the top of
+its own post, so a post that cast would put a black bar through the pool it exists to throw.
+
 *A rig derived from a mesh, and two ways to bind it wrong.* The player's kit is a posed
 model with no skeleton and no clips: unrigged it slides across the ground like furniture,
 which reads worse than the capsule it replaced. `src/player/autoRig.ts` derives three bones
@@ -881,6 +923,14 @@ were already centred and did not move.
 | Placement | hips at `(5.008, 0.864, 5.003)` for a player at `(5, 0, 5)` — 48% of 1.8 m up, on the spot |
 | Body against the player marker | the character's feet land on the projected player position, screenshot `walk.png` |
 | Spider and Shadow Monster | centres `(18.81, 31.57)` and `(46.35, 3.35)` against positions `(18.83, 31.52)` and `(46.35, 3.35)`; both grounded at `y = 0`, heights 0.71 m and 2.20 m |
+| Every fitted prefab's footing, `poi-test` | all nine centred on `(0, 0)` — the tree's 1.44 m trunk was `(−0.25, −1.22)` off its tile before, the hoop's pole `(0, −0.86)` |
+| The tree, grounded | trunk ring at `y = 0.000` exactly; the root point 0.26 m below the floor, where a root belongs |
+| `floor_dirt` against `floor_concrete` | both surfaces at `y = 0`; the dirt's stones stand to `+0.086` instead of the tile sinking by them |
+| A north–south fence run | one continuous barrier, screenshot `after-fence.png`; a comb of disconnected rungs before it |
+| A north–south wall run | one continuous wall, screenshot `after-wall.png` |
+| Torch held at `height 0.6, lateral 0.7, yaw 25°` | origin `(20.30, 0.60, 27.55)` for a player at `(21, 27)` and a beam aimed 25° right of the aim — matches the arithmetic to 3 dp, and the pool moves off-centre on screen |
+| A lamp with no switch | visibly a lamppost, visibly unlit, screenshot `lamp-off.png`; nothing at all before it |
+| The same lamp powered | head lit, pool thrown, the player's shadow across it, screenshot `lamp-lit.png` |
 
 *Outstanding — the phase's actual content.*
 
@@ -1078,6 +1128,23 @@ that moved it would quietly unhook a copy from the piece it was replacing. It do
 stamp renamed after capture keeps its original id, which is visible in the export and is
 tidied when the piece lands in the file.
 
+*And afterwards again — properties edited as what they are, and the audit read as sentences.*
+Two gaps that only show up once somebody authors a level rather than a test map.
+
+`mode` was a bare text field. §6.5 needs `latch` switches, the audit says so in as many words
+on every map that lacks them, and the only way to make one was to already know the word and
+type it into a box that gave no hint it wanted a word at all — an editor asking for something
+it gave no way to supply. Any property with a fixed set of values is a row of buttons now
+(`mode`, `locked`), and any property naming something else on the map offers the names the
+level already contains, so a switch is wired to a lamp by picking its group instead of
+spelling it the same way twice.
+
+The audit was reported as a count. `3 warning(s)` is what an author reads while placing lamps
+that will never come on, with `light group "Yard" has no switch and can never be powered
+(§4.2)` — the sentence that would have told them exactly what was wrong — sitting unread
+behind it. The status line carries the first finding in full now and a `Checks` panel carries
+the rest, incomplete entities included.
+
 *Sent back to the spec.* §9.4 argued that expanding on placement costs the ability to change
 every field in a level at once. It does, and the cost is nothing: a stamp is a *piece* — the
 soccer field, the playground, the loading bay — and a level places roughly one of each. The
@@ -1098,6 +1165,9 @@ the export.
 | Revert the fork | `Reverted to the default Soccer field`, and the default is back in the palette |
 | Stamp palette before any capture | `New from selection`, the three built-ins, `Rotate 0°`, `Edit` |
 | Capture a 12 × 10 rectangle | sheet reads "New stamp from 12×10 tiles"; saved as `Back yard 12×10` |
+| A map with a lamp on `Yard` and no switch for it | status line reads the finding in full; `Checks` lists it beside the exit's latch count |
+| A switch's `mode` | a `toggle` / `latch` pair of buttons; tapping `latch` moves the exit's audit from "has 0" to "has 1" on the next frame |
+| A switch's `targetId`, on that map | offers `Dock`, `MainExit`, `SideGate`, `Yard` — every group and gate id the level names |
 | Palette after | the built-ins, `Back yard 12×10`, `Rotate`, and `Delete Back yard` — the delete offered only for a captured one |
 | Placed at 90° | an 8 × 5 wall block lands as 5 × 8, and the chip reads `Back yard 10×12` |
 | Export | 340 characters, layer 0 as the single run `[0, 120, 1]` and layer 1 as 33 numbers |

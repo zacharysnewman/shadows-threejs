@@ -21,16 +21,30 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
 
   A kit authored by somebody else will not match that standard exactly, and editing the
   files to make it would mean re-editing them every time the kit updates. So prefabs are
-  **normalised on load** instead, against one convention: a prefab is centred on its tile in
-  X and Z, and it sits *on* the ground — upright geometry starts at `y = 0` and floor
-  geometry ends there, so a floor tile's walkable surface is the ground plane rather than
-  something a few centimetres above it.
+  **normalised on load** instead, against one convention: a prefab sits *on* the ground and
+  is lined up with its tile there — upright geometry starts at `y = 0` and floor geometry
+  ends there, so a floor tile's walkable surface is the ground plane rather than something a
+  few centimetres above it.
 
-  That is a placement rule and applies to every prefab. Two things it cannot infer are
+  **The fit is to the ground the model stands on, not to its silhouette.** Both axes of it,
+  and both matter as soon as a model is not a box:
+
+  - It is lined up on its **footing** — the half-metre slab at the height it meets the
+    ground — rather than on the middle of its bounding box. A model wider up top than at the
+    bottom is centred by its top otherwise: a tree centred on its bounding box is centred on
+    its canopy, and a canopy that leans takes the trunk with it, off its tile and onto a
+    neighbour's.
+  - It is sat on the height it *makes contact* at, which is normally its lowest point but is
+    not always. A stray vertex below the model's real base — a collapsed root tip, a pivot
+    left behind — lifts the whole thing off the floor, and any scaling lifts it further.
+
+  That is a placement rule and applies to every prefab. Three things it cannot infer are
   authored per prefab instead: which node to take, when a module is bundled inside a larger
-  one (a door inside its wall), and a height to scale to, when a module's own is wrong for
-  this game (a 4 m wall where the level wants 3 m). Both are look decisions and neither is
-  something a loader should guess.
+  one (a door inside its wall); a height to scale to, when a module's own is wrong for this
+  game (a 4 m wall where the level wants 3 m); and a contact height, where the model's own
+  extreme is not the surface it meets the ground on — the tree above, and a dirt tile whose
+  scattered stones stand proud of the ground the player walks on. All three are statements
+  about the file, and none is something a loader should guess.
 
   **A prefab may be more than one material.** Most are one — a wall is brick and nothing
   else — but a model can be several things at once, and a tree is a brown trunk and green
@@ -129,8 +143,18 @@ than a tile:
 
 - **A tile**, for anything that is one tile and repeats: floor, wall, fence, a crate. Solid
   tiles merge into the largest rectangles they can (§2, colliders), which is what keeps a
-  twenty-tile wall run cheap. Tiles have no rotation and will not get one — a rotating tile
-  would break the merge, and everything that wants rotation wants size too.
+  twenty-tile wall run cheap. Tiles carry no rotation in the map data and will not get one —
+  an authored angle per tile would break the merge, and everything that wants an angle wants
+  size too.
+
+  What a tile does get is a **facing derived from its neighbours**, for the modules that are
+  a *length* of something. A wall, a fence and a gate are all modelled as a 2 m run across
+  one axis with only enough depth to be solid; placed unturned, a north–south run of them is
+  a row of disconnected rungs rather than a barrier. So a module whose footing is longer than
+  it is deep is turned a quarter when its solid neighbours are north and south and not east
+  and west. It is presentation and nothing more: the tile is solid across its whole square
+  whichever way the model faces, so the collider merge, the walkability grid and the map
+  format all see exactly what they saw before.
 - **A `Landmark` entity**, for one model of any size at any angle. Entities already carry
   `rotation` and already sit at continuous world positions rather than on the grid, which
   is exactly what a 5.35-tile net at 40° needs and what a tile could never express. Its
@@ -451,13 +475,26 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   sprinting, when aim is the direction of travel (§3.1).
 - **Spotlight Properties:** angle ≈45° (the full cone), penumbra 0.3, cast shadow enabled,
   range 12 m along the ground.
-- **Mounting:** carried at chest height and emitted just clear of the player's capsule — a
-  light inside the player's own mesh is shadowed by it, and the player's shoulders throw a
-  black wedge across their own beam. The axis is declined so the cone's *upper* edge meets
-  the ground at the beam's range, which puts the near edge of the lit pool about a metre in
-  front of the player. A beam pointed flat along the aim vector spends its upper half on
-  walls and leaves the floor dark around the player, which under the pitched camera (§3.2)
-  reads as a hole rather than as a torch.
+- **Mounting:** carried at chest height (1.6 m) and emitted 0.55 m along the aim, just clear
+  of the player's capsule — a light inside the player's own mesh is shadowed by it, and the
+  player's shoulders throw a black wedge across their own beam. The axis is declined so the
+  cone's *upper* edge meets the ground at the beam's range, which puts the near edge of the
+  lit pool about a metre in front of the player. A beam pointed flat along the aim vector
+  spends its upper half on walls and leaves the floor dark around the player, which under
+  the pitched camera (§3.2) reads as a hole rather than as a torch.
+
+  **Where the torch is held is five values, and all five are tunable (§8.3):** the height it
+  is carried at, how far forward of the player it is emitted, how far to the player's right
+  (0 m — centred, which is what the derivation above assumes), a **pitch trim** in degrees
+  added to the derived declination, and a **yaw trim** in degrees turning the beam off the
+  aim direction. Both trims are 0° by default, so the defaults are exactly the beam
+  described above and every departure from it is one somebody chose. Where the torch is held
+  and where it points are separate: the yaw trim turns the beam and leaves the origin alone.
+
+  A held light is judged by looking at it — how much of the beam the player's own body eats,
+  where the near edge of the pool falls, whether a torch carried off-centre reads as being
+  held or as being broken — and there is no arithmetic that settles any of it. Hence knobs
+  rather than a pose fixed in code.
 - **Toggle:** `F` / gamepad `X` / the on-screen action button. A toggle is refused outright,
   with no state change, once the battery is flat.
 - **Battery Drain (mechanic):**
@@ -535,6 +572,17 @@ Monster would be a bug nobody could see, only feel.
   throwing a cone that pools to a default 6 m ground radius, with a per-entity `intensity`
   override. Only environmental lights within the camera frustum cast shadows, and at most
   two do so at once (§7).
+- **There is a lamp to see, not only a pool to stand in.** A post up to the mount height and
+  a shade at the top of it, whose head lights with the lamp and guts with it while it
+  strains. Neither piece casts a shadow: the light is a point at the top of its own post, so
+  a post that cast would put a black bar through the middle of the pool it exists to throw.
+
+  This is what makes an unpowered lamp *visible but off* rather than absent. A lamp with no
+  `PowerSwitch` naming its group never lights — that is the mechanic and not a fault, since
+  routing power is the thing the player does (§6.3) — but a level whose lamps were invisible
+  until powered is a level that looks like it has no lamps in it, and an author placing them
+  has nothing to tell them what is missing. The map audit reports it (`group-no-switch`) and
+  the editor shows that report while the level is being built (§9).
 - These lights act as temporary safe zones. The effect is per-enemy, not generic: a spider
   inside the cone is repelled and runs its flee lifecycle (§5.1); a Shadow Monster inside
   it is frozen (§5.2). Illumination from an environmental light counts as "lit" for both,
@@ -1067,6 +1115,20 @@ site (§1), rather than in a third-party tool. Three reasons, in order of weight
 - **Entities are placed on tiles**, one selected at a time, with a properties sheet for the
   fields §2's entity table requires. An entity whose required property is unset is drawn as
   an error, not silently written.
+- **A property is edited as what it is.** One of a fixed set of values — a switch's `mode`,
+  a gate's `locked` — is a row of buttons, not a text box somebody has to know the word for.
+  A property naming something else on the map — a switch's `targetId`, a lamp's `groupId` —
+  offers the names the level already contains, so a switch is wired to a lamp by picking its
+  group rather than by spelling it the same way twice.
+
+  This is not a convenience. §6.5 needs `latch` switches and the audit says so in as many
+  words, but while `mode` was a bare text field the only way to make one was to already know
+  the word — an editor that asked for something it gave no way to supply.
+- **The audit is read as sentences, not as a tally.** The status line carries the first
+  finding in full and a `Checks` panel carries the rest. A count of warnings is a number an
+  author learns to ignore, and "3 warning(s)" is what somebody reads while placing lamps
+  that will never come on, with the sentence that would have told them so — `light group
+  "Yard" has no switch and can never be powered` — sitting unread behind it.
 - **Undo and redo** over every edit. A tile editor without undo is a tile editor that is
   used carefully instead of quickly.
 - **The palette is the standard tileset.** The editor writes tile ids, and ids mean nothing

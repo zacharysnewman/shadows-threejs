@@ -282,6 +282,78 @@ export const TUNABLES: readonly Tunable[] = [
     'baseIntensity',
   ),
 
+  // §4.1's `hold` — where the torch is carried. Five knobs on one pose, because a held
+  // light is judged by looking at it and there is no arithmetic that settles it: the
+  // shoulder wedge, the near edge of the pool and how much of the beam the player's own
+  // body eats are all things you find by moving the torch while walking around.
+  field(
+    {
+      key: 'torch.holdHeight',
+      group: 'Flashlight',
+      label: 'held · height',
+      min: 0.2,
+      max: 2.5,
+      step: 0.05,
+      unit: 'm',
+      needsPush: true,
+    },
+    FLASHLIGHT.hold,
+    'height',
+  ),
+  field(
+    {
+      key: 'torch.holdForward',
+      group: 'Flashlight',
+      label: 'held · forward',
+      min: -0.5,
+      max: 2,
+      step: 0.05,
+      unit: 'm',
+    },
+    FLASHLIGHT.hold,
+    'forward',
+  ),
+  field(
+    {
+      key: 'torch.holdLateral',
+      group: 'Flashlight',
+      label: 'held · to the right',
+      min: -1,
+      max: 1,
+      step: 0.05,
+      unit: 'm',
+    },
+    FLASHLIGHT.hold,
+    'lateral',
+  ),
+  field(
+    {
+      key: 'torch.holdPitch',
+      group: 'Flashlight',
+      label: 'held · pitch trim',
+      min: -30,
+      max: 30,
+      step: 0.5,
+      unit: '°',
+      needsPush: true,
+    },
+    FLASHLIGHT.hold,
+    'pitchTrimDegrees',
+  ),
+  field(
+    {
+      key: 'torch.holdYaw',
+      group: 'Flashlight',
+      label: 'held · yaw trim',
+      min: -45,
+      max: 45,
+      step: 0.5,
+      unit: '°',
+    },
+    FLASHLIGHT.hold,
+    'yawTrimDegrees',
+  ),
+
   field(
     {
       key: 'night.ambient',

@@ -26,7 +26,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { PREFAB_FIT } from '../config';
+import { PREFAB_FIT, PREFAB_FOOTING } from '../config';
 
 export interface Prefab {
   name: string;
@@ -38,6 +38,12 @@ export interface Prefab {
   material: THREE.Material | THREE.Material[];
   /** Height in metres, used for collider extents and for sitting the mesh on the floor. */
   height: number;
+  /**
+   * §2 — the module's ground footprint, in metres, once it is fitted: how much of the
+   * tile it actually stands on. `x > z` is a length of something that runs, which is what
+   * the map builder turns to follow its neighbours.
+   */
+  footprint: { x: number; z: number };
   /** True when no `.glb` was found and a placeholder stands in. */
   placeholder: boolean;
 }
@@ -68,6 +74,63 @@ function kindFor(name: string) {
   return PLACEHOLDER_KINDS.find((k) => name.startsWith(k.prefix)) ?? DEFAULT_KIND;
 }
 
+/** §1 — what `PREFAB_FIT` says about one file, as far as the fit itself is concerned. */
+export interface PrefabFit {
+  fitHeight?: number;
+  /**
+   * The height in the file's own units at which the model meets the ground — for a floor,
+   * the surface walked on. Given only where the model's own extreme is not it; see
+   * `PREFAB_FIT` for the two that need it and why.
+   */
+  contact?: number;
+}
+
+/** §1 — the ground-plane extent of a prefab's footing, in the geometry's own space. */
+export interface Footing {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+/**
+ * The prefab's footing: the x/z extent of the slab `PREFAB_FOOTING.bandMetres` deep at the
+ * height the model meets the ground (§1).
+ *
+ * Exported because it is the whole of the difference between a tree standing on its tile
+ * and a tree standing a tile away from it, and because §2's tile orientation is read off
+ * the same numbers — a module longer in x than in z is a length of wall, and knows which
+ * way it runs.
+ */
+export function footingOf(geometry: THREE.BufferGeometry, contactY: number): Footing {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  const silhouette: Footing = {
+    minX: box?.min.x ?? 0,
+    maxX: box?.max.x ?? 0,
+    minZ: box?.min.z ?? 0,
+    maxZ: box?.max.z ?? 0,
+  };
+
+  const position = geometry.getAttribute('position');
+  if (!position) return silhouette;
+
+  const footing: Footing = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (let i = 0; i < position.count; i += 1) {
+    if (Math.abs(position.getY(i) - contactY) > PREFAB_FOOTING.bandMetres) continue;
+    const x = position.getX(i);
+    const z = position.getZ(i);
+    if (x < footing.minX) footing.minX = x;
+    if (x > footing.maxX) footing.maxX = x;
+    if (z < footing.minZ) footing.minZ = z;
+    if (z > footing.maxZ) footing.maxZ = z;
+  }
+  // Nothing within the band would mean a model with no geometry near the ground it stands
+  // on, which is not a shape any prefab has; the silhouette is the honest answer rather
+  // than an origin picked out of the air.
+  return footing.minX > footing.maxX ? silhouette : footing;
+}
+
 /**
  * Fit a loaded prefab to this project's conventions (§1), in place. Returns its height.
  *
@@ -79,6 +142,12 @@ function kindFor(name: string) {
  * Normalising on load rather than editing the files keeps the kit swappable: a newer
  * version drops in without redoing the edits, and a different kit needs no edits at all.
  *
+ * **The fit is to the ground the model stands on, not to its silhouette.** Both axes of it:
+ * it is sat on its contact height and lined up on the footing at that height
+ * (`footingCentre`). A bounding box is the wrong thing to fit by whenever the model is
+ * wider up top than at the bottom — a tree centred on its box is centred on its canopy,
+ * and the trunk ends up on somebody else's tile.
+ *
  * `fitHeight` scales **height only**. On a modular grid the footprint is the part that
  * cannot move: a 2 m wall scaled uniformly to three-quarters is a 1.5 m wall, and a run of
  * them has a half-metre gap between every tile. Height is the axis with slack in it, which
@@ -88,16 +157,18 @@ function kindFor(name: string) {
 export function normalisePrefab(
   geometry: THREE.BufferGeometry,
   name: string,
-  fitHeight?: number,
+  fit: PrefabFit = {},
 ): number {
   geometry.computeBoundingBox();
   const box = geometry.boundingBox;
   if (!box) return 1;
 
-  if (fitHeight && fitHeight > 0) {
+  let scale = 1;
+  if (fit.fitHeight && fit.fitHeight > 0) {
     const current = box.max.y - box.min.y;
     if (current > 1e-6) {
-      geometry.scale(1, fitHeight / current, 1);
+      scale = fit.fitHeight / current;
+      geometry.scale(1, scale, 1);
       geometry.computeBoundingBox();
     }
   }
@@ -105,12 +176,18 @@ export function normalisePrefab(
   const fitted = geometry.boundingBox ?? box;
   const height = fitted.max.y - fitted.min.y;
   // Floors end at the ground plane and everything else starts there, which is the same
-  // contract the placeholder boxes are built to (`sunken` above).
-  const groundedY = kindFor(name).sunken ? -fitted.max.y : -fitted.min.y;
+  // contract the placeholder boxes are built to (`sunken` above). `contact` overrides the
+  // extreme where the extreme is a stray — it is authored in the file's own units, so it
+  // scales with the model.
+  const sunken = kindFor(name).sunken;
+  const contactY =
+    fit.contact !== undefined ? fit.contact * scale : sunken ? fitted.max.y : fitted.min.y;
+  const footing = footingOf(geometry, contactY);
+
   geometry.translate(
-    -(fitted.min.x + fitted.max.x) / 2,
-    groundedY,
-    -(fitted.min.z + fitted.max.z) / 2,
+    -(footing.minX + footing.maxX) / 2,
+    -contactY,
+    -(footing.minZ + footing.maxZ) / 2,
   );
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
@@ -243,12 +320,16 @@ export class AssetLoader {
       merged = BufferGeometryUtils.mergeGeometries(perMaterial, true) ?? perMaterial[0]!;
     }
 
-    const height = normalisePrefab(merged, name, fit.fitHeight);
+    const height = normalisePrefab(merged, name, fit);
+    // Fitted, the contact height is y = 0 by construction, so this is the footing measured
+    // where the module actually meets its tile (§2).
+    const footing = footingOf(merged, 0);
     return {
       name,
       geometry: merged,
       material: materials.length === 1 ? materials[0]! : materials,
       height,
+      footprint: { x: footing.maxX - footing.minX, z: footing.maxZ - footing.minZ },
       placeholder: false,
     };
   }
@@ -267,7 +348,15 @@ export class AssetLoader {
       metalness: 0.0,
     });
 
-    return { name, geometry, material, height: kind.height, placeholder: true };
+    return {
+      name,
+      geometry,
+      material,
+      height: kind.height,
+      // A placeholder is square, so it never reads as a run that wants turning (§2).
+      footprint: { x: footprint, z: footprint },
+      placeholder: true,
+    };
   }
 
   dispose(): void {

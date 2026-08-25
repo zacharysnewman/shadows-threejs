@@ -192,8 +192,42 @@ export const FLASHLIGHT = {
   penumbra: 0.3,
   /** Beam range in metres (§4.1). */
   range: 12,
-  /** Height the beam is carried at, in metres. Chest height on a 1.8 m player (§3.1). */
-  mountHeight: 1.6,
+  /**
+   * §4.1 — where the torch is held, relative to the player and their aim.
+   *
+   * Five numbers rather than a pose baked into the code, because "held" is a look and the
+   * only way to settle a look is to move it while the game is running (§8.3, Phase 11).
+   * Every one of them is an offset from the beam §4.1 derives, so all-zero-and-defaults is
+   * the beam as the spec describes it and each knob is a departure somebody chose.
+   */
+  hold: {
+    /** Height the beam is carried at, in metres. Chest height on a 1.8 m player (§3.1). */
+    height: 1.6,
+    /**
+     * Metres along the aim direction the beam is emitted, clear of the player's own
+     * capsule (§3.1's 0.4 m radius). A light inside the player's mesh is shadowed by it
+     * and their shoulders throw a black wedge across their own pool.
+     */
+    forward: 0.55,
+    /**
+     * Metres to the right of the aim direction — the hand the torch is in. Zero is
+     * centred, which is what §4.1's derivation assumes and what the pool is symmetric
+     * about.
+     */
+    lateral: 0,
+    /**
+     * Degrees added to the declination §4.1 derives. Positive tilts the beam down, pulling
+     * the pool in towards the player; negative flattens it out onto the walls. Zero is the
+     * spec's beam, whose upper edge meets the ground exactly at `range`.
+     */
+    pitchTrimDegrees: 0,
+    /**
+     * Degrees the beam is turned off the aim direction, positive to the right. Zero is
+     * aimed where the player is aiming, which is what §4.1 says and what the enemies'
+     * cone test (§4.1's illumination query) assumes.
+     */
+    yawTrimDegrees: 0,
+  },
   /**
    * Beam brightness at full charge, in Three.js spotlight units at the decay below. A look
    * value: §4.1 fixes the cone's shape and the battery's arithmetic, not its candela.
@@ -225,6 +259,32 @@ export const ENVIRONMENT_LIGHT = {
    */
   baseIntensity: 30,
   decay: 1.2,
+
+  /**
+   * §4.2 — the lamp you can see, as opposed to the light it throws.
+   *
+   * §4.2 calls these streetlamps and facility lights, and until this they were a pool of
+   * light coming out of nothing: an unpowered one was not dim, it was *absent*, so a level
+   * with lamps and no switch wired to them looked like a level with no lamps in it. A post
+   * and a head make the fixture a thing on the map — visibly there and visibly off, which
+   * is what tells the player there is power to find (§6.3).
+   *
+   * Placeholder proportions in the same spirit as §6's prop bodies: crude, legible under a
+   * beam, and replaced by the art pass.
+   */
+  fixture: {
+    /** Post radius in metres — thin enough not to be a landmark in its own right. */
+    postRadius: 0.08,
+    /** The head's radius and depth in metres, hung at the mount height. */
+    headRadius: 0.34,
+    headDepth: 0.22,
+    /** Unlit and lit head colours; the post never changes. */
+    postColour: 0x2c2f36,
+    headColour: 0x4a4a44,
+    litColour: 0xfff2d8,
+    /** Emissive strength of a lit head. It is the source, so it reads as the brightest thing. */
+    litEmissive: 1.6,
+  },
 
   /** §4.2's sabotage lifecycle — what a Shadow Monster standing under a lamp costs it. */
   sabotage: {
@@ -698,8 +758,24 @@ export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number 
   prop_tree: { hx: 0.92, hz: 0.92 },
 };
 
+/**
+ * §1 — how deep a prefab's *footing* is: the slab at its base that meets the ground.
+ *
+ * A prefab is lined up with its tile on this slab rather than on its whole silhouette,
+ * because the part that touches the ground is the part that has to be where the tile is.
+ * A tree centred on its bounding box is centred on its canopy, and a canopy that leans
+ * takes the trunk with it — 1.2 m off, on a 2 m tile.
+ *
+ * Half a metre: deep enough to catch a base wider than the shaft above it (a lamp's plinth,
+ * a tree's root flare), shallow enough that nothing overhead is in it. It changes only the
+ * two prefabs that lean; every other one in the kit centres identically either way.
+ */
+export const PREFAB_FOOTING = {
+  bandMetres: 0.5,
+} as const;
+
 export const PREFAB_FIT: Readonly<
-  Record<string, { node?: string; fitHeight?: number }>
+  Record<string, { node?: string; fitHeight?: number; contact?: number }>
 > = {
   /**
    * The kit has no standalone gate: the door is a child of a 4 m doorway wall, and taking
@@ -728,8 +804,24 @@ export const PREFAB_FIT: Readonly<
    * `PREFAB_FOOTPRINT` blocks. What the player gets is a trunk rising out of sight and a
    * dark gap in the sky where the leaves are, which is what being under a tree at night
    * looks like from below.
+   *
+   * `contact` because the model's lowest point is not what it stands on: four vertices sit
+   * 0.14 m below the trunk, all four at the same x/z — one degenerate point with no
+   * footprint at all, where a root tip was collapsed. Grounded on it the whole tree is
+   * lifted 0.26 m off the floor once `fitHeight` has scaled that gap up with everything
+   * else. 0.045 is the ring the trunk actually meets the ground on, 1.44 m across.
    */
-  prop_tree: { fitHeight: 26 },
+  prop_tree: { fitHeight: 26, contact: 0.045 },
+  /**
+   * §1 — the dirt tile's *surface*, not its highest pebble.
+   *
+   * A floor is sunk until its contact plane is y = 0, and this one is strewn with stones
+   * standing up to 0.086 m proud of it. Sinking the tile by those puts the ground the
+   * player walks on 8.6 cm below the ground plane: everything standing on dirt floats by
+   * that much, and a dirt tile beside a concrete one is a step. The stones stand above
+   * the floor here, which is what stones do.
+   */
+  floor_dirt: { contact: 0 },
 };
 
 /**
