@@ -179,6 +179,14 @@ of empty yard. A prefab may declare an override footprint, in the same place the
 things prefab normalisation cannot infer already live (§1). The override is the exception
 and needs a reason; the derived box is the default.
 
+**A landmark can be taller than the camera, and the tallest ones should be.** The camera
+eye sits `distance × sin(pitch)` above the ground — 13.3 m at §3.2's values — and is
+pitched down, so nothing above that plane is ever in frame. A tree scaled so its canopy
+starts above it gives the player a trunk rising out of the top of the world and no leaves
+at all: you are under a canopy you can never see, which is what being under a tree at night
+is like from below, and it costs nothing to draw. Scaling for this is a vertical scale only
+(§1's `fitHeight`), so the canopy climbs without the trunk thickening.
+
 **Height is not footprint.** A landmark's collider is its ground area, whatever its height.
 A 4 m hoop and a 1 m bench block the same way, and both fade when they come between the
 camera and the player (§3.2's occluder rule) — which a tall landmark will exercise harder

@@ -38,6 +38,7 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 
 const OUT_DIR = fileURLToPath(new URL('../public/prefabs/', import.meta.url));
+const CHARACTER_DIR = fileURLToPath(new URL('../public/characters/', import.meta.url));
 
 /**
  * Source file name → prefab name, per kit.
@@ -62,6 +63,21 @@ const KITS = {
   },
 };
 
+/**
+ * Animated characters, which go somewhere else and are converted the same way.
+ *
+ * They cannot be prefabs: a prefab is merged into one geometry with its transforms baked
+ * in (§1), and doing that to a skinned mesh destroys the skinning. So they live in
+ * `public/characters/` and are loaded by their own path, keeping their skeleton and their
+ * clips. The conversion is identical — the same flags, for the same reasons.
+ */
+const CHARACTER_KITS = {
+  /** Quaternius — Animated Easy Enemies (CC0). `FBX/Spider.fbx` from the pack. */
+  enemies: {
+    'Spider.fbx': 'spider',
+  },
+};
+
 const FLAGS = ['--binary', '--pbr-metallic-roughness'];
 
 async function main() {
@@ -78,25 +94,36 @@ async function main() {
   const source = resolve(sourceDir);
   // Which kit this is, decided by what is actually on disk rather than by a flag: a
   // mistyped kit name would otherwise convert nothing and report success.
-  const entries = Object.entries(KITS).flatMap(([kit, mapping]) =>
-    Object.entries(mapping)
-      .filter(([file]) => existsSync(join(source, file)))
-      .map(([file, prefab]) => ({ kit, file, prefab })),
-  );
+  const entries = [
+    ...Object.entries(KITS).flatMap(([kit, mapping]) =>
+      Object.entries(mapping)
+        .filter(([file]) => existsSync(join(source, file)))
+        .map(([file, prefab]) => ({ kit, file, prefab, dir: OUT_DIR })),
+    ),
+    ...Object.entries(CHARACTER_KITS).flatMap(([kit, mapping]) =>
+      Object.entries(mapping)
+        .filter(([file]) => existsSync(join(source, file)))
+        .map(([file, prefab]) => ({ kit, file, prefab, dir: CHARACTER_DIR })),
+    ),
+  ];
 
   if (entries.length === 0) {
     console.error(`no known kit files in ${source}`);
-    console.error('known files: ' + Object.values(KITS).flatMap((m) => Object.keys(m)).join(', '));
+    const known = [...Object.values(KITS), ...Object.values(CHARACTER_KITS)]
+      .flatMap((mapping) => Object.keys(mapping))
+      .join(', ');
+    console.error(`known files: ${known}`);
     process.exitCode = 1;
     return;
   }
 
   mkdirSync(OUT_DIR, { recursive: true });
+  mkdirSync(CHARACTER_DIR, { recursive: true });
   const convert = dry ? null : require('fbx2gltf');
 
-  for (const { kit, file, prefab } of entries) {
+  for (const { kit, file, prefab, dir } of entries) {
     const from = join(source, file);
-    const to = join(OUT_DIR, `${prefab}.glb`);
+    const to = join(dir, `${prefab}.glb`);
     if (dry) {
       console.log(`[${kit}] ${basename(from)} → ${prefab}.glb (dry)`);
       continue;

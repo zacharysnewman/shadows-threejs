@@ -25,6 +25,7 @@ import { MonsterFootsteps } from './enemies/MonsterFootsteps';
 import { Spider } from './enemies/Spider';
 import { SpiderVoices } from './enemies/SpiderVoices';
 import type { AssetLoader } from './core/AssetLoader';
+import type { CharacterLoader } from './core/CharacterLoader';
 import type { Input } from './core/Input';
 import { OccluderFade } from './core/OccluderFade';
 import { Rng } from './core/rng';
@@ -67,6 +68,8 @@ export interface RunShell {
   overlay: DebugOverlay;
   input: Input;
   assets: AssetLoader;
+  /** §5.1 — animated enemy bodies. */
+  characters: CharacterLoader;
   audio: AudioCore;
   freeCamera: FreeCamera;
   hud: Hud;
@@ -97,7 +100,8 @@ export async function createRun(
   /** §9.3 — a level handed over by the editor rather than fetched. */
   rawMapOverride?: unknown,
 ): Promise<Run> {
-  const { viewport, overlay, input, assets, audio, freeCamera, hud, notes, tuning } = shell;
+  const { viewport, overlay, input, assets, characters, audio, freeCamera, hud, notes, tuning } =
+    shell;
   const clock = new SimClock();
   // §5.3, §6 — the run's ending, and the surface the player reads it on. Built first so
   // nothing below has to check whether they exist yet.
@@ -161,6 +165,10 @@ export async function createRun(
   // §5 — enemies spawn from the map's entities, on the grid the Phase 1 pipeline derived.
   const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
   viewport.scene.add(enemies.root);
+  // §5.1 — real bodies arrive when they arrive. Not awaited: every enemy is fully playable
+  // on its placeholder, and a run that blocks on a character `.glb` is a run that does not
+  // start when the file moves.
+  void enemies.attachCharacters(characters);
 
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.
@@ -910,7 +918,8 @@ export async function createRun(
     if (outcome.simulating) clock.advance(realDelta);
 
     player.render(clock.alpha);
-    enemies.render(clock.alpha);
+    // §7 — the render delta, not the tick: an animation is a presentation effect.
+    enemies.render(clock.alpha, realDelta);
     voices.update();
     lampVoices.update();
     paths.update();

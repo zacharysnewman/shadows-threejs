@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three';
+import type { CharacterRig } from './CharacterRig';
 import { ENEMY } from '../config';
 import type { Rng } from '../core/rng';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
@@ -193,6 +194,14 @@ export class Enemy {
   private readonly limbs: THREE.Object3D[] = [];
   private body: THREE.Object3D | null = null;
   private bodyRestY = 0;
+  /**
+   * §5.1 — the real animated body, once the art has loaded. Until then (and for anything
+   * with no character art) the placeholder above stands in, driven by the gait: the two are
+   * alternatives, never both, so `poseBody` stops as soon as this exists.
+   */
+  private rig: CharacterRig | null = null;
+  /** Placeholder parts, kept so attaching a rig can take them back out. */
+  private readonly placeholderParts: THREE.Object3D[] = [];
 
   private wanderPause = 0;
   /** Seconds left of a `recoil` hold, or of any other timed state (§5.3). */
@@ -210,6 +219,7 @@ export class Enemy {
     this.object.name = `${profile.kind}:${key}`;
     const built = buildPlaceholderMesh(profile);
     this.object.add(...built.parts);
+    this.placeholderParts.push(...built.parts);
     this.body = built.body;
     this.bodyRestY = built.body.position.y;
     this.limbs.push(...built.limbs);
@@ -569,8 +579,37 @@ export class Enemy {
     return 0;
   }
 
-  /** Interpolated between ticks, like the player, so movement is smooth above 60 fps (§7). */
-  render(alpha: number): void {
+  /**
+   * Swap the placeholder body for real animated art (§5.1).
+   *
+   * The placeholder is removed rather than hidden: it is eight boxes and a sphere, and a
+   * hidden mesh is still a mesh the shadow pass walks. The rig owns the scale, so nothing
+   * here touches the group's transform — `render` still moves the group, and the character
+   * lives inside it exactly as the placeholder did.
+   */
+  attachCharacter(rig: CharacterRig): void {
+    this.rig?.dispose();
+    for (const part of this.placeholderParts) part.removeFromParent();
+    this.placeholderParts.length = 0;
+    this.limbs.length = 0;
+    this.body = null;
+
+    this.rig = rig;
+    this.object.add(rig.character.scene);
+  }
+
+  /** Whether this enemy is running on real art rather than on the placeholder. */
+  get hasCharacter(): boolean {
+    return this.rig !== null;
+  }
+
+  /**
+   * Interpolated between ticks, like the player, so movement is smooth above 60 fps (§7).
+   *
+   * `delta` is the *render* delta, and it is only used by the rig: an animation is a
+   * presentation effect and belongs on the display's clock, not on the 60 Hz tick.
+   */
+  render(alpha: number, delta = 0): void {
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
       0,
@@ -579,7 +618,8 @@ export class Enemy {
     if (this.velocity.lengthSq() > 1e-4) {
       this.object.rotation.y = Math.atan2(this.velocity.x, this.velocity.y);
     }
-    this.poseBody();
+    if (this.rig) this.rig.update(this._state, this.speed, delta);
+    else this.poseBody();
   }
 
   /**

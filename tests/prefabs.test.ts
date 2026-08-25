@@ -140,9 +140,13 @@ describe('prefab provenance (§1, §8.2)', () => {
     const claimed = PREFAB_KITS.flatMap((kit) => kit.prefabs);
     expect(new Set(claimed).size, 'a prefab claimed by two kits').toBe(claimed.length);
 
-    const shipped = readdirSync(new URL('../public/prefabs/', import.meta.url))
-      .filter((file) => file.endsWith('.glb'))
-      .map((file) => file.replace(/\.glb$/, ''));
+    // Both places art ships from: prefabs are merged static geometry (§1) and characters
+    // keep their skeletons (§5.1), but they are equally somebody's art and equally shipped.
+    const shipped = ['../public/prefabs/', '../public/characters/'].flatMap((dir) =>
+      readdirSync(new URL(dir, import.meta.url))
+        .filter((file) => file.endsWith('.glb'))
+        .map((file) => file.replace(/\.glb$/, '')),
+    );
     expect([...claimed].sort()).toEqual([...shipped].sort());
   });
 });

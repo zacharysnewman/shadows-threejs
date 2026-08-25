@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { ENEMY } from '../config';
+import type { CharacterLoader } from '../core/CharacterLoader';
 import type { Rng } from '../core/rng';
 import type { EntityRegistry } from '../map/EntityRegistry';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
@@ -26,6 +27,7 @@ import {
   type PlayerActions,
 } from './Enemy';
 import { ShadowMonster } from './ShadowMonster';
+import { CharacterRig } from './CharacterRig';
 import { Spider } from './Spider';
 
 /** Fired for every enemy overlapping the player, every tick the overlap lasts (§5.3). */
@@ -74,6 +76,39 @@ export class EnemyManager {
     };
     spawn('SpiderEnemy');
     spawn('ShadowMonster');
+  }
+
+  /**
+   * §5.1 — give the spiders their real bodies once the art has loaded.
+   *
+   * Asynchronous and after the fact rather than part of construction, deliberately: a run
+   * that waits on a character `.glb` is a run that does not start if the file moved, and
+   * every enemy is fully playable on its placeholder in the meantime. The swap is
+   * invisible except that the legs start meaning something.
+   *
+   * Only the spider. §5.2 is absolute that the Shadow Monster's body is never drawn and
+   * that it is never both moving and visible, so animated art for it would be art nobody
+   * can ever see — and a walk cycle would be a thing to be tempted to show.
+   */
+  async attachCharacters(loader: CharacterLoader): Promise<void> {
+    const spiders = this.enemies.filter((enemy) => enemy.profile.kind === 'SpiderEnemy');
+    if (spiders.length === 0) return;
+
+    await Promise.all(
+      spiders.map(async (enemy) => {
+        const character = await loader.load(ENEMY.spider.character);
+        if (character.missing) return;
+        enemy.attachCharacter(
+          new CharacterRig(character, {
+            walkReferenceSpeed: ENEMY.spider.walkClipSpeed,
+            attackSeconds: ENEMY.spider.attack.windUpSeconds,
+            // The kit's spider is authored several metres across; §5.1's is dog-sized, and
+            // `profile.height` is what every other system already believes it to be.
+            scale: enemy.profile.height / ENEMY.spider.characterHeight,
+          }),
+        );
+      }),
+    );
   }
 
   get enabled(): boolean {
@@ -164,8 +199,8 @@ export class EnemyManager {
     }
   }
 
-  render(alpha: number): void {
-    for (const enemy of this.enemies) enemy.render(alpha);
+  render(alpha: number, delta = 0): void {
+    for (const enemy of this.enemies) enemy.render(alpha, delta);
   }
 
   dispose(): void {

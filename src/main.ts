@@ -16,6 +16,7 @@
 
 import { AudioCore } from './audio/AudioCore';
 import { AssetLoader } from './core/AssetLoader';
+import { CharacterLoader } from './core/CharacterLoader';
 import { Input } from './core/Input';
 import { Viewport } from './core/Viewport';
 import { DebugOverlay } from './debug/DebugOverlay';
@@ -97,6 +98,9 @@ async function main(): Promise<void> {
    */
   const tuning = options.debug ? new TuningPanel() : null;
   const assets = new AssetLoader();
+  // §5.1 — animated bodies, cached across runs like the prefabs: a death should not refetch
+  // the spider.
+  const characters = new CharacterLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
   const audio = new AudioCore(viewport.scene);
@@ -130,6 +134,7 @@ async function main(): Promise<void> {
     overlay,
     input,
     assets,
+    characters,
     audio,
     freeCamera,
     hud,

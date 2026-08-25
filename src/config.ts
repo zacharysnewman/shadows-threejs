@@ -375,6 +375,20 @@ export const ENEMY = {
     /** Dog-sized (§5.1). */
     radius: 0.5,
     height: 0.7,
+    /** §5.1 — the animated body, from `public/characters/`. */
+    character: 'spider',
+    /**
+     * Height of that model as authored, in metres, so it can be scaled to `height`. The
+     * kit's spider is nearly two metres tall and five across; §5.1's is dog-sized, and
+     * `height` is what every other system already believes.
+     */
+    characterHeight: 1.93,
+    /**
+     * Ground speed the walk clip was authored at, in m/s. §5.1 drives the cycle's playback
+     * rate from actual speed, and this is the rate that means "×1" — measured by watching
+     * the legs against the ground, which is the only way to measure it.
+     */
+    walkClipSpeed: 2.4,
     wanderSpeed: 1.2,
     pursueSpeed: 2.4,
     fleeSpeed: 3.6,
@@ -541,6 +555,18 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     attributionRequired: true,
     prefabs: ['prop_tree'],
   },
+  {
+    kit: 'Animated Easy Enemies',
+    author: 'Quaternius',
+    url: 'https://quaternius.itch.io/animated-easy-enemies',
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source: 'https://quaternius.itch.io/animated-easy-enemies',
+    /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
+    attributionRequired: false,
+    /** §5.1's spider. A character rather than a prefab — it is skinned (see §1). */
+    prefabs: ['spider'],
+  },
 ];
 
 /**
@@ -569,6 +595,12 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
 export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
   /** Pole and base only; the backboard and rim are overhead (§2). */
   prop_hoop: { hx: 0.3, hz: 0.3 },
+  /**
+   * The trunk, measured below 3 m — 1.83 m across, and the same in both axes. The canopy is
+   * 11.84 m wide and starts nearly 15 m up (§2): a footprint from the mesh would fence off
+   * six tiles of ground you are meant to walk under, which is the whole point of the tree.
+   */
+  prop_tree: { hx: 0.92, hz: 0.92 },
 };
 
 export const PREFAB_FIT: Readonly<
@@ -587,6 +619,22 @@ export const PREFAB_FIT: Readonly<
   wall_brick: { fitHeight: 3.0 },
   /** A 1.1 m barrier where the level wants something at chest height to break sight over. */
   fence_chainlink: { fitHeight: 1.6 },
+  /**
+   * §2 — tall enough that its canopy is above the camera and never drawn.
+   *
+   * The camera eye sits `CAMERA.distance × sin(CAMERA.pitchDegrees)` above the ground —
+   * 14 × sin 72° = 13.31 m — and is pitched down, so nothing above that plane is in frame
+   * at all. In the model the leaves begin at 56.2% of its height, so 26 m puts the
+   * underside of the canopy at 14.6 m: a metre and a bit clear, with the trunk carrying on
+   * up past the camera and out of the top of the world.
+   *
+   * `fitHeight` scales the Y axis only (see `normalisePrefab`), so the canopy gets taller
+   * without getting wider and the trunk keeps its 1.83 m girth — which is what
+   * `PREFAB_FOOTPRINT` blocks. What the player gets is a trunk rising out of sight and a
+   * dark gap in the sky where the leaves are, which is what being under a tree at night
+   * looks like from below.
+   */
+  prop_tree: { fitHeight: 26 },
 };
 
 /**
