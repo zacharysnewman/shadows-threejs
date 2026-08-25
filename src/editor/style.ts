@@ -51,6 +51,7 @@ export const EDITOR_STYLE = `<style>
   box-shadow: 0 -18px 40px rgba(0,0,0,0.5); max-height: 62%; overflow-y: auto; }
 .ed-sheet[hidden] { display: none; }
 .ed-sheet-title { font-weight: 600; margin-bottom: 10px; }
+.ed-hint { color: #9aa3ae; font-size: 13px; margin-bottom: 10px; }
 .ed-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .ed-row > span { flex: 0 0 34%; color: #9aa3ae; font-size: 13px; }
 .ed-row input { flex: 1; min-height: 42px; padding: 0 10px; border-radius: 8px;

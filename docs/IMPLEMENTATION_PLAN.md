@@ -1006,23 +1006,33 @@ from a file in the repository, in exactly the format the export produces, so a s
 into a conversation and committed is present on every device and visible in a diff when it
 changes.
 
-Three sources and two rules, which is the whole of it. A project stamp replaces a default of
-the same id, in place — the file is the level's and the defaults are only where it starts, so
-committing a better soccer field is committing `soccer-field` rather than a `soccer-field-2`
-sitting beside the one it supersedes. And only captured stamps are deletable and exported:
-deleting a project stamp would be undone by the next reload, and exporting one would mean
-importing it back as a duplicate of itself.
+Three sources, layered by id: defaults, then the project's, then this browser's, each
+replacing an earlier one of the same id rather than sitting beside it. One id is one stamp,
+so the palette never shows two things with the same name and no operation has to guess which
+was meant. Only the top layer is deletable and only the top layer is exported.
 
 The load is asynchronous and nothing waits for it, so a slow, missing or malformed file costs
 the pieces in it and never the editor. There is no content-type probe of the kind the `.glb`
 loaders need (§1), because parsing JSON *is* the reliable test: a static host answering an
 unknown path with `index.html` and a 200 fails it immediately and for free.
 
-*A collision that would have deleted the wrong thing.* A captured stamp can share an id with
-a project stamp that arrives afterwards — the designer captured `loading-bay` before the file
-naming one landed. Two entries with one id make `byId` answer for whichever comes first, so
-Delete removes a stamp the designer is not looking at, and the one they *are* looking at is
-the one that cannot be deleted. Captured stamps are renamed on load instead.
+*Editing a piece, which the first cut of this could not do.* A stamp could be added and
+deleted and nothing else, so fixing one meant capturing it again under a second name and
+being left holding both — and a committed piece could not be touched at all. Every stamp now
+renames, re-cuts from a rectangle in place, and deletes, from one sheet rather than more chips
+at the end of a strip a thumb flicks through.
+
+A committed piece is edited by taking a copy of it, *under the same id*. That is the whole
+reason the layers replace by id rather than renaming aside: the copy covers the original in
+the palette, edits like anything else, and exports under the id it came from, so it lands back
+in `stamps.json` over the entry it replaces. Delete the copy and the committed piece returns.
+The alternative — a `soccer-field-2` that has to be renamed by hand on the way into the file —
+is the kind of step somebody forgets exactly once.
+
+Renaming moves the label and not the id. The id is what an override points at, and a rename
+that moved it would quietly unhook a copy from the piece it was replacing. It does mean a
+stamp renamed after capture keeps its original id, which is visible in the export and is
+tidied when the piece lands in the file.
 
 *Sent back to the spec.* §9.4 argued that expanding on placement costs the ability to change
 every field in a level at once. It does, and the cost is nothing: a stamp is a *piece* — the
@@ -1036,7 +1046,13 @@ the export.
 
 | Case | Measured |
 | --- | --- |
-| Stamp palette before any capture | `New from selection`, the three built-ins, `Rotate 0°` — no delete |
+| Rename a captured stamp | `Bay 12×8` → `Loading bay 12×8`, in place in the palette |
+| Replace it from a 17×15 selection | `Loading bay replaced · 17×15`; one entry, not two |
+| Edit sheet on a default | offers only "Take a copy to edit"; the copy's sheet says it exports over the original |
+| Fork and rename the soccer field | palette reads `The pitch 12×8`, still first — an override does not move to the end |
+| Export after forking | `[["bay", "Loading bay"], ["soccer-field", "The pitch"]]` — the fork keeps `soccer-field` |
+| Revert the fork | `Reverted to the default Soccer field`, and the default is back in the palette |
+| Stamp palette before any capture | `New from selection`, the three built-ins, `Rotate 0°`, `Edit` |
 | Capture a 12 × 10 rectangle | sheet reads "New stamp from 12×10 tiles"; saved as `Back yard 12×10` |
 | Palette after | the built-ins, `Back yard 12×10`, `Rotate`, and `Delete Back yard` — the delete offered only for a captured one |
 | Placed at 90° | an 8 × 5 wall block lands as 5 × 8, and the chip reads `Back yard 10×12` |

@@ -216,14 +216,33 @@ describe('the library (§9.4)', () => {
     expect(library.all.at(-1)?.id).toBe('mine');
   });
 
-  it('never lets a capture take a built-in\'s id', () => {
-    // Otherwise deleting a captured stamp would delete a definition out of the project,
-    // from a text field, with no way back.
+  it('never lets a *new* capture take an existing id', () => {
+    // Replacing a piece is a deliberate action reached from its own button. Typing a name
+    // that happens to collide is not, and should not quietly rewrite the soccer field.
     const library = new StampLibrary();
     const id = library.add(stamp('soccer-field'));
     expect(id).not.toBe('soccer-field');
     expect(library.isCustom('soccer-field')).toBe(false);
     expect(library.byId('soccer-field')).toBe(BUILT_IN_STAMPS.find((s) => s.id === 'soccer-field'));
+  });
+
+  it('renames, replaces and forks a captured stamp', () => {
+    const library = new StampLibrary();
+    const id = library.add(stamp('yard'));
+
+    expect(library.relabel(id, 'Back yard')).toBe(true);
+    expect(library.byId(id)?.label).toBe('Back yard');
+    expect(library.relabel(id, '   ')).toBe(false);
+    expect(library.byId(id)?.label).toBe('Back yard');
+
+    library.replace(id, { ...stamp(id), width: 9, height: 9, label: 'Bigger' });
+    expect(library.byId(id)?.width).toBe(9);
+    expect(library.custom.length).toBe(1);
+
+    // Forking something already yours is a no-op, not a second copy.
+    expect(library.override(id)).toBe(false);
+    expect(library.custom.length).toBe(1);
+    expect(library.override('nothing-here')).toBe(false);
   });
 
   it('deletes only what it captured', () => {
@@ -295,28 +314,65 @@ describe('the project\'s pieces (§9.4)', () => {
     expect((library.toJson().stamps as { id: string }[]).length).toBe(0);
   });
 
-  it('renames a captured stamp whose id the project has taken', () => {
-    // Two entries with one id would make `byId` answer for whichever came first: Delete
-    // would remove a stamp the designer was not looking at, and the one they *were* looking
-    // at is the one that cannot be deleted.
+  it('lets a captured stamp of the same id cover a project one, not sit beside it', () => {
+    // One id is one stamp. Two entries with one name would make every operation guess which
+    // was meant — and the useful reading of a collision is not "rename mine", it is "this is
+    // my edited version of that piece".
     const library = new StampLibrary();
-    library.add(piece('loading-bay', 'Mine'));
     library.setProject([piece('loading-bay', 'Theirs')]);
+    library.replace('loading-bay', piece('loading-bay', 'Mine'));
 
     const ids = library.all.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(library.byId('loading-bay')?.label).toBe('Theirs');
-    expect(library.custom[0]?.label).toBe('Mine');
-    expect(library.custom[0]?.id).not.toBe('loading-bay');
+    expect(library.byId('loading-bay')?.label).toBe('Mine');
+    expect(library.origin('loading-bay')).toBe('custom');
+    expect(library.shadows('loading-bay')).toBe('project');
   });
 
-  it('treats a paste of a project stamp as a new capture, not an overwrite', () => {
+  it('brings the project one back when the override is deleted', () => {
+    // What makes editing a committed piece safe: the file is still the source of truth, and
+    // throwing away your copy is one button rather than a re-import.
+    const library = new StampLibrary();
+    library.setProject([piece('loading-bay', 'Theirs')]);
+    library.override('loading-bay');
+    library.relabel('loading-bay', 'Mine');
+    expect(library.byId('loading-bay')?.label).toBe('Mine');
+
+    library.remove('loading-bay');
+    expect(library.byId('loading-bay')?.label).toBe('Theirs');
+    expect(library.origin('loading-bay')).toBe('project');
+  });
+
+  it('exports an override under the original id, so it lands back over it', () => {
+    // The whole round trip: edit a committed piece, export, paste into `stamps.json` over
+    // the entry it came from. A renamed copy would have to be renamed back by hand.
+    const library = new StampLibrary();
+    library.setProject([piece('loading-bay', 'Theirs')]);
+    library.override('loading-bay');
+    library.relabel('loading-bay', 'Loading bay, fixed');
+
+    const exported = library.toJson().stamps as { id: string; label: string }[];
+    expect(exported).toEqual([
+      expect.objectContaining({ id: 'loading-bay', label: 'Loading bay, fixed' }),
+    ]);
+  });
+
+  it('takes a paste of a project piece as an edit of it', () => {
     const library = new StampLibrary();
     library.setProject([piece('loading-bay')]);
     library.merge([piece('loading-bay', 'Edited')]);
-    expect(library.byId('loading-bay')?.label).toBe('loading-bay');
-    expect(library.custom.length).toBe(1);
-    expect(library.custom[0]?.id).not.toBe('loading-bay');
+    expect(library.byId('loading-bay')?.label).toBe('Edited');
+    expect(library.all.filter((s) => s.id === 'loading-bay').length).toBe(1);
+  });
+
+  it('holds an overridden stamp in its original place in the palette', () => {
+    // Otherwise editing the soccer field moves it to the end of the strip every time, and a
+    // designer loses the piece they are working on.
+    const library = new StampLibrary();
+    const before = library.all.map((s) => s.id);
+    library.override('soccer-field');
+    library.relabel('soccer-field', 'The pitch');
+    expect(library.all.map((s) => s.id)).toEqual(before);
   });
 
   it('loads the file, and shrugs off every way it can be missing', async () => {

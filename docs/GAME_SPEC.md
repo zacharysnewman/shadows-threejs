@@ -1154,16 +1154,41 @@ every browser, surviving cleared site data, and visible in a diff when it change
 storage is where a stamp lives while it is being worked out; the file is where it lives once
 it is a piece of the level.
 
-Three sources, in one list, and the precedence between them is the whole of the rule:
+Three sources, layered, and the precedence between them is the whole of the rule:
 
-- **The project's** — `public/stamps.json`, loaded at startup. Cannot be deleted from the
-  editor, because the file would put it straight back.
 - **The defaults** — the handful defined in source, so a fresh clone has something to place
-  and a failed load still leaves a working palette. A project stamp of the same id replaces
-  one: the file is the level's, and the defaults are only where it starts.
-- **The captured** — this browser's, deletable, and the only ones the export writes out. The
-  project's are in the repository already, and exporting them would mean importing them back
-  as duplicates of themselves.
+  and a failed load still leaves a working palette.
+- **The project's** — `public/stamps.json`, loaded at startup. The level's pieces.
+- **The captured** — this browser's.
+
+**A later layer replaces an earlier one of the same name rather than sitting beside it.** One
+name is one stamp: the palette never shows two things called the same thing, and no operation
+has to guess which was meant. Only the top layer is deletable, and only the top layer is
+exported — the project's pieces are in the repository already, and exporting them would mean
+importing them back as duplicates of themselves.
+
+#### Changing one
+
+A piece is authored over time, and the first cut of it is rarely the one that ships. Every
+stamp can therefore be renamed, re-cut from the map, and thrown away:
+
+- **Rename** changes what it is called. The name it was captured under is its identity and
+  does not move, so that a piece keeps pointing at the same thing while it is being worked on.
+- **Replace from selection** re-cuts it from a rectangle, in place. The alternative — delete
+  and capture again — gives a second piece under a second name, and the level is then holding
+  the old one.
+- **Delete** removes it.
+
+**A committed piece is edited by taking a copy of it.** The project's stamps and the defaults
+cannot be changed from the editor — the file would put them straight back — so editing one
+copies it into this browser first, *under the same name*. That copy covers the original in the
+palette, is edited like anything else, and exports under the name it came from, so it lands
+back in `stamps.json` over the entry it replaces rather than beside it. Delete the copy and the
+committed piece is back.
+
+That is what makes the round trip work in both directions. Without it, fixing a committed
+piece would produce a second piece under a second name, which somebody would have to rename by
+hand on the way into the file — and forget to, once.
 
 The file loads asynchronously and the editor does not wait for it. A level designer who opens
 the editor gets the tools immediately and the project's pieces a moment later, which is the

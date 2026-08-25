@@ -288,17 +288,30 @@ export function stampsFromJson(raw: unknown): Stamp[] {
 // --- The library ------------------------------------------------------------
 
 /**
- * The stamps the editor offers, from three places (§9.4).
+ * The stamps the editor offers, from three places, layered (§9.4).
  *
- * - **The project's**, from `public/stamps.json`. The level's pieces, committed.
  * - **The defaults**, from source, so a fresh clone has something to place and a failed load
- *   still leaves a working palette. A project stamp of the same id replaces one.
- * - **The captured**, from this browser. Deletable, and the only ones the export writes.
+ *   still leaves a working palette.
+ * - **The project's**, from `public/stamps.json` — the level's pieces, committed.
+ * - **The captured**, from this browser.
  *
- * Only the last can be deleted, and only the last is exported. Deleting a project stamp
- * from the palette would be undone by the next reload, and exporting one would mean
- * importing it back as a duplicate of itself.
+ * Later layers *replace earlier ones of the same id* rather than sitting beside them, and
+ * that is the whole design. One id is one stamp, so the palette never shows two things with
+ * the same name and no operation has to guess which one was meant.
+ *
+ * What it buys is the thing a level designer actually needs: a committed piece can be
+ * edited. Capture over `loading-bay` and you have your own `loading-bay` shadowing the
+ * project's; fix it, export it, and it drops straight back into `stamps.json` over the entry
+ * it came from, because it kept the id. Delete the override and the committed one is back.
+ * Without layering, editing a project piece would mean a `loading-bay-2` that has to be
+ * renamed by hand on the way into the file.
+ *
+ * Only the top layer is deletable and only the top layer is exported. Deleting a project
+ * stamp outright would be undone by the next reload, and exporting one would mean importing
+ * it back as a duplicate of itself.
  */
+export type StampOrigin = 'default' | 'project' | 'custom';
+
 export class StampLibrary {
   private customStamps: Stamp[];
   private projectStamps: Stamp[] = [];
@@ -307,15 +320,19 @@ export class StampLibrary {
     this.customStamps = custom;
   }
 
-  /** The defaults, with the project's replacing any of the same id, then the captured. */
+  /**
+   * One entry per id, each resolved to its topmost layer.
+   *
+   * Order is where an id *first* appears, not which layer won it: overriding the soccer
+   * field leaves it where the soccer field was, rather than moving it to the end of the
+   * palette every time it is edited.
+   */
   get all(): Stamp[] {
-    const shipped = BUILT_IN_STAMPS.map(
-      (stamp) => this.projectStamps.find((project) => project.id === stamp.id) ?? stamp,
-    );
-    const extra = this.projectStamps.filter(
-      (project) => !BUILT_IN_STAMPS.some((stamp) => stamp.id === project.id),
-    );
-    return [...shipped, ...extra, ...this.customStamps];
+    const order: string[] = [];
+    for (const stamp of [...BUILT_IN_STAMPS, ...this.projectStamps, ...this.customStamps]) {
+      if (!order.includes(stamp.id)) order.push(stamp.id);
+    }
+    return order.map((id) => this.resolve(id)!);
   }
 
   get custom(): readonly Stamp[] {
@@ -326,40 +343,42 @@ export class StampLibrary {
     return this.projectStamps;
   }
 
-  /**
-   * Take the project's pieces, once they have loaded.
-   *
-   * A captured stamp whose id one of them now uses is renamed rather than shadowed. Two
-   * entries with one id would make `byId` answer for whichever came first, so Delete would
-   * remove a stamp the designer was not looking at — and the one they *were* looking at is
-   * the one that cannot be deleted.
-   */
+  /** §9.4 — the level's pieces, once they have loaded. */
   setProject(stamps: readonly Stamp[]): void {
     this.projectStamps = [...stamps];
-    const taken = new Set([
-      ...BUILT_IN_STAMPS.map((stamp) => stamp.id),
-      ...this.projectStamps.map((stamp) => stamp.id),
-    ]);
-    this.customStamps = this.customStamps.map((stamp) => {
-      if (!taken.has(stamp.id)) {
-        taken.add(stamp.id);
-        return stamp;
-      }
-      const id = uniqueStampId(stamp.id, taken);
-      taken.add(id);
-      return { ...stamp, id };
-    });
   }
 
   byId(id: string): Stamp | undefined {
-    return this.all.find((stamp) => stamp.id === id);
+    return this.resolve(id);
+  }
+
+  /** Which layer the visible stamp of this id comes from. */
+  origin(id: string): StampOrigin | null {
+    if (this.customStamps.some((stamp) => stamp.id === id)) return 'custom';
+    if (this.projectStamps.some((stamp) => stamp.id === id)) return 'project';
+    if (BUILT_IN_STAMPS.some((stamp) => stamp.id === id)) return 'default';
+    return null;
+  }
+
+  /** What a captured stamp of this id is covering up, if anything. */
+  shadows(id: string): StampOrigin | null {
+    if (this.origin(id) !== 'custom') return null;
+    if (this.projectStamps.some((stamp) => stamp.id === id)) return 'project';
+    if (BUILT_IN_STAMPS.some((stamp) => stamp.id === id)) return 'default';
+    return null;
   }
 
   isCustom(id: string): boolean {
-    return this.customStamps.some((stamp) => stamp.id === id);
+    return this.origin(id) === 'custom';
   }
 
-  /** Add one, renaming its id if anything already has it. Returns the id it ended up with. */
+  /**
+   * Add a new one, renaming its id if anything already has it. Returns the id it got.
+   *
+   * A *new* capture never silently replaces a piece — typing a name that happens to collide
+   * should not quietly rewrite the soccer field. Replacing one is `replace`, which is a
+   * different action reached from a different button.
+   */
   add(stamp: Stamp): string {
     const id = uniqueStampId(
       stamp.id || stamp.label,
@@ -369,33 +388,59 @@ export class StampLibrary {
     return id;
   }
 
+  /** Write a captured stamp at exactly this id, replacing whatever was there. */
+  replace(id: string, stamp: Stamp): void {
+    const next = { ...stamp, id };
+    const at = this.customStamps.findIndex((existing) => existing.id === id);
+    if (at >= 0) this.customStamps[at] = next;
+    else this.customStamps.push(next);
+  }
+
+  /**
+   * Take a copy of a project or default stamp into the captured layer, so it can be edited.
+   *
+   * The copy keeps the id, which is what makes the round trip work: export it and it lands
+   * back in `stamps.json` over the entry it came from.
+   */
+  override(id: string): boolean {
+    const stamp = this.resolve(id);
+    if (!stamp || this.origin(id) === 'custom') return false;
+    this.customStamps.push({ ...stamp });
+    return true;
+  }
+
+  /** Rename a captured stamp. The id is its identity and does not move with the label. */
+  relabel(id: string, label: string): boolean {
+    const at = this.customStamps.findIndex((stamp) => stamp.id === id);
+    if (at < 0 || !label.trim()) return false;
+    this.customStamps[at] = { ...this.customStamps[at]!, label: label.trim() };
+    return true;
+  }
+
+  /** Drop the captured stamp. If it was covering a committed one, that one comes back. */
   remove(id: string): void {
     this.customStamps = this.customStamps.filter((stamp) => stamp.id !== id);
   }
 
   /**
-   * Merge a pasted library in, replacing a captured stamp of the same id and renaming one
-   * that collides with a built-in. Returns how many arrived.
+   * Merge a pasted library in, by id. Returns how many arrived.
    *
    * Replacing rather than appending is what makes the export a round trip: paste back what
-   * you exported and you have what you exported, not two of everything.
+   * you exported and you have what you exported, not two of everything. A paste naming a
+   * project piece becomes an override of it, which is the same thing capture-over does and
+   * the same thing somebody pasting an edited piece meant.
    */
   merge(incoming: readonly Stamp[]): number {
-    let count = 0;
-    for (const stamp of incoming) {
-      const shipped =
-        BUILT_IN_STAMPS.some((built) => built.id === stamp.id) ||
-        this.projectStamps.some((project) => project.id === stamp.id);
-      if (shipped) {
-        this.add(stamp);
-      } else {
-        const at = this.customStamps.findIndex((existing) => existing.id === stamp.id);
-        if (at >= 0) this.customStamps[at] = stamp;
-        else this.customStamps.push(stamp);
-      }
-      count += 1;
-    }
-    return count;
+    for (const stamp of incoming) this.replace(stamp.id, stamp);
+    return incoming.length;
+  }
+
+  private resolve(id: string): Stamp | undefined {
+    return (
+      this.customStamps.find((stamp) => stamp.id === id) ??
+      this.projectStamps.find((stamp) => stamp.id === id) ??
+      BUILT_IN_STAMPS.find((stamp) => stamp.id === id)
+    );
   }
 
   /** §9.4 — the captured stamps as text. The built-ins are in the project already. */

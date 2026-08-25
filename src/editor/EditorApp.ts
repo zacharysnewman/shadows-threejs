@@ -62,6 +62,12 @@ export class EditorApp {
    * placing. The same drag either way; what differs is what happens on release.
    */
   private capturing = false;
+  /**
+   * §9.4 — the stamp the next capture replaces, or null to add a new one. Set by "Replace
+   * from selection", which is what makes a captured piece editable rather than a thing you
+   * can only delete and re-make under a different name.
+   */
+  private capturingInto: string | null = null;
   private layer = 1;
   private tileId = 2;
   private entityType = 'SpiderEnemy';
@@ -150,6 +156,7 @@ export class EditorApp {
           this.tool = tool;
           this.rectStart = null;
           this.capturing = false;
+          this.capturingInto = null;
           this.canvas.preview = null;
           this.refreshPalette();
           this.refreshToolbar();
@@ -239,8 +246,14 @@ export class EditorApp {
 
       // §9.4 — capture first, because it is the one control that is not obvious from the
       // others, and on a phone the palette scrolls: what is off the left edge is not found.
-      chip(this.capturing ? '✕ Cancel capture' : '＋ New from selection', 'capture', () => {
+      const capturingLabel = this.capturingInto
+        ? `✕ Cancel replace`
+        : this.capturing
+          ? '✕ Cancel capture'
+          : '＋ New from selection';
+      chip(capturingLabel, 'capture', () => {
         this.capturing = !this.capturing;
+        if (!this.capturing) this.capturingInto = null;
         this.rectStart = null;
         this.canvas.preview = null;
         this.refreshPalette();
@@ -266,17 +279,11 @@ export class EditorApp {
         this.refreshPalette();
       });
 
-      // Only a captured stamp can go: a built-in is a definition in the project, and
-      // deleting one from a palette would be editing the source from a text field.
-      if (this.stamps.isCustom(this.stampId)) {
-        const doomed = this.stamps.byId(this.stampId);
-        chip(`Delete ${doomed?.label ?? this.stampId}`, 'delete', () => {
-          this.stamps.remove(this.stampId);
-          saveStamps(this.stamps);
-          this.stampId = this.stamps.all[0]?.id ?? '';
-          this.flash(`${doomed?.label ?? 'Stamp'} deleted`);
-          this.refreshPalette();
-        }).classList.add('ed-danger');
+      // Every stamp is editable, including the project's — editing one takes a copy into
+      // this browser first (§9.4), which is what keeps the file the source of truth while
+      // still letting a committed piece be fixed.
+      if (this.stamps.byId(this.stampId)) {
+        chip('Edit', 'edit', () => this.showStampSheet(this.stampId));
       }
       return;
     }
@@ -428,6 +435,132 @@ export class EditorApp {
     );
   }
 
+  /**
+   * §9.4 — what can be done to one stamp: rename it, re-cut it from the map, throw it away.
+   *
+   * A sheet rather than more chips in the palette, because the palette is a strip a thumb
+   * flicks through and three destructive-ish buttons hiding at the end of it is how the wrong
+   * one gets pressed.
+   *
+   * The project's pieces get one action — take a copy — and everything else follows from
+   * there. That copy keeps the id, so what comes out of the export lands back in
+   * `stamps.json` over the entry it came from rather than beside it.
+   */
+  private showStampSheet(id: string): void {
+    const stamp = this.stamps.byId(id);
+    if (!stamp) return;
+
+    const origin = this.stamps.origin(id);
+    const shadows = this.stamps.shadows(id);
+
+    this.selected = null;
+    this.sheet.hidden = false;
+    this.sheet.textContent = '';
+
+    const title = document.createElement('div');
+    title.className = 'ed-sheet-title';
+    title.textContent = `${stamp.label} · ${stamp.width}×${stamp.height}`;
+    this.sheet.append(title);
+
+    const note = document.createElement('div');
+    note.className = 'ed-hint';
+    note.textContent =
+      origin !== 'custom'
+        ? `From the ${origin === 'project' ? 'project' : 'defaults'}. Take a copy to edit it; the copy keeps its name, so the export drops back over the original.`
+        : shadows
+          ? `Your copy of a ${shadows === 'project' ? 'project' : 'default'} piece. Exported under the same name, so it replaces the original.`
+          : 'Captured in this browser. Exported with the library.';
+    this.sheet.append(note);
+
+    const close = (): void => {
+      this.sheet.hidden = true;
+    };
+    const action = (
+      label: string,
+      name: string,
+      onClick: () => void,
+      danger = false,
+    ): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset['name'] = name;
+      button.textContent = label;
+      if (danger) button.className = 'ed-danger';
+      button.addEventListener('click', onClick);
+      return button;
+    };
+
+    if (origin !== 'custom') {
+      const actions = document.createElement('div');
+      actions.className = 'ed-row';
+      actions.append(
+        action('Take a copy to edit', 'stamp-fork', () => {
+          this.stamps.override(id);
+          saveStamps(this.stamps);
+          this.flash(`Editing your copy of ${stamp.label}`);
+          this.refreshPalette();
+          this.showStampSheet(id);
+        }),
+        action('Close', 'stamp-close', close),
+      );
+      this.sheet.append(actions);
+      return;
+    }
+
+    const row = document.createElement('label');
+    row.className = 'ed-row';
+    row.append(Object.assign(document.createElement('span'), { textContent: 'name' }));
+    const input = document.createElement('input');
+    input.dataset['prop'] = 'stamp-rename';
+    input.value = stamp.label;
+    input.addEventListener('change', () => {
+      if (!this.stamps.relabel(id, input.value)) return;
+      saveStamps(this.stamps);
+      this.flash(`Renamed to ${input.value.trim()}`);
+      this.refreshPalette();
+    });
+    row.append(input);
+    this.sheet.append(row);
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    actions.append(
+      action('Replace from selection', 'stamp-replace', () => {
+        // Arms the same capture drag, pointed at this stamp: draw the fixed version in the
+        // map, drag a rectangle round it, and this one becomes that.
+        this.tool = 'stamp';
+        this.capturing = true;
+        this.capturingInto = id;
+        this.rectStart = null;
+        this.canvas.preview = null;
+        close();
+        this.flash(`Drag a rectangle to replace ${stamp.label}`);
+        this.refreshPalette();
+        this.refreshToolbar();
+      }),
+      action(
+        shadows ? 'Revert' : 'Delete',
+        'stamp-delete',
+        () => {
+          this.stamps.remove(id);
+          saveStamps(this.stamps);
+          if (!this.stamps.byId(this.stampId)) this.stampId = this.stamps.all[0]?.id ?? '';
+          close();
+          // Named after the revert, not before: the label being reverted *to* is the one
+          // underneath, and saying the name that just went away reads as a failed delete.
+          const revealed = this.stamps.byId(id);
+          this.flash(
+            revealed ? `Reverted to the ${shadows} ${revealed.label}` : `${stamp.label} deleted`,
+          );
+          this.refreshPalette();
+        },
+        true,
+      ),
+      action('Close', 'stamp-close', close),
+    );
+    this.sheet.append(actions);
+  }
+
   /** §9.4 — name what the drag selected, and keep it. */
   private showCaptureSheet(rect: { x0: number; y0: number; x1: number; y1: number }): void {
     const width = Math.abs(rect.x1 - rect.x0) + 1;
@@ -437,9 +570,13 @@ export class EditorApp {
     this.sheet.hidden = false;
     this.sheet.textContent = '';
 
+    const replacing = this.capturingInto ? this.stamps.byId(this.capturingInto) : null;
+
     const title = document.createElement('div');
     title.className = 'ed-sheet-title';
-    title.textContent = `New stamp from ${width}×${height} tiles`;
+    title.textContent = replacing
+      ? `Replace ${replacing.label} with ${width}×${height} tiles`
+      : `New stamp from ${width}×${height} tiles`;
 
     const row = document.createElement('label');
     row.className = 'ed-row';
@@ -447,7 +584,7 @@ export class EditorApp {
     const input = document.createElement('input');
     input.dataset['prop'] = 'stamp-label';
     input.placeholder = 'required';
-    input.value = '';
+    input.value = replacing?.label ?? '';
     row.append(input);
 
     const actions = document.createElement('div');
@@ -462,12 +599,21 @@ export class EditorApp {
         this.flash('A stamp needs a name');
         return;
       }
-      const id = uniqueStampId(label, this.stamps.all.map((stamp) => stamp.id));
-      this.stampId = this.stamps.add(captureStamp(this.doc, rect, id, label));
+      const target = this.capturingInto;
+      if (target) {
+        // §9.4 — replacing keeps the id, which is what lets an edited copy of a committed
+        // piece drop back into `stamps.json` over the entry it came from.
+        this.stamps.replace(target, captureStamp(this.doc, rect, target, label));
+        this.stampId = target;
+      } else {
+        const id = uniqueStampId(label, this.stamps.all.map((stamp) => stamp.id));
+        this.stampId = this.stamps.add(captureStamp(this.doc, rect, id, label));
+      }
       saveStamps(this.stamps);
       this.capturing = false;
+      this.capturingInto = null;
       this.sheet.hidden = true;
-      this.flash(`${label} captured · ${width}×${height}`);
+      this.flash(`${label} ${target ? 'replaced' : 'captured'} · ${width}×${height}`);
       this.refreshPalette();
     });
     const cancel = document.createElement('button');
