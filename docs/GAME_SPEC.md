@@ -859,6 +859,28 @@ The distinction is not a build flag. `window.shadows` is already stripped from p
 builds; this is about what a *development* build shows by default, so that running the game
 and testing the game are different acts rather than the same one.
 
+**The balance tuner.** Debug mode carries a panel of sliders over the values §11's tuning
+pass has to settle — the speeds, the reaction times, the beam and the night — writing them
+into the running game as they move, and remembering them in the browser between sessions.
+It is hidden until asked for even under `?debug`, because two panels at once is most of the
+screen; the readout is the one worth leaving up.
+
+It exists because tuning by editing a constant, rebuilding and replaying the situation gets
+one number tried per minute, and most of these values are only answerable by feel: whether a
+spider's approach is faster than the beam can sweep is not a question arithmetic settles.
+
+Two rules make it safe to have:
+
+- **A player never touches it.** Nothing constructs it without `?debug`, so a browser that
+  has stored overrides still runs a player's game on the spec's numbers. This is the same
+  rule as `?map=` and `?seed=`, for the same reason, and it is what allows the panel to
+  write to the constants the game actually reads rather than to a copy of them.
+- **It finds numbers; it does not hold them.** A value discovered by turning a knob is not
+  a decision until it lands in this spec and in `src/config.ts`. What the browser stores is
+  a working note between sessions, and a run measured against stored overrides is a run
+  measured against nothing anybody agreed to — so the panel marks every value that is off
+  the spec, and can hand back the list of them.
+
 ## 9. Level Editor
 
 The level is authored in a tile editor built into this project and served from the same

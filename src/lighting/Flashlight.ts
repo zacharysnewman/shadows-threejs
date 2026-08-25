@@ -48,40 +48,55 @@ export class Flashlight {
   held = true;
 
   /** Ground distance the beam axis is aimed at; see the declination note above. */
-  private readonly aimDistance: number;
+  private aimDistance = 0;
   /** How far in front of the player the beam is emitted, clear of their own capsule. */
   private readonly originOffset = PLAYER.radius + 0.15;
   /** The target the `SpotLight` was constructed with, kept only so it can be removed. */
   private readonly defaultTarget: THREE.Object3D;
 
   constructor(scene: THREE.Scene) {
-    // Three.js takes the half angle from the beam axis; §4.1 quotes the full cone.
-    const halfAngle = THREE.MathUtils.degToRad(FLASHLIGHT.coneAngleDegrees / 2);
-    const declination = halfAngle + Math.atan2(FLASHLIGHT.mountHeight, FLASHLIGHT.range);
-    this.aimDistance = FLASHLIGHT.mountHeight / Math.tan(declination);
-
-    // The spec's range is how far the beam reaches along the ground; the light's own
-    // range is the slant distance from the mount to that point.
-    const slantRange = Math.hypot(FLASHLIGHT.range, FLASHLIGHT.mountHeight);
-    this.light = new THREE.SpotLight(0xffeecc, FLASHLIGHT.baseIntensity, slantRange);
+    this.light = new THREE.SpotLight(0xffeecc, FLASHLIGHT.baseIntensity);
     this.light.name = 'Flashlight';
-    this.light.angle = halfAngle;
     this.light.penumbra = FLASHLIGHT.penumbra;
     this.light.decay = FLASHLIGHT.decay;
     this.light.castShadow = true;
     this.light.visible = false;
 
-    // §7 — 2048² for the flashlight, with the shadow camera tightened to the beam's range
-    // so the depth range is spent on the 12 m that can actually be lit.
+    // §7 — 2048² for the flashlight. The shadow camera's far plane is tightened to the
+    // beam's reach in `refresh`, so the depth range is spent on what can actually be lit.
     this.light.shadow.mapSize.set(RENDER.flashlightShadowMapSize, RENDER.flashlightShadowMapSize);
     this.light.shadow.camera.near = 0.4;
-    this.light.shadow.camera.far = slantRange;
     this.light.shadow.bias = -0.0006;
     this.light.shadow.normalBias = 0.02;
+
+    this.refresh();
 
     this.defaultTarget = this.light.target;
     scene.add(this.light, this.defaultTarget, this.target);
     this.light.target = this.target;
+  }
+
+  /**
+   * Re-derive everything that comes from §4.1's cone — the half angle, the declination and
+   * the reach — from the current config.
+   *
+   * Called once at construction, and again by the debug tuner when somebody moves the
+   * range or the angle (§8.3). Split out for exactly that: these are the beam's *shape*,
+   * read once at build time, so nothing else would notice them changing.
+   */
+  refresh(): void {
+    // Three.js takes the half angle from the beam axis; §4.1 quotes the full cone.
+    const halfAngle = THREE.MathUtils.degToRad(FLASHLIGHT.coneAngleDegrees / 2);
+    const declination = halfAngle + Math.atan2(FLASHLIGHT.mountHeight, FLASHLIGHT.range);
+    this.aimDistance = FLASHLIGHT.mountHeight / Math.tan(declination);
+
+    // The spec's range is how far the beam reaches along the ground; the light's own range
+    // is the slant distance from the mount to that point.
+    const slantRange = Math.hypot(FLASHLIGHT.range, FLASHLIGHT.mountHeight);
+    this.light.angle = halfAngle;
+    this.light.distance = slantRange;
+    this.light.shadow.camera.far = slantRange;
+    this.light.shadow.camera.updateProjectionMatrix();
   }
 
   get on(): boolean {

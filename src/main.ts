@@ -20,6 +20,7 @@ import { Input } from './core/Input';
 import { Viewport } from './core/Viewport';
 import { DebugOverlay } from './debug/DebugOverlay';
 import { FreeCamera } from './debug/FreeCamera';
+import { TuningPanel } from './debug/TuningPanel';
 import { MapValidationError } from './map/validate';
 import { Hud } from './ui/Hud';
 import { loadNotes } from './world/Notes';
@@ -88,6 +89,13 @@ async function main(): Promise<void> {
   // §8.3 — off by default. `H` still toggles it, but only once debug mode has armed the
   // keys at all, so a player has no way to summon it.
   overlay.setVisible(options.debug);
+  /**
+   * §8.3 — the balance tuner, and only under `?debug`. Built *before* the first run, so
+   * anything it restored from this browser is in the config by the time systems read it —
+   * and never built otherwise, so a player's game runs on the spec's numbers whatever this
+   * browser happens to have stored.
+   */
+  const tuning = options.debug ? new TuningPanel() : null;
   const assets = new AssetLoader();
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
@@ -126,6 +134,7 @@ async function main(): Promise<void> {
     freeCamera,
     hud,
     notes,
+    tuning,
     onRestart: () => void startRun(),
     // §8.1 — from the victory screen. Assigned through a getter rather than captured,
     // because the title screen is built after the shell it is handed to.
