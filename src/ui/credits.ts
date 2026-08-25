@@ -37,14 +37,31 @@ export interface CreditSection {
  * crediting it anyway is a choice; a kit with no stated terms is worth saying louder.
  */
 function artNote(): string | null {
+  const lines: string[] = [];
+
+  // The kits whose authors *require* the credit above, named so the requirement is legible
+  // rather than inferred from a licence string. CC0 crediting is a courtesy and reads like
+  // one; this is a condition, and a screen that does not distinguish them invites somebody
+  // to trim the wrong line.
+  const required = PREFAB_KITS.filter((kit) => kit.attributionRequired && kit.licence !== null);
+  if (required.length > 0) {
+    lines.push(
+      `${required.map((kit) => kit.kit).join(', ')}: used with attribution, as the licence requires.`,
+    );
+  }
+
   const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
   if (unstated.length > 0) {
-    const names = unstated.map((kit) => kit.kit).join(', ');
-    return `${names}: no licence is stated by the author, and terms have not been confirmed.`;
+    lines.push(
+      `${unstated.map((kit) => kit.kit).join(', ')}: no licence is stated by the author, and terms have not been confirmed.`,
+    );
   }
-  return PREFAB_KITS.every((kit) => !kit.attributionRequired)
-    ? 'Released under CC0, which requires no attribution.'
-    : null;
+
+  if (PREFAB_KITS.some((kit) => !kit.attributionRequired)) {
+    lines.push('Everything else is CC0, which requires no attribution.');
+  }
+
+  return lines.length > 0 ? lines.join(' ') : null;
 }
 
 const line = (

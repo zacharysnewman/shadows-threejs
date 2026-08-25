@@ -43,6 +43,20 @@ describe('the credits (§8.2)', () => {
     });
   });
 
+  it('names every kit whose licence requires the credit (§8.2)', () => {
+    // A CC0 credit is a courtesy and reads like one. An attribution-required kit is a
+    // *condition*, and a screen that does not distinguish them invites somebody to trim
+    // the line that could not be trimmed.
+    const [, art] = creditSections();
+    const required = PREFAB_KITS.filter((kit) => kit.attributionRequired && kit.licence !== null);
+
+    for (const kit of required) {
+      expect(art?.lines.some((line) => line.name === kit.kit), `${kit.kit} not listed`).toBe(true);
+      expect(art?.note, `${kit.kit} not named in the note`).toContain(kit.kit);
+    }
+    if (required.length > 0) expect(art?.note).toMatch(/as the licence requires/i);
+  });
+
   it('says on screen when a kit\'s terms have not been confirmed (§8.2)', () => {
     const [, art] = creditSections();
     const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
@@ -52,7 +66,9 @@ describe('the credits (§8.2)', () => {
       // one nobody will answer before release.
       for (const kit of unstated) expect(art?.note).toContain(kit.kit);
       expect(art?.note).toMatch(/not been confirmed/i);
-    } else {
+    }
+    // And CC0 is still said out loud, so the courtesy credits do not read as obligations.
+    if (PREFAB_KITS.some((kit) => !kit.attributionRequired)) {
       expect(art?.note).toMatch(/requires no attribution/i);
     }
   });

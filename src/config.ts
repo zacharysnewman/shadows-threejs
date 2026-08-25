@@ -439,6 +439,21 @@ export const ENEMY = {
   shadowMonster: {
     radius: 0.55,
     height: 2.2,
+    /**
+     * §5.2 — the body that is never drawn.
+     *
+     * It still needs to be a *shape*: the shadow is the creature, and a shadow is only
+     * frightening if its outline is. So the monster gets real art for exactly the reason
+     * the spider does not need any — every pixel of it the player ever sees is a
+     * silhouette on the floor, and a capsule casts a capsule.
+     *
+     * What it does not get is animation. §5.2 is absolute that it is never both moving and
+     * visible, so a walk cycle would be frames nobody can see and a standing temptation to
+     * show them.
+     */
+    character: 'shadow_monster',
+    /** Height of that model as authored, in metres, so it can be scaled to `height`. */
+    characterHeight: 7.77,
     wanderSpeed: 1.4,
     pursueSpeed: 1.8,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
@@ -564,8 +579,23 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     source: 'https://quaternius.itch.io/animated-easy-enemies',
     /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
     attributionRequired: false,
-    /** §5.1's spider. A character rather than a prefab — it is skinned (see §1). */
+    /** §5.2's spider. A character rather than a prefab — it is skinned (see §1). */
     prefabs: ['spider'],
+  },
+  {
+    kit: 'Ghoul',
+    author: 'joney_lol',
+    url: 'https://poly.pizza/m/pEwXEubhxz',
+    /**
+     * CC-BY: the credit is a condition, like the tree's. §5.2 means not one pixel of this
+     * model is ever drawn — it exists to cast a shadow — but "the player never sees it" is
+     * not a licence term, and the author is named on the credits screen either way.
+     */
+    licence: 'CC BY',
+    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    source: 'https://poly.pizza/m/pEwXEubhxz',
+    attributionRequired: true,
+    prefabs: ['shadow_monster'],
   },
 ];
 

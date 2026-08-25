@@ -652,6 +652,12 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     is a second way that is easier than the one hard way the whole design is built on.
   - **Animation: none.** One pose covers it, because no frame of it in motion is ever
     drawn.
+  - **It still needs a *model*.** "Never drawn" is not "never modelled": the shadow is the
+    creature, and a shadow is only frightening if its outline is. A capsule casts a capsule.
+    So the monster gets real art for precisely the reason it needs no animation — every
+    pixel of it the player will ever see is a silhouette on the floor, and the silhouette is
+    the entire visual design. The mesh is loaded with colour and depth writes off and shadow
+    casting on, exactly as the placeholder was.
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a

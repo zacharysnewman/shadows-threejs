@@ -596,6 +596,13 @@ export class Enemy {
 
     this.rig = rig;
     this.object.add(rig.character.scene);
+
+    // §5.2 — the Shadow Monster's body is never drawn, and real art does not change that.
+    // The same treatment the placeholder gets: `colorWrite` and `depthWrite` off rather
+    // than `visible = false`, because an invisible object is skipped by the shadow pass and
+    // the shadow is the entire creature. What the art buys is the *outline*, which is all
+    // the player ever sees of it.
+    if (this.profile.kind === 'ShadowMonster') this.setBodyRevealed(false);
   }
 
   /** Whether this enemy is running on real art rather than on the placeholder. */

@@ -79,35 +79,46 @@ export class EnemyManager {
   }
 
   /**
-   * §5.1 — give the spiders their real bodies once the art has loaded.
+   * §5.1, §5.2 — give every enemy its real body once the art has loaded.
    *
    * Asynchronous and after the fact rather than part of construction, deliberately: a run
    * that waits on a character `.glb` is a run that does not start if the file moved, and
-   * every enemy is fully playable on its placeholder in the meantime. The swap is
-   * invisible except that the legs start meaning something.
+   * every enemy is fully playable on its placeholder in the meantime.
    *
-   * Only the spider. §5.2 is absolute that the Shadow Monster's body is never drawn and
-   * that it is never both moving and visible, so animated art for it would be art nobody
-   * can ever see — and a walk cycle would be a thing to be tempted to show.
+   * Both enemies get art, for opposite reasons. The spider is seen, so it needs a body and
+   * §5.1's speed-driven locomotion. The monster is never seen at all — but the shadow *is*
+   * the creature (§5.2), and a shadow is only frightening if its outline is, so what its
+   * model buys is a silhouette. `Enemy.attachCharacter` is what keeps it undrawn; the
+   * monster's clips, if the art ever has any, stay unplayed because §5.2 is absolute that
+   * it is never both moving and visible.
    */
   async attachCharacters(loader: CharacterLoader): Promise<void> {
-    const spiders = this.enemies.filter((enemy) => enemy.profile.kind === 'SpiderEnemy');
-    if (spiders.length === 0) return;
+    const wanted = [
+      { kind: 'SpiderEnemy' as const, config: ENEMY.spider },
+      { kind: 'ShadowMonster' as const, config: ENEMY.shadowMonster },
+    ];
 
     await Promise.all(
-      spiders.map(async (enemy) => {
-        const character = await loader.load(ENEMY.spider.character);
-        if (character.missing) return;
-        enemy.attachCharacter(
-          new CharacterRig(character, {
-            walkReferenceSpeed: ENEMY.spider.walkClipSpeed,
-            attackSeconds: ENEMY.spider.attack.windUpSeconds,
-            // The kit's spider is authored several metres across; §5.1's is dog-sized, and
-            // `profile.height` is what every other system already believes it to be.
-            scale: enemy.profile.height / ENEMY.spider.characterHeight,
+      wanted.flatMap(({ kind, config }) =>
+        this.enemies
+          .filter((enemy) => enemy.profile.kind === kind)
+          .map(async (enemy) => {
+            const character = await loader.load(config.character);
+            if (character.missing) return;
+            enemy.attachCharacter(
+              new CharacterRig(character, {
+                // Only the spider has a locomotion cycle to drive (§5.1); the monster's
+                // rig holds no clips, so neither number is ever read for it.
+                walkReferenceSpeed:
+                  kind === 'SpiderEnemy' ? ENEMY.spider.walkClipSpeed : config.pursueSpeed,
+                attackSeconds: ENEMY.spider.attack.windUpSeconds,
+                // Both kits are authored several metres tall; `profile.height` is what
+                // every other system already believes each enemy to be.
+                scale: enemy.profile.height / config.characterHeight,
+              }),
+            );
           }),
-        );
-      }),
+      ),
     );
   }
 

@@ -4,11 +4,12 @@
 {"path":".gitignore","kind":"config","lines":6}
 {"path":"CLAUDE.md","kind":"doc","lines":162,"sections":["Working in this repository","The spec is the source of truth","Recording progress","The project map","Constants","Commands","Verifying","Maps","Layout","Conventions"]}
 {"path":"README.md","kind":"doc","lines":250,"sections":["shadows-threejs","Running","Authoring a level","Credits","CI","Deployment","Debug harness","Status","What is left, and it is not code","Layout"]}
-{"path":"docs/GAME_SPEC.md","kind":"doc","lines":1063,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets","8. Shell: Title, Credits & Debug Mode","9. Level Editor"]}
+{"path":"docs/GAME_SPEC.md","kind":"doc","lines":1069,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets","8. Shell: Title, Credits & Debug Mode","9. Level Editor"]}
 {"path":"docs/IMPLEMENTATION_PLAN.md","kind":"doc","lines":1026,"sections":["Implementation Plan","Ordering Principle","Progress","Phase 0 — Scaffold","Phase 1 — Map Pipeline","Phase 2 — Player Controller & Camera","Phase 3 — Lighting Core & Flashlight","Phase 4 — Audio Core","Phase 5 — Navigation & Enemy Base","Phase 6 — Illumination Detection Service","Phase 7 — Spider AI","Phase 8 — Shadow Monster","Phase 9 — Interactables, Power & Objectives","Phase 10 — Run Lifecycle","Phase 11 — Content & Tuning","Phase 12 — Level Editor","Phase 13 — Shell: Title, Credits & Debug Mode","Cross-Cutting"]}
 {"path":"index.html","kind":"config","lines":20}
 {"path":"package.json","kind":"config","lines":26}
 {"path":"public/.nojekyll","kind":"config","lines":1}
+{"path":"public/characters/shadow_monster.glb","kind":"config","lines":201}
 {"path":"public/characters/spider.glb","kind":"config","lines":7377}
 {"path":"public/maps/example/map.json","kind":"map","lines":298,"width":50,"height":50,"tileSize":2,"entities":{"EnvironmentLight":5,"ExitGate":1,"Flashlight":1,"Gate":1,"Note":2,"PlayerSpawn":1,"PowerSwitch":6,"ShadowMonster":1,"SpiderEnemy":3}}
 {"path":"public/maps/example/tileset.json","kind":"tileset","lines":12}
@@ -28,7 +29,7 @@
 {"path":"public/maps/poi-test/tileset.json","kind":"tileset","lines":12}
 {"path":"public/notes.json","kind":"data","lines":11}
 {"path":"public/prefabs/LICENSE-kaykit.txt","kind":"config","lines":33}
-{"path":"public/prefabs/README.md","kind":"doc","lines":40,"sections":["Prefabs","Source","Fitting"]}
+{"path":"public/prefabs/README.md","kind":"doc","lines":70,"sections":["Prefabs","Sources","Fitting"]}
 {"path":"public/prefabs/fence_chainlink.glb","kind":"config","lines":35}
 {"path":"public/prefabs/floor_concrete.glb","kind":"config","lines":36}
 {"path":"public/prefabs/floor_dirt.glb","kind":"config","lines":54}
@@ -56,7 +57,7 @@
 {"path":"src/audio/SoundBank.ts","kind":"source","lines":255,"summary":"Sound assets, and the placeholders standing in for them (§4.3).","exports":["SOUND_NAMES","SoundBank","SoundName","SynthesisedSound","isLooping","synthesise"],"spec":["§3.4","§4.2","§4.3","§5.1","§5.2"]}
 {"path":"src/audio/profiles.ts","kind":"source","lines":57,"summary":"Distance models and the cues they produce (§4.3).","exports":["AUDIO_PROFILES","DistanceProfile","ProfileName","attenuationAt","stereoBias"],"spec":["§3.2","§4.3"]}
 {"path":"src/audio/zzfx.d.ts","kind":"types","lines":20,"summary":"Types for `zzfx` (MIT, Frank Force), which ships as plain JavaScript.","spec":["§4.3"]}
-{"path":"src/config.ts","kind":"source","lines":708,"summary":"Single source of constants, mirroring `docs/GAME_SPEC.md`.","exports":["AMBIENT","AUDIO","CAMERA","CREDITS","ENEMY","ENTITY_DEFAULTS","ENVIRONMENT_LIGHT","FLASHLIGHT","FLICKER","FOG","GRID","HEALTH","ILLUMINATION","INPUT","INTERACTION","MAP_LIMITS","MOON","PLAYER","PREFAB_FIT","PREFAB_FOOTPRINT","PREFAB_KITS","PrefabKit","RENDER","RUN","SIM"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§7","§8.2"]}
+{"path":"src/config.ts","kind":"source","lines":738,"summary":"Single source of constants, mirroring `docs/GAME_SPEC.md`.","exports":["AMBIENT","AUDIO","CAMERA","CREDITS","ENEMY","ENTITY_DEFAULTS","ENVIRONMENT_LIGHT","FLASHLIGHT","FLICKER","FOG","GRID","HEALTH","ILLUMINATION","INPUT","INTERACTION","MAP_LIMITS","MOON","PLAYER","PREFAB_FIT","PREFAB_FOOTPRINT","PREFAB_KITS","PrefabKit","RENDER","RUN","SIM"],"spec":["§1","§2","§3.1","§3.2","§3.3","§3.4","§4","§4.1","§4.2","§4.3","§5","§5.1","§5.2","§5.3","§6","§7","§8.2"]}
 {"path":"src/core/AssetLoader.ts","kind":"source","lines":283,"summary":"Prefab asset loader (§1, §2).","exports":["AssetLoader","Prefab","normalisePrefab"],"spec":["§1","§2","§7"]}
 {"path":"src/core/CharacterLoader.ts","kind":"source","lines":141,"summary":"Animated characters (§1, §5.1) — the loading path a skinned mesh needs.","exports":["Character","CharacterLoader","clipKey"],"spec":["§1","§5.1","§5.3","§7"]}
 {"path":"src/core/Input.ts","kind":"source","lines":441,"summary":"Input abstraction (§3.1, §3.3).","exports":["ACTION_NAMES","ActionName","AimSource","Input","TOUCH_BUTTONS","applyDeadzone"],"spec":["§3.1","§3.2","§3.3","§4.1","§8.3"]}
@@ -81,8 +82,8 @@
 {"path":"src/editor/palette.ts","kind":"source","lines":171,"summary":"What can be placed, and the rules about where (§9.1, §9.2).","exports":["DIRECTIONS","ENTITIES","EntityChoice","FLOOR_TILES","OBSTACLE_TILES","TileChoice","entityChoice","facingIsVisible","missingProperties","mountOptions","normalise"],"spec":["§2","§3.2","§4.1","§9.1","§9.2"]}
 {"path":"src/editor/style.ts","kind":"source","lines":75,"summary":"The editor's styling (§9, Phase 12).","exports":["EDITOR_STYLE"],"spec":["§9"]}
 {"path":"src/enemies/CharacterRig.ts","kind":"source","lines":131,"summary":"An animated body on an enemy (§5.1).","exports":["CharacterRig","CharacterRigOptions"],"spec":["§5.1","§5.3","§7"]}
-{"path":"src/enemies/Enemy.ts","kind":"source","lines":737,"summary":"The enemy both AIs are built on (§5).","exports":["ENEMY_PROFILES","Enemy","EnemyContext","EnemyKind","EnemyProfile","EnemyState","IlluminationSampler","PlayerActions"],"spec":["§1","§2","§4.1","§5","§5.1","§5.2","§5.3","§6","§7"]}
-{"path":"src/enemies/EnemyManager.ts","kind":"source","lines":213,"summary":"Spawning, ticking, and the shared contact check (§2, §5, §5.3).","exports":["ContactListener","EnemyManager","EnemyWorld"],"spec":["§2","§4.1","§4.2","§5","§5.1","§5.2","§5.3","§7"]}
+{"path":"src/enemies/Enemy.ts","kind":"source","lines":744,"summary":"The enemy both AIs are built on (§5).","exports":["ENEMY_PROFILES","Enemy","EnemyContext","EnemyKind","EnemyProfile","EnemyState","IlluminationSampler","PlayerActions"],"spec":["§1","§2","§4.1","§5","§5.1","§5.2","§5.3","§6","§7"]}
+{"path":"src/enemies/EnemyManager.ts","kind":"source","lines":224,"summary":"Spawning, ticking, and the shared contact check (§2, §5, §5.3).","exports":["ContactListener","EnemyManager","EnemyWorld"],"spec":["§2","§4.1","§4.2","§5","§5.1","§5.2","§5.3","§7"]}
 {"path":"src/enemies/Gait.ts","kind":"source","lines":121,"summary":"What an enemy's body is doing, as arithmetic (§5.1, §5.2).","exports":["Gait","GaitProfile","Pose"],"spec":["§4.3","§5.1","§5.2","§5.3"]}
 {"path":"src/enemies/MonsterFootsteps.ts","kind":"source","lines":66,"summary":"The Shadow Monster's footsteps (§5.2, §4.3).","exports":["MonsterFootsteps"],"spec":["§4.3","§5.2","§7"]}
 {"path":"src/enemies/ShadowMonster.ts","kind":"source","lines":252,"summary":"The Shadow Monster (§5.2, §5.3).","exports":["ShadowMonster"],"spec":["§4","§4.2","§5","§5.1","§5.2","§5.3"]}
@@ -114,7 +115,7 @@
 {"path":"src/ui/Hud.ts","kind":"source","lines":161,"summary":"The player-facing UI (§6, §3.3).","exports":["Hud"],"spec":["§3.3","§3.4","§6","§6.2","§6.5"]}
 {"path":"src/ui/RunOverlays.ts","kind":"source","lines":232,"summary":"How a run *feels* and how it ends (§3.4, §5.3, §6).","exports":["DeathCause","RunOverlays","VictorySummary"],"spec":["§3.4","§5.3","§6","§7","§8.1"]}
 {"path":"src/ui/TitleScreen.ts","kind":"source","lines":208,"summary":"The screens outside a run (§8.1): the title, and the credits.","exports":["TitleScreen"],"spec":["§4","§4.3","§6","§8.1","§8.3"]}
-{"path":"src/ui/credits.ts","kind":"source","lines":102,"summary":"What the credits screen says (§8.2).","exports":["CreditLine","CreditSection","creditSections","creditsText"],"spec":["§8.2"]}
+{"path":"src/ui/credits.ts","kind":"source","lines":119,"summary":"What the credits screen says (§8.2).","exports":["CreditLine","CreditSection","creditSections","creditsText"],"spec":["§8.2"]}
 {"path":"src/world/Gates.ts","kind":"source","lines":136,"summary":"Gates swinging open (§6.4).","exports":["Gates"],"spec":["§2","§3.1","§6.4","§7"]}
 {"path":"src/world/Interaction.ts","kind":"source","lines":81,"summary":"Choosing what the context action acts on (§3.3).","exports":["Interactable","TargetQuery","findTarget","isInteractable"],"spec":["§3.1","§3.3","§6"]}
 {"path":"src/world/Notes.ts","kind":"source","lines":69,"summary":"Note bodies (§6.2).","exports":["NoteLibrary","NoteText","loadNotes"],"spec":["§2","§6.2"]}
@@ -143,7 +144,7 @@
 {"path":"tests/prefabs.test.ts","kind":"test","lines":153,"summary":"Fitting third-party prefabs to this project's grid (§1).","spec":["§1","§5.1","§8.2"]}
 {"path":"tests/project-map.test.ts","kind":"test","lines":156,"summary":"`docs/project-map.jsonl` has to be current, and a convention nobody can check is a convention that is wrong within a week.","spec":["§4.1","§5.1","§6"]}
 {"path":"tests/run.test.ts","kind":"test","lines":163,"summary":"How a run ends (§5.3, §6): the outcome state machine, and the health feedback curves it is read through (§3.4).","spec":["§3.1","§3.4","§5","§5.3","§6","§7"]}
-{"path":"tests/shell.test.ts","kind":"test","lines":198,"summary":"The shell (§8): what the credits claim, and what the URL is allowed to turn on.","spec":["§8","§8.2","§8.3","§9","§9.3"]}
+{"path":"tests/shell.test.ts","kind":"test","lines":214,"summary":"The shell (§8): what the credits claim, and what the URL is allowed to turn on.","spec":["§8","§8.2","§8.3","§9","§9.3"]}
 {"path":"tests/simclock.test.ts","kind":"test","lines":65,"summary":"Fixed-timestep simulation clock (§7).","spec":["§7"]}
 {"path":"tests/spider.test.ts","kind":"test","lines":410,"summary":"The spider's light reaction lifecycle and its attack (§5.1, §5.3).","spec":["§3.4","§4.1","§5.1","§5.3"]}
 {"path":"tests/support/setup.ts","kind":"test","lines":19,"summary":"Test-runner setup.","spec":["§4.3"]}
