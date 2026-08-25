@@ -960,6 +960,64 @@ staying inside a footprint whose axes swap on odd turns, four turns returning to
 rotations normalised into 0–359, and the expansion naming nothing that refers back to the
 stamp.
 
+*And afterwards again — making them (§9.4).* The three shipped stamps were definitions in
+the source, which meant a level designer could use a soccer field and could not make one.
+`src/editor/stampLibrary.ts` closes that: a stamp is captured from the map by drawing the
+arrangement with the ordinary tools and dragging a rectangle round it.
+
+Capture rather than a second canvas, because a stamp is made of nothing but tiles and
+entities — that is §9.4's whole point — so the map is already the right surface to author one
+on. A separate stamp editor would have been a second canvas, a second tool set and a second
+undo stack for drawing the same things the same way, and it would have broken the loop that
+makes this worth having: place a stamp, fix what landed, capture the result as a better one.
+
+A capture takes **every cell in the rectangle, empty ones included**, so a yard captured
+with no walls in it clears the walls where it lands. That is what "writes over what is under
+it" has to mean for laying ground to work at all — and it is the one thing a definition can
+say that a capture cannot, since the shipped stamps write single layers and leave the rest
+standing.
+
+*A gap the captures opened.* `expandStamp` rotated an entity's `rotation` and nothing else.
+None of the three shipped stamps carries a `facing`, so nothing noticed; a captured stamp
+routinely does, and `facing` is *which wall a note is mounted on* (§9.2). Rotated without it,
+the note stays pointing at a wall that has moved. Every angle an entity carries now turns
+with the stamp, and because a quarter turn can leave a note facing north — where §3.2's
+camera cannot read it — placement says so rather than laying down an unreadable note.
+
+*The library, in and out.* Captured stamps sit beside the autosaved draft in browser storage
+and survive a reload. The whole set copies to the clipboard as JSON and pastes back the same
+way, which is §9.3's rule applied to stamps: no file system, no download permission, nothing
+that fails on a phone. Import replaces by id rather than appending, so pasting back an export
+gives what was exported and not two of everything, and a captured stamp can never take a
+built-in's id — deleting one would otherwise delete a definition out of the project from a
+text field.
+
+Tiles are run-length encoded per layer over the footprint's row-major index, and the runs are
+printed on one line. That is the difference between an export somebody pastes into a message
+and one they do not: a captured 12 × 10 yard is **340 characters**, against 720 with the runs
+indented per number and some six kilobytes as one object per cell. The codec is lossless in
+both directions, which is the part that matters — a grove that touches one layer has to come
+back touching one layer, or an imported grove would flatten walls the one in the project
+leaves alone.
+
+*Verified in Chromium on a 480 × 860 touch profile, against the dev server.*
+
+| Case | Measured |
+| --- | --- |
+| Stamp palette before any capture | `New from selection`, the three built-ins, `Rotate 0°` — no delete |
+| Capture a 12 × 10 rectangle | sheet reads "New stamp from 12×10 tiles"; saved as `Back yard 12×10` |
+| Palette after | the built-ins, `Back yard 12×10`, `Rotate`, and `Delete Back yard` — the delete offered only for a captured one |
+| Placed at 90° | an 8 × 5 wall block lands as 5 × 8, and the chip reads `Back yard 10×12` |
+| Export | 340 characters, layer 0 as the single run `[0, 120, 1]` and layer 1 as 33 numbers |
+| Reload the browser | `Back yard 12×10` still in the palette |
+| Paste an edited export back | `1 stamp(s) loaded`, listed beside the original rather than replacing it |
+
+`tests/stampLibrary.test.ts` covers the parts a browser cannot show: the capture keeping the
+empty cells, a drag in either direction giving the same stamp, rotation lifted out of the
+properties so there is one copy of it, the codec round-tripping every built-in unchanged, a
+malformed entry costing that entry and not the paste, and the library surviving a store that
+is missing, full or full of nonsense.
+
 *Verified in Chromium against the dev server.* One soccer field placed: 96 dirt tiles
 (12×8), three landmarks, goals at (14,12)@90° and (23,12)@270° — 180° apart, facing each
 other. Rotated and placed a second: 192 dirt tiles, six landmarks, its goals at (27,18)@180°

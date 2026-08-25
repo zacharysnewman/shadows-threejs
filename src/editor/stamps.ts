@@ -45,6 +45,16 @@ export interface StampEntity {
   rotation?: number;
 }
 
+/**
+ * The properties that are angles, and therefore turn when the stamp does (§9.4).
+ *
+ * `rotation` is which way a model points; `facing` is which wall a note or switch is
+ * mounted on (§9.2). Both are degrees clockwise from north, and both are wrong the moment
+ * the thing they describe is rotated and they are not — a note whose `facing` stayed put is
+ * mounted on a wall that is no longer there.
+ */
+const ANGLES = ['rotation', 'facing'] as const;
+
 export interface Stamp {
   id: string;
   label: string;
@@ -124,15 +134,27 @@ export function expandStamp(
     const cell = rotateCell(entity.x, entity.y, stamp.width, stamp.height, quarter);
     const properties: Record<string, string | number | boolean> = { ...entity.properties };
     // §9.4 — the stamp rotates by rotating both its tiles and the entities inside it, and
-    // an entity's own rotation is part of what gets rotated. A goal authored facing south
+    // an entity's own angles are part of what gets rotated. A goal authored facing south
     // faces across the pitch however the pitch is laid down.
     if (entity.rotation !== undefined || quarter !== 0) {
-      properties['rotation'] = (((entity.rotation ?? 0) + quarter * 90) % 360 + 360) % 360;
+      properties['rotation'] = turn(entity.rotation ?? 0, quarter);
+    }
+    // Every other angle it carries turns too. A note's `facing` names the wall it is on,
+    // and that wall has just moved.
+    for (const key of ANGLES) {
+      if (key === 'rotation') continue;
+      const value = entity.properties?.[key];
+      if (value !== undefined) properties[key] = turn(Number(value) || 0, quarter);
     }
     return { type: entity.type, x: originX + cell.x, y: originY + cell.y, properties };
   });
 
   return { tiles, entities };
+}
+
+/** Degrees clockwise from north, turned by quarter turns and normalised (§2). */
+function turn(degrees: number, quarter: number): number {
+  return (((degrees + quarter * 90) % 360) + 360) % 360;
 }
 
 /** True when every cell of the rotated footprint is inside a `width × height` map. */
@@ -223,8 +245,15 @@ const GROVE: Stamp = {
   ],
 };
 
-export const STAMPS: readonly Stamp[] = [SOCCER_FIELD, PLAYGROUND, GROVE];
-
-export function stampById(id: string): Stamp | undefined {
-  return STAMPS.find((stamp) => stamp.id === id);
-}
+/**
+ * The stamps that ship with the project (§9.4).
+ *
+ * Not the whole list the editor offers — captured stamps join them at runtime, and
+ * `StampLibrary` is what merges the two. These are the ones a fresh browser has, and the
+ * ones that cannot be deleted.
+ *
+ * They write single layers, which a definition can express and a capture cannot: laying a
+ * pitch leaves whatever walls are there standing. A stamp captured from the map is the whole
+ * rectangle, both layers, deliberately.
+ */
+export const BUILT_IN_STAMPS: readonly Stamp[] = [SOCCER_FIELD, PLAYGROUND, GROVE];

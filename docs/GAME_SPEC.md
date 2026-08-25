@@ -1101,14 +1101,49 @@ once, because after placement there are no fields, only tiles and entities. A le
 authored once and played many times, and a format that is simple to *read* is worth more
 than one that is convenient to bulk-edit.
 
-- **A stamp is defined in the project, not drawn in the editor.** It is data — a footprint,
-  its tiles per layer, and its entities with their offsets and properties — so a new one is
-  a definition rather than a feature.
+- **A stamp is data** — a footprint, its tiles per layer, and its entities with their
+  offsets and properties. A handful ship with the project; the rest are made in the editor
+  (below). Either way what a stamp *is* is the same thing.
 - **Rotation in quarter turns.** The tile grid is square and the entities inside carry their
-  own `rotation` (§2), so a stamp rotates by rotating both. Free-angle rotation would mean
+  own angles (§2), so a stamp rotates by rotating both. Free-angle rotation would mean
   tiles at an angle, which the grid cannot express.
+- **Every angle an entity carries rotates**, not only `rotation`: a note's `facing` (§9.2)
+  is which wall it is mounted on, and the wall turned with the stamp. A quarter turn can
+  leave a note facing north, where the camera cannot read it — the editor says so on
+  placement rather than silently laying down an unreadable note.
 - **Placement is previewed and clamped.** The footprint is shown before the click, and a
   stamp that would fall outside the map is refused rather than clipped: half a soccer field
   is not a thing anybody meant to place.
 - **Overwriting is allowed and visible.** A stamp writes over what is under it — that is
   what makes it useful for laying ground — and the preview shows what it will cover.
+
+#### Making one
+
+**A stamp is captured from the map, not drawn on a second canvas.** The author draws the
+arrangement in the level with the tools they already have, drags a rectangle round it, and
+names it. What is captured is that rectangle: both layers' tiles and every entity inside,
+measured from its top-left corner.
+
+The map is the right surface to author on because a stamp is made of nothing else — §9.4's
+whole point is that it expands into ordinary tiles and entities. A separate stamp editor
+would be a second canvas, a second set of tools and a second undo stack, to draw the same
+things in the same way. It would also break the loop that makes this worth having: place a
+stamp, adjust what landed, capture the result as a better one.
+
+Capture takes **every cell in the rectangle**, including empty ones. A stamp made from a
+yard with no walls in it clears the walls where it lands, which is what "writes over what is
+under it" has to mean for the ground-laying case to work at all. The stamps that ship with
+the project write single layers, and that is a thing a definition can express and a capture
+cannot: a captured stamp is the whole rectangle, deliberately.
+
+**The library persists in the browser, and exports as JSON.** Captured stamps are kept
+alongside the autosaved draft (§9.3) and survive the browser closing. The whole library
+copies to the clipboard as JSON in one action and is pasted back the same way, so a set of
+stamps can be moved between devices, committed to the repository, or handed to somebody
+else. Same rules as the level export: no file system, no download permission, nothing that
+does not work on a phone.
+
+The exported form is compact rather than pretty. Tiles are run-length encoded per layer over
+the footprint's row-major index, because a captured yard is a few hundred cells that are
+almost all the same and a person is meant to be able to paste the result into a message.
+Encoding is lossless in both directions — a stamp that touches one layer stays that way.

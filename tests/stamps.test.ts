@@ -10,15 +10,15 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  STAMPS,
+  BUILT_IN_STAMPS,
+  type Stamp,
   expandStamp,
   rotateCell,
   rotatedFootprint,
-  stampById,
   stampFits,
 } from '../src/editor/stamps';
 
-const field = stampById('soccer-field')!;
+const field = BUILT_IN_STAMPS.find((stamp) => stamp.id === 'soccer-field')!;
 
 describe('rotating a stamp cell (§9.4)', () => {
   it('leaves everything alone at no rotation', () => {
@@ -147,10 +147,10 @@ describe('where a stamp may be placed (§9.4)', () => {
 
 describe('the stamps themselves (§9.4)', () => {
   it('names each one once and gives each a footprint its contents fit inside', () => {
-    const ids = STAMPS.map((stamp) => stamp.id);
+    const ids = BUILT_IN_STAMPS.map((stamp: Stamp) => stamp.id);
     expect(new Set(ids).size).toBe(ids.length);
 
-    for (const stamp of STAMPS) {
+    for (const stamp of BUILT_IN_STAMPS) {
       expect(stamp.width, `${stamp.id} width`).toBeGreaterThan(0);
       expect(stamp.height, `${stamp.id} height`).toBeGreaterThan(0);
       for (const item of [...stamp.tiles, ...stamp.entities]) {
@@ -165,7 +165,7 @@ describe('the stamps themselves (§9.4)', () => {
   it('only places entity types §2 defines', () => {
     // A stamp writing a type the loader does not know is a stamp that lays down entities
     // the game logs and skips — visible in the editor, invisible in the run.
-    for (const stamp of STAMPS) {
+    for (const stamp of BUILT_IN_STAMPS) {
       for (const entity of stamp.entities) {
         expect(entity.type, `${stamp.id}`).toBe('Landmark');
         expect(entity.properties?.['prefab'], `${stamp.id} prefab`).toBeTruthy();
