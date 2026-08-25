@@ -897,6 +897,35 @@ borrows — so a level drawn with crates would have played without them. All sev
 defined by every tileset, and `tests/editor.test.ts` fails naming the map and the id if that
 stops being true.
 
+*Added afterwards — stamps (§9.4).* A fifth tool: `src/editor/stamps.ts` holds the
+definitions and the expansion, `EditorApp` holds the palette, the quarter-turn button and
+the preview. Three stamps to start — a soccer field, a playground and a grove — each of them
+the arrangement of §2 landmarks that motivated the tier in the first place.
+
+The design decision is that a stamp is a way of *drawing*, not a kind of thing a level
+contains: placing one expands it into ordinary tiles and entities, and `map.json` has no
+trace a field was ever placed. Move a goal afterwards and it is a field with a goal moved,
+not a broken instance. That keeps §2 flat — a stamp surviving into the file would be a
+container, and the walkability derivation, the pathfinder, the audit, the validator and undo
+would each have had to learn about containers. The cost, and it is real, is that there is no
+way to change every field in a level at once; a level is authored once and played many
+times, and a format simple to *read* is worth more than one convenient to bulk-edit.
+
+Rotation is quarter turns, because the grid is square and free angles would mean tiles at an
+angle. It rotates the entities' own `rotation` as well as their positions, which is the part
+worth testing: the pitch's goals face each other, and positions alone would give a field
+with both goals facing the same way. `tests/stamps.test.ts` covers the expansion — cells
+staying inside a footprint whose axes swap on odd turns, four turns returning to identity,
+rotations normalised into 0–359, and the expansion naming nothing that refers back to the
+stamp.
+
+*Verified in Chromium against the dev server.* One soccer field placed: 96 dirt tiles
+(12×8), three landmarks, goals at (14,12)@90° and (23,12)@270° — 180° apart, facing each
+other. Rotated and placed a second: 192 dirt tiles, six landmarks, its goals at (27,18)@180°
+and (27,27)@0°, so the facing survives the turn. A drop off the left edge placed nothing
+(§9.4 refuses rather than clipping). Undo took each field back in exactly one step, and the
+second undo returned the document to its one spawn entity.
+
 *Verified in Chromium on an iPhone 13 profile (390×844, DPR 3, touch events), against the dev
 server.* Paint places one tile and erase clears it. A rectangle dragged (4,4)→(9,8) leaves
 nothing until release, then 30 tiles; one undo removes all 30 and one redo restores them. A

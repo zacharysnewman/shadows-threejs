@@ -26,8 +26,15 @@ import {
   normalise,
 } from './palette';
 import { EDITOR_STYLE } from './style';
+import {
+  STAMPS,
+  expandStamp,
+  rotatedFootprint,
+  stampById,
+  stampFits,
+} from './stamps';
 
-type Tool = 'paint' | 'erase' | 'rect' | 'entity';
+type Tool = 'paint' | 'erase' | 'rect' | 'entity' | 'stamp';
 
 /** Where a draft lives between sessions (§9.3). Not a save system; the export is the level. */
 const AUTOSAVE_KEY = 'shadows.editor.draft';
@@ -40,6 +47,9 @@ export class EditorApp {
   private readonly root: HTMLDivElement;
 
   private tool: Tool = 'paint';
+  /** §9.4 — which stamp is armed, and how far it is turned. */
+  private stampId: string = STAMPS[0]?.id ?? '';
+  private stampTurns = 0;
   private layer = 1;
   private tileId = 2;
   private entityType = 'SpiderEnemy';
@@ -108,10 +118,10 @@ export class EditorApp {
       return element;
     };
 
-    const tools: Tool[] = ['paint', 'erase', 'rect', 'entity'];
+    const tools: Tool[] = ['paint', 'erase', 'rect', 'entity', 'stamp'];
     const toolButtons = tools.map((tool) =>
       button(
-        { paint: 'Paint', erase: 'Erase', rect: 'Rect', entity: 'Place' }[tool],
+        { paint: 'Paint', erase: 'Erase', rect: 'Rect', entity: 'Place', stamp: 'Stamp' }[tool],
         () => {
           this.tool = tool;
           this.rectStart = null;
@@ -188,6 +198,37 @@ export class EditorApp {
       return;
     }
 
+    if (this.tool === 'stamp') {
+      for (const stamp of STAMPS) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ed-chip';
+        const size = rotatedFootprint(stamp, this.stampTurns);
+        button.textContent = `${stamp.label} ${size.width}×${size.height}`;
+        button.dataset['stamp'] = stamp.id;
+        button.classList.toggle('is-on', stamp.id === this.stampId);
+        button.addEventListener('click', () => {
+          this.stampId = stamp.id;
+          this.refreshPalette();
+        });
+        this.palette.append(button);
+      }
+
+      // §9.4 — quarter turns, because the grid is square and free angles would mean tiles
+      // at an angle, which it cannot express.
+      const turn = document.createElement('button');
+      turn.type = 'button';
+      turn.className = 'ed-chip';
+      turn.textContent = `Rotate ${this.stampTurns * 90}°`;
+      turn.dataset['stamp'] = 'rotate';
+      turn.addEventListener('click', () => {
+        this.stampTurns = (this.stampTurns + 1) % 4;
+        this.refreshPalette();
+      });
+      this.palette.append(turn);
+      return;
+    }
+
     for (const tile of this.layer === 0 ? FLOOR_TILES : OBSTACLE_TILES) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -255,8 +296,54 @@ export class EditorApp {
       case 'entity':
         if (phase === 'start') this.placeOrSelect(x, y);
         break;
+
+      case 'stamp':
+        this.previewStamp(x, y);
+        if (phase === 'start') this.placeStamp(x, y);
+        break;
     }
     this.canvas.selected = this.tool === 'entity' ? { x, y } : null;
+  }
+
+  /** §9.4 — show the footprint before the click, so what it covers is visible first. */
+  private previewStamp(x: number, y: number): void {
+    const stamp = stampById(this.stampId);
+    if (!stamp) return;
+    const size = rotatedFootprint(stamp, this.stampTurns);
+    this.canvas.preview = { x0: x, y0: y, x1: x + size.width - 1, y1: y + size.height - 1 };
+  }
+
+  /**
+   * §9.4 — expand the stamp into ordinary tiles and entities, in one edit.
+   *
+   * One `doc.edit` call, so one undo step: the placement was one action and takes one
+   * action to take back. After that the contents are ordinary map content — move a goal and
+   * it is a field with a goal moved, not a broken instance of anything.
+   *
+   * Refused rather than clipped when it would fall off the map: half a soccer field is not
+   * a thing anybody meant to place.
+   */
+  private placeStamp(x: number, y: number): void {
+    const stamp = stampById(this.stampId);
+    if (!stamp) return;
+    if (!stampFits(stamp, x, y, this.stampTurns, this.doc.width, this.doc.height)) {
+      this.flash(`${stamp.label} does not fit there`);
+      return;
+    }
+
+    const expanded = expandStamp(stamp, x, y, this.stampTurns);
+    this.doc.edit((draft) => {
+      for (const tile of expanded.tiles) {
+        const layer = draft.layers[tile.layer];
+        if (layer) layer[tile.y * draft.width + tile.x] = tile.id;
+      }
+      // A stamp writes over what is under it (§9.4) — that is what makes it useful for
+      // laying ground — and an entity it covers goes with the tile it stood on.
+      const covered = new Set(expanded.entities.map((e) => `${e.x},${e.y}`));
+      draft.entities = draft.entities.filter((e) => !covered.has(`${e.x},${e.y}`));
+      draft.entities.push(...expanded.entities);
+    });
+    this.flash(`${stamp.label} placed`);
   }
 
   private placeOrSelect(x: number, y: number): void {
