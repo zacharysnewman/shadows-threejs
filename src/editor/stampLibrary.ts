@@ -288,25 +288,67 @@ export function stampsFromJson(raw: unknown): Stamp[] {
 // --- The library ------------------------------------------------------------
 
 /**
- * The stamps the editor offers: the project's, then the ones captured here.
+ * The stamps the editor offers, from three places (§9.4).
  *
- * Built-ins cannot be removed or overwritten — a captured stamp that took a built-in's id
- * would delete a definition from a text field, so ids collide by being renamed rather than
- * by winning.
+ * - **The project's**, from `public/stamps.json`. The level's pieces, committed.
+ * - **The defaults**, from source, so a fresh clone has something to place and a failed load
+ *   still leaves a working palette. A project stamp of the same id replaces one.
+ * - **The captured**, from this browser. Deletable, and the only ones the export writes.
+ *
+ * Only the last can be deleted, and only the last is exported. Deleting a project stamp
+ * from the palette would be undone by the next reload, and exporting one would mean
+ * importing it back as a duplicate of itself.
  */
 export class StampLibrary {
   private customStamps: Stamp[];
+  private projectStamps: Stamp[] = [];
 
   constructor(custom: Stamp[] = []) {
     this.customStamps = custom;
   }
 
+  /** The defaults, with the project's replacing any of the same id, then the captured. */
   get all(): Stamp[] {
-    return [...BUILT_IN_STAMPS, ...this.customStamps];
+    const shipped = BUILT_IN_STAMPS.map(
+      (stamp) => this.projectStamps.find((project) => project.id === stamp.id) ?? stamp,
+    );
+    const extra = this.projectStamps.filter(
+      (project) => !BUILT_IN_STAMPS.some((stamp) => stamp.id === project.id),
+    );
+    return [...shipped, ...extra, ...this.customStamps];
   }
 
   get custom(): readonly Stamp[] {
     return this.customStamps;
+  }
+
+  get project(): readonly Stamp[] {
+    return this.projectStamps;
+  }
+
+  /**
+   * Take the project's pieces, once they have loaded.
+   *
+   * A captured stamp whose id one of them now uses is renamed rather than shadowed. Two
+   * entries with one id would make `byId` answer for whichever came first, so Delete would
+   * remove a stamp the designer was not looking at — and the one they *were* looking at is
+   * the one that cannot be deleted.
+   */
+  setProject(stamps: readonly Stamp[]): void {
+    this.projectStamps = [...stamps];
+    const taken = new Set([
+      ...BUILT_IN_STAMPS.map((stamp) => stamp.id),
+      ...this.projectStamps.map((stamp) => stamp.id),
+    ]);
+    this.customStamps = this.customStamps.map((stamp) => {
+      if (!taken.has(stamp.id)) {
+        taken.add(stamp.id);
+        return stamp;
+      }
+      const id = uniqueStampId(stamp.id, taken);
+      taken.add(id);
+      return { ...stamp, id };
+    });
   }
 
   byId(id: string): Stamp | undefined {
@@ -341,7 +383,10 @@ export class StampLibrary {
   merge(incoming: readonly Stamp[]): number {
     let count = 0;
     for (const stamp of incoming) {
-      if (BUILT_IN_STAMPS.some((built) => built.id === stamp.id)) {
+      const shipped =
+        BUILT_IN_STAMPS.some((built) => built.id === stamp.id) ||
+        this.projectStamps.some((project) => project.id === stamp.id);
+      if (shipped) {
         this.add(stamp);
       } else {
         const at = this.customStamps.findIndex((existing) => existing.id === stamp.id);
@@ -374,6 +419,26 @@ export function loadStamps(store: Storage | null = safeStorage()): StampLibrary 
     return new StampLibrary(raw ? stampsFromJson(JSON.parse(raw)) : []);
   } catch {
     return new StampLibrary();
+  }
+}
+
+/**
+ * §9.4 — the level's pieces, from `public/stamps.json`.
+ *
+ * Returns an empty list rather than throwing, on every failure there is: no file, a static
+ * host answering an unknown path with `index.html` and a 200, a half-written commit. A
+ * missing or malformed file costs the pieces in it and never the editor.
+ *
+ * No content-type probe, unlike the loaders for `.glb` (§1): parsing JSON *is* the reliable
+ * test here, because a page of HTML fails it immediately and for free.
+ */
+export async function loadProjectStamps(url: string): Promise<Stamp[]> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    return stampsFromJson(await response.json());
+  } catch {
+    return [];
   }
 }
 

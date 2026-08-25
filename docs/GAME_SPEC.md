@@ -1096,10 +1096,15 @@ This is what keeps §2 flat. A stamp that survived into the file would be a cont
 the walkability derivation, the pathfinder, the reachability audit, the validator and undo
 itself would each need to understand it. Expanding at author time means none of them do.
 
-The cost is real and is the right one: there is no way to change every field in a level at
-once, because after placement there are no fields, only tiles and entities. A level is
-authored once and played many times, and a format that is simple to *read* is worth more
-than one that is convenient to bulk-edit.
+**A stamp is a piece, not a brush.** The library is a catalogue of distinct set-pieces — the
+soccer field, the playground, the loading bay — and a level places roughly one of each. They
+are the parts a level is assembled from, which is why they are worth keeping and naming, and
+why one is authored carefully rather than stamped in rows.
+
+That is also what makes expanding on placement cost nothing. The obvious objection to it —
+there is no way to change every field in a level at once, because after placement there are
+no fields — assumes a level with many fields in it. There is one. Whatever "editing every
+instance" would have bought is a saving of one edit.
 
 - **A stamp is data** — a footprint, its tiles per layer, and its entities with their
   offsets and properties. A handful ship with the project; the rest are made in the editor
@@ -1138,10 +1143,32 @@ cannot: a captured stamp is the whole rectangle, deliberately.
 
 **The library persists in the browser, and exports as JSON.** Captured stamps are kept
 alongside the autosaved draft (§9.3) and survive the browser closing. The whole library
-copies to the clipboard as JSON in one action and is pasted back the same way, so a set of
-stamps can be moved between devices, committed to the repository, or handed to somebody
-else. Same rules as the level export: no file system, no download permission, nothing that
-does not work on a phone.
+copies to the clipboard as JSON in one action and is pasted back the same way. Same rules as
+the level export: no file system, no download permission, nothing that does not work on a
+phone.
+
+**A piece worth keeping goes in the project.** `public/stamps.json` holds the level's
+pieces, in exactly the format the export produces, and the editor loads it as part of the
+library. Committing a stamp there is what makes it permanent: present on every device, in
+every browser, surviving cleared site data, and visible in a diff when it changes. Browser
+storage is where a stamp lives while it is being worked out; the file is where it lives once
+it is a piece of the level.
+
+Three sources, in one list, and the precedence between them is the whole of the rule:
+
+- **The project's** — `public/stamps.json`, loaded at startup. Cannot be deleted from the
+  editor, because the file would put it straight back.
+- **The defaults** — the handful defined in source, so a fresh clone has something to place
+  and a failed load still leaves a working palette. A project stamp of the same id replaces
+  one: the file is the level's, and the defaults are only where it starts.
+- **The captured** — this browser's, deletable, and the only ones the export writes out. The
+  project's are in the repository already, and exporting them would mean importing them back
+  as duplicates of themselves.
+
+The file loads asynchronously and the editor does not wait for it. A level designer who opens
+the editor gets the tools immediately and the project's pieces a moment later, which is the
+right way round: a missing or malformed `stamps.json` costs the pieces in it and never the
+editor.
 
 The exported form is compact rather than pretty. Tiles are run-length encoded per layer over
 the footprint's row-major index, because a captured yard is a few hundred cells that are

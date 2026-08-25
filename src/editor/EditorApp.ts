@@ -32,6 +32,7 @@ import {
   StampLibrary,
   captureStamp,
   formatStampFile,
+  loadProjectStamps,
   loadStamps,
   saveStamps,
   stampsFromJson,
@@ -107,6 +108,17 @@ export class EditorApp {
 
     this.refreshPalette();
     this.frame();
+
+    // §9.4 — the level's pieces, without waiting for them. The editor is usable the moment
+    // it opens and the project's stamps appear a moment later, which is the right way round:
+    // a slow or missing `stamps.json` costs the pieces in it and never the tools.
+    void loadProjectStamps(`${import.meta.env.BASE_URL}stamps.json`).then((stamps) => {
+      if (stamps.length === 0) return;
+      this.stamps.setProject(stamps);
+      if (!this.stamps.byId(this.stampId)) this.stampId = this.stamps.all[0]?.id ?? '';
+      saveStamps(this.stamps);
+      if (this.tool === 'stamp') this.refreshPalette();
+    });
   }
 
   // --- Chrome --------------------------------------------------------------

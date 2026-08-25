@@ -1000,7 +1000,39 @@ both directions, which is the part that matters — a grove that touches one lay
 back touching one layer, or an imported grove would flatten walls the one in the project
 leaves alone.
 
-*Verified in Chromium on a 480 × 860 touch profile, against the dev server.*
+*And the third source — `public/stamps.json`.* Captured stamps live in one browser, so a
+piece was only ever as permanent as its site data. The editor now loads the level's pieces
+from a file in the repository, in exactly the format the export produces, so a stamp pasted
+into a conversation and committed is present on every device and visible in a diff when it
+changes.
+
+Three sources and two rules, which is the whole of it. A project stamp replaces a default of
+the same id, in place — the file is the level's and the defaults are only where it starts, so
+committing a better soccer field is committing `soccer-field` rather than a `soccer-field-2`
+sitting beside the one it supersedes. And only captured stamps are deletable and exported:
+deleting a project stamp would be undone by the next reload, and exporting one would mean
+importing it back as a duplicate of itself.
+
+The load is asynchronous and nothing waits for it, so a slow, missing or malformed file costs
+the pieces in it and never the editor. There is no content-type probe of the kind the `.glb`
+loaders need (§1), because parsing JSON *is* the reliable test: a static host answering an
+unknown path with `index.html` and a 200 fails it immediately and for free.
+
+*A collision that would have deleted the wrong thing.* A captured stamp can share an id with
+a project stamp that arrives afterwards — the designer captured `loading-bay` before the file
+naming one landed. Two entries with one id make `byId` answer for whichever comes first, so
+Delete removes a stamp the designer is not looking at, and the one they *are* looking at is
+the one that cannot be deleted. Captured stamps are renamed on load instead.
+
+*Sent back to the spec.* §9.4 argued that expanding on placement costs the ability to change
+every field in a level at once. It does, and the cost is nothing: a stamp is a *piece* — the
+soccer field, the playground, the loading bay — and a level places roughly one of each. The
+objection assumed a level with many fields in it. There is one.
+
+*Verified in Chromium on a 480 × 860 touch profile, against the dev server.* A
+`stamps.json` holding one `Loading bay 6×4` appeared in the palette after the defaults,
+offered no Delete when selected, placed as the wall its runs describe, and did not appear in
+the export.
 
 | Case | Measured |
 | --- | --- |

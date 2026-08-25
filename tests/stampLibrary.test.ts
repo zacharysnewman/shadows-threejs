@@ -17,6 +17,7 @@ import {
   decodeRuns,
   formatStampFile,
   encodeRuns,
+  loadProjectStamps,
   loadStamps,
   saveStamps,
   stampsFromJson,
@@ -258,6 +259,90 @@ describe('the library (§9.4)', () => {
     expect(uniqueStampId('Back yard', ['back-yard'])).toBe('back-yard-2');
     expect(uniqueStampId('Back yard', ['back-yard', 'back-yard-2'])).toBe('back-yard-3');
     expect(uniqueStampId('!!!', [])).toBe('stamp');
+  });
+});
+
+describe('the project\'s pieces (§9.4)', () => {
+  const piece = (id: string, label = id): Stamp => ({
+    id, label, width: 1, height: 1,
+    tiles: [{ layer: 0, x: 0, y: 0, id: 1 }], entities: [],
+  });
+
+  it('joins the defaults rather than replacing the palette', () => {
+    const library = new StampLibrary();
+    library.setProject([piece('loading-bay', 'Loading bay')]);
+    expect(library.all.map((s) => s.id)).toEqual([
+      ...BUILT_IN_STAMPS.map((s) => s.id),
+      'loading-bay',
+    ]);
+  });
+
+  it('replaces a default of the same id, in place', () => {
+    // The file is the level's and the defaults are only where it starts, so committing a
+    // better soccer field is committing `soccer-field` — not `soccer-field-2` sitting beside
+    // the one it was meant to supersede.
+    const library = new StampLibrary();
+    library.setProject([piece('soccer-field', 'The pitch')]);
+    expect(library.all.length).toBe(BUILT_IN_STAMPS.length);
+    expect(library.byId('soccer-field')?.label).toBe('The pitch');
+  });
+
+  it('is not deletable and is not exported', () => {
+    const library = new StampLibrary();
+    library.setProject([piece('loading-bay')]);
+    library.remove('loading-bay');
+    expect(library.byId('loading-bay')).toBeDefined();
+    expect((library.toJson().stamps as { id: string }[]).length).toBe(0);
+  });
+
+  it('renames a captured stamp whose id the project has taken', () => {
+    // Two entries with one id would make `byId` answer for whichever came first: Delete
+    // would remove a stamp the designer was not looking at, and the one they *were* looking
+    // at is the one that cannot be deleted.
+    const library = new StampLibrary();
+    library.add(piece('loading-bay', 'Mine'));
+    library.setProject([piece('loading-bay', 'Theirs')]);
+
+    const ids = library.all.map((s) => s.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(library.byId('loading-bay')?.label).toBe('Theirs');
+    expect(library.custom[0]?.label).toBe('Mine');
+    expect(library.custom[0]?.id).not.toBe('loading-bay');
+  });
+
+  it('treats a paste of a project stamp as a new capture, not an overwrite', () => {
+    const library = new StampLibrary();
+    library.setProject([piece('loading-bay')]);
+    library.merge([piece('loading-bay', 'Edited')]);
+    expect(library.byId('loading-bay')?.label).toBe('loading-bay');
+    expect(library.custom.length).toBe(1);
+    expect(library.custom[0]?.id).not.toBe('loading-bay');
+  });
+
+  it('loads the file, and shrugs off every way it can be missing', async () => {
+    const ok = stampsToJson([piece('loading-bay', 'Loading bay')]);
+    const responses: Record<string, () => Promise<Response>> = {
+      // The file, as committed.
+      good: async () => new Response(JSON.stringify(ok), { status: 200 }),
+      // A static host answering an unknown path with the app's own index.html and a 200,
+      // which is the failure that looks like success (§1).
+      html: async () => new Response('<!doctype html><html></html>', { status: 200 }),
+      missing: async () => new Response('', { status: 404 }),
+      offline: async () => {
+        throw new Error('network');
+      },
+    };
+
+    const original = globalThis.fetch;
+    try {
+      for (const [name, respond] of Object.entries(responses)) {
+        globalThis.fetch = respond as typeof fetch;
+        const stamps = await loadProjectStamps('/stamps.json');
+        expect(stamps.length, name).toBe(name === 'good' ? 1 : 0);
+      }
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 
