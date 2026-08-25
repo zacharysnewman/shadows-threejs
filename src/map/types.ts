@@ -69,6 +69,7 @@ export const ENTITY_TYPES = [
   'Note',
   'PowerSwitch',
   'EnvironmentLight',
+  'Landmark',
   'Gate',
   'ExitGate',
   'SpiderEnemy',
@@ -124,6 +125,20 @@ export interface EnvironmentLightEntity extends EntityBase {
   intensity: number;
 }
 
+/**
+ * §2 — decoration you navigate by: one model of any size at any angle.
+ *
+ * The entity carries the prefab name rather than a tile id because that is the whole point
+ * of the tier — a tile is 2 m and has no rotation, and a landmark is neither.
+ */
+export interface LandmarkEntity extends EntityBase {
+  type: 'Landmark';
+  /** `.glb` prefab name, as in a tileset entry (§2). */
+  prefab: string;
+  /** Degrees clockwise from north (§2's convention). */
+  rotation: number;
+}
+
 export interface GateEntity extends EntityBase {
   type: 'Gate';
   id: string;
@@ -153,6 +168,7 @@ export type MapEntity =
   | NoteEntity
   | PowerSwitchEntity
   | EnvironmentLightEntity
+  | LandmarkEntity
   | GateEntity
   | ExitGateEntity
   | SpiderEnemyEntity

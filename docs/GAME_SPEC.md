@@ -31,6 +31,13 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
   one (a door inside its wall), and a height to scale to, when a module's own is wrong for
   this game (a 4 m wall where the level wants 3 m). Both are look decisions and neither is
   something a loader should guess.
+
+  **A prefab may be more than one material.** Most are one — a wall is brick and nothing
+  else — but a model can be several things at once, and a tree is a brown trunk and green
+  leaves. The loader keeps every distinct material and merges the geometry into a group per
+  material, rather than picking one and rendering the whole model in it. A single-material
+  prefab stays exactly one draw call, which is what §7's instancing budget is counted in;
+  a two-material prefab costs two, and that is the price of the model being two things.
 - **Audio:** `THREE.PositionalAudio` for spatial 3D sound, crucial for tracking invisible
   threats.
 
@@ -113,6 +120,70 @@ alongside the map. The map file carries no art or collision information itself.
   runtime (§6). The resulting boolean grid is the A\* input and is rebuilt on any
   walkability change.
 
+### Three ways a map says "put a thing here"
+
+A tile is 2 m. Most of the world is that size or repeats at it, but a goal is 3 m wide, a
+net is over ten, and neither faces the same way twice. Rather than teach tiles about size
+and rotation, the format has three tiers, and only the middle one is about geometry bigger
+than a tile:
+
+- **A tile**, for anything that is one tile and repeats: floor, wall, fence, a crate. Solid
+  tiles merge into the largest rectangles they can (§2, colliders), which is what keeps a
+  twenty-tile wall run cheap. Tiles have no rotation and will not get one — a rotating tile
+  would break the merge, and everything that wants rotation wants size too.
+- **A `Landmark` entity**, for one model of any size at any angle. Entities already carry
+  `rotation` and already sit at continuous world positions rather than on the grid, which
+  is exactly what a 5.35-tile net at 40° needs and what a tile could never express. Its
+  footprint comes from the prefab's own bounds, so the collision follows the art.
+- **A stamp**, for an arrangement of the two: a soccer field is pitch tiles, two goals and
+  a net. Stamps are an *authoring* idea and live in the editor (§9.4). They expand into
+  ordinary tiles and entities when placed, and a map file has no trace of them.
+
+That last split is load-bearing. A stamp that survived into the map format would be a
+container, and every system that reads a map would have to learn about containers — the
+walkability derivation, pathfinding, the reachability audit, the validator, the editor's
+own undo. Expanding at author time costs the editor a feature and costs the game nothing.
+
+### Landmarks
+
+**A landmark is something you navigate by.** In a map where the beam reaches 12 m and fog
+takes the rest (§4), one dark yard looks like the next, and a player who cannot tell where
+they have already been is not exploring, they are lost. A landmark is a distinctive piece
+of geometry placed so that catching it in the beam answers "where am I".
+
+That is its whole job. Landmarks have no behaviour: nothing is triggered by reaching one,
+they are not objectives, and they hold nothing. What they change is whether the map is
+legible, which is a level-design property rather than a mechanic.
+
+- **Big enough to be recognised from a beam's width.** A landmark that needs to be walked
+  around to identify is not doing the job — the player is meant to sweep past it and know.
+- **Distinct from each other.** Two landmarks of the same prefab in one region tell the
+  player nothing they did not already know; the second one is decoration.
+- **Placed off routes, not on them.** A landmark is a thing to *see*, and one standing in a
+  corridor is a thing to walk around. Its footprint blocks the player like any other solid
+  geometry (below), so this is a real cost and not a preference.
+- **Not a substitute for a route.** The map still has to be navigable in the dark by its
+  layout; landmarks make a legible map memorable, not an illegible map passable.
+
+**Footprint.** A landmark occupies the ground its model occupies. The loader takes the
+prefab's own bounding box — real metres, as authored — rotates it, and contributes it as a
+collider like any solid tile; the walkability grid follows from that, so enemies path
+around a landmark exactly as they path around a wall. Deriving from the mesh rather than
+from an authored number means a swapped model moves its own collision, which matters
+because the alternative is a number that is right until the art changes and silently wrong
+afterwards.
+
+Some models lie, and the spec allows saying so: a basketball hoop's backboard overhangs
+ground a player can walk under, and a footprint taken from its bounds would block a square
+of empty yard. A prefab may declare an override footprint, in the same place the other two
+things prefab normalisation cannot infer already live (§1). The override is the exception
+and needs a reason; the derived box is the default.
+
+**Height is not footprint.** A landmark's collider is its ground area, whatever its height.
+A 4 m hoop and a 1 m bench block the same way, and both fade when they come between the
+camera and the player (§3.2's occluder rule) — which a tall landmark will exercise harder
+than anything else on the map, since it is the tallest geometry the game places.
+
 ### Entity Type Reference
 
 Every `type` the loader accepts, with its `properties` contract. Unknown types are logged
@@ -132,6 +203,7 @@ objects and a map should not fail to load over an unwritten field.
 | `EnvironmentLight` | `groupId` (required), `radius` (default `6` m), `intensity` (default `1.0`) | Off until its group is powered. |
 | `Gate` | `id`, `targetId` (both required), `locked` (default `true`) | Rotates open when triggered. |
 | `ExitGate` | `id` (required), `locked` (default `true`), `requiredSwitches` (default `3`) | Win objective. |
+| `Landmark` | `prefab` (required), `rotation` (deg, default `0`) | Decoration you navigate by; any size, any angle. Footprint from the prefab's bounds. See Landmarks above. |
 | `SpiderEnemy` | — | Spawns at tile centre. |
 | `ShadowMonster` | — | Spawns at tile centre. |
 
@@ -147,6 +219,13 @@ the run has nowhere to start, so there is nothing to degrade to.
 Multiple `EnvironmentLight` entities may share a `groupId`; a `PowerSwitch` toggles the
 whole group at once. Entity `x`/`y` are grid coordinates and are converted to world space
 by the mapping above, offset to the tile centre.
+
+A `Landmark` naming a `prefab` that does not exist is logged and skipped rather than
+standing a placeholder box in the yard. This is the one place a missing prefab is *not*
+worth a placeholder: everywhere else a placeholder keeps a map legible while the art lands,
+but a landmark whose whole purpose is to be recognisable is worse as an anonymous grey box
+than as nothing at all — it would be a distinctive thing that is not distinctive, which is
+the one failure the feature cannot survive.
 
 Rotations are degrees clockwise from north, where north is `-Z` — screen-up under the
 un-rotated camera (§3.2) — so `90` faces east. The convention has to be written down
@@ -939,3 +1018,37 @@ A switch has no such constraint: it needs to be reachable (§3.3), not legible.
   is a debug affordance (§8.3) and is not a route a player can reach.
 - **Autosave.** Work in progress survives the browser being closed. It is not a save
   system: the exported file is the level, and the autosave is a draft.
+
+### 9.4 Stamps
+
+A stamp is an arrangement of tiles and entities placed in one action — a soccer field is a
+rectangle of pitch tiles, a goal at each end, a net. It is a way of drawing, not a kind of
+thing a level contains.
+
+**A stamp expands on placement and leaves nothing behind.** What lands in the map is the
+tiles and the entities, exactly as if they had been drawn one at a time: no grouping, no
+reference back to the stamp, nothing in `map.json` that says a field was ever placed. Undo
+takes the whole placement back as one step, because it was one action — but the moment it
+is placed, a stamp's contents are ordinary map content and are edited as such. Move one
+goal and it is a field with a goal moved, not a broken instance of anything.
+
+This is what keeps §2 flat. A stamp that survived into the file would be a container, and
+the walkability derivation, the pathfinder, the reachability audit, the validator and undo
+itself would each need to understand it. Expanding at author time means none of them do.
+
+The cost is real and is the right one: there is no way to change every field in a level at
+once, because after placement there are no fields, only tiles and entities. A level is
+authored once and played many times, and a format that is simple to *read* is worth more
+than one that is convenient to bulk-edit.
+
+- **A stamp is defined in the project, not drawn in the editor.** It is data — a footprint,
+  its tiles per layer, and its entities with their offsets and properties — so a new one is
+  a definition rather than a feature.
+- **Rotation in quarter turns.** The tile grid is square and the entities inside carry their
+  own `rotation` (§2), so a stamp rotates by rotating both. Free-angle rotation would mean
+  tiles at an angle, which the grid cannot express.
+- **Placement is previewed and clamped.** The footprint is shown before the click, and a
+  stamp that would fall outside the map is refused rather than clipped: half a soccer field
+  is not a thing anybody meant to place.
+- **Overwriting is allowed and visible.** A stamp writes over what is under it — that is
+  what makes it useful for laying ground — and the preview shows what it will cover.

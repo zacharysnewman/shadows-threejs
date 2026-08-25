@@ -81,6 +81,8 @@ export const MAP_LIMITS = {
  * the map.
  */
 export const ENTITY_DEFAULTS = {
+  /** `Landmark.rotation`, degrees clockwise from north (§2). */
+  landmarkRotation: 0,
   /** `PlayerSpawn.rotation`, degrees. */
   playerSpawnRotation: 0,
   /**
@@ -461,24 +463,85 @@ export const ENEMY = {
 } as const;
 
 /**
- * §1 — where the prefab art came from.
+ * §1, §8.2 — where the prefab art came from. One entry per kit, in the order the credits
+ * list them.
  *
- * CC0 asks for nothing, so this is not a compliance record; it is a provenance one. The
- * question that gets asked later is "can we ship this, and where do we get the next
- * version", and the answer has to live somewhere that is not somebody's memory.
+ * A provenance record before it is a compliance one. The question that gets asked later is
+ * "can we ship this, and where do we get the next version", and the answer has to live
+ * somewhere that is not somebody's memory — which is exactly the case a kit with *no*
+ * stated licence makes: `licence: null` is a fact about the kit, not a gap in this file,
+ * and the credits screen says so rather than implying permission nobody gave.
  */
-export const PREFAB_SOURCE = {
-  kit: 'KayKit — Dungeon Remastered 1.0',
-  author: 'Kay Lousberg',
-  url: 'https://kaylousberg.com',
-  licence: 'CC0 1.0',
-  licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
-  /** The author's own repository, pinned, so the exact files can be re-fetched. */
-  repo: 'KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
-  commit: 'b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07',
-  /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
-  attributionRequired: false,
-} as const;
+export interface PrefabKit {
+  kit: string;
+  author: string;
+  url: string;
+  /** The licence as the author states it, or null where the source states none. */
+  licence: string | null;
+  licenceUrl: string | null;
+  /** Where the exact files can be re-fetched, pinned if the source allows pinning. */
+  source: string;
+  /** Whether crediting is required. Unknown counts as required — see `licence: null`. */
+  attributionRequired: boolean;
+  /** Which prefabs came from this kit, by name. */
+  prefabs: readonly string[];
+}
+
+export const PREFAB_KITS: readonly PrefabKit[] = [
+  {
+    kit: 'KayKit — Dungeon Remastered 1.0',
+    author: 'Kay Lousberg',
+    url: 'https://kaylousberg.com',
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source:
+      'KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0@b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07',
+    /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
+    attributionRequired: false,
+    prefabs: [
+      'fence_chainlink',
+      'floor_concrete',
+      'floor_dirt',
+      'gate_wood',
+      'prop_crate',
+      'wall_brick',
+    ],
+  },
+  {
+    kit: 'Playground Props Collection',
+    author: 'Stanisko',
+    url: 'https://stanisko.itch.io/playground-props-collection-low-poly-game-ready',
+    /**
+     * The pack ships no licence file and the download states no terms, so there is nothing
+     * to record here but that. Treated as attribution-required and named on the credits
+     * screen, which is the conservative reading and the only one available: an unstated
+     * licence is not a permissive one, it is an unanswered question.
+     *
+     * §8.2 — outstanding before release. The terms have to be confirmed with the author,
+     * and until they are, this is the entry that says nobody has.
+     */
+    licence: null,
+    licenceUrl: null,
+    source: 'https://stanisko.itch.io/playground-props-collection-low-poly-game-ready',
+    attributionRequired: true,
+    prefabs: ['prop_goal', 'prop_hoop', 'prop_net', 'prop_slide', 'prop_swing'],
+  },
+  {
+    kit: '3D Low Poly Tree',
+    author: 'yurikokuun',
+    url: 'https://yurikokuun.itch.io/3d-low-poly-tree',
+    /**
+     * The author requires credit, which is why `attributionRequired` is true and why the
+     * credits screen names them (§8.2). Unlike CC0, this one is a condition rather than a
+     * courtesy: shipping without the line is shipping in breach.
+     */
+    licence: 'Free, attribution required',
+    licenceUrl: null,
+    source: 'https://yurikokuun.itch.io/3d-low-poly-tree',
+    attributionRequired: true,
+    prefabs: ['prop_tree'],
+  },
+];
 
 /**
  * §1 — the two things prefab normalisation cannot infer.
@@ -492,6 +555,22 @@ export const PREFAB_SOURCE = {
  * exactly as authored, which is the common case and what a kit built to the 2 m standard
  * needs.
  */
+/**
+ * §2 — the ground a landmark blocks, where its own bounds are the wrong answer.
+ *
+ * A landmark's footprint is derived from its mesh, which is right almost always and is the
+ * only version that survives the art changing. The exception is a model whose bounds are
+ * not what a player walks into: a basketball hoop is a pole with a backboard three metres
+ * up, and its bounding box would fence off a square of empty yard under the board.
+ *
+ * Half-extents in metres, before rotation. An entry here needs a reason of that kind —
+ * "the mesh overhangs ground you can walk under" — and not a preference about difficulty.
+ */
+export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
+  /** Pole and base only; the backboard and rim are overhead (§2). */
+  prop_hoop: { hx: 0.3, hz: 0.3 },
+};
+
 export const PREFAB_FIT: Readonly<
   Record<string, { node?: string; fitHeight?: number }>
 > = {

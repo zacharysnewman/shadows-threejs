@@ -17,7 +17,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CREDITS, PREFAB_SOURCE } from '../src/config';
+import { CREDITS, PREFAB_KITS } from '../src/config';
 import { ACTION_NAMES } from '../src/core/Input';
 import { parseShellOptions } from '../src/core/options';
 import { creditSections, creditsText } from '../src/ui/credits';
@@ -29,14 +29,32 @@ describe('the credits (§8.2)', () => {
     expect(first?.lines[0]?.name).toBe('Zack Newman');
   });
 
-  it('names the art, its author and its licence, in that order after design', () => {
+  it('names every art kit, its author and its licence, in order after design', () => {
     const [, art] = creditSections();
     expect(art?.heading).toBe('Art');
-    expect(art?.lines[0]?.name).toBe(PREFAB_SOURCE.kit);
-    expect(art?.lines[0]?.by).toBe(PREFAB_SOURCE.author);
-    expect(art?.lines[0]?.licence).toBe(PREFAB_SOURCE.licence);
-    // §8.2 — CC0 asks for nothing, and the screen says so rather than implying it had to.
-    expect(art?.note).toMatch(/requires no attribution/i);
+    expect(art?.lines.length).toBe(PREFAB_KITS.length);
+
+    PREFAB_KITS.forEach((kit, index) => {
+      expect(art?.lines[index]?.name).toBe(kit.kit);
+      expect(art?.lines[index]?.by).toBe(kit.author);
+      // §8.2 — a kit with no stated terms must not render as a blank licence, which reads
+      // as "none needed". It says what is actually true: nobody has stated one.
+      expect(art?.lines[index]?.licence).toBe(kit.licence ?? 'Licence not stated');
+    });
+  });
+
+  it('says on screen when a kit\'s terms have not been confirmed (§8.2)', () => {
+    const [, art] = creditSections();
+    const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
+
+    if (unstated.length > 0) {
+      // The note has to name them. An unanswered licence question that is not visible is
+      // one nobody will answer before release.
+      for (const kit of unstated) expect(art?.note).toContain(kit.kit);
+      expect(art?.note).toMatch(/not been confirmed/i);
+    } else {
+      expect(art?.note).toMatch(/requires no attribution/i);
+    }
   });
 
   it('credits every package the project actually ships or builds with (§8.2)', () => {

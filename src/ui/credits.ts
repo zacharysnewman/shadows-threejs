@@ -10,7 +10,7 @@
  * Pure, and with no DOM in it, so what the screen *claims* can be checked without one.
  */
 
-import { CREDITS, PREFAB_SOURCE } from '../config';
+import { CREDITS, PREFAB_KITS } from '../config';
 
 export interface CreditLine {
   /** What is being credited. */
@@ -32,6 +32,21 @@ export interface CreditSection {
   note: string | null;
 }
 
+/**
+ * §8.2 — the sentence under the art list. CC0 requiring nothing is worth saying, since
+ * crediting it anyway is a choice; a kit with no stated terms is worth saying louder.
+ */
+function artNote(): string | null {
+  const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
+  if (unstated.length > 0) {
+    const names = unstated.map((kit) => kit.kit).join(', ');
+    return `${names}: no licence is stated by the author, and terms have not been confirmed.`;
+  }
+  return PREFAB_KITS.every((kit) => !kit.attributionRequired)
+    ? 'Released under CC0, which requires no attribution.'
+    : null;
+}
+
 const line = (
   name: string,
   by: string | null = null,
@@ -50,19 +65,13 @@ export function creditSections(): CreditSection[] {
     },
     {
       heading: 'Art',
-      lines: [
-        line(
-          PREFAB_SOURCE.kit,
-          PREFAB_SOURCE.author,
-          PREFAB_SOURCE.licence,
-          PREFAB_SOURCE.url,
-          null,
-        ),
-      ],
-      // §8.2 — the licence asks for nothing. Saying so is the point of crediting it anyway.
-      note: PREFAB_SOURCE.attributionRequired
-        ? null
-        : 'Released under CC0, which requires no attribution.',
+      lines: PREFAB_KITS.map((kit) =>
+        // §8.2 — a kit whose terms nobody has confirmed says so on the screen. "Licence not
+        // stated" is the honest line, and it is worth a player seeing: it is the only thing
+        // that keeps an unanswered question from reading as a settled one.
+        line(kit.kit, kit.author, kit.licence ?? 'Licence not stated', kit.url, null),
+      ),
+      note: artNote(),
     },
     {
       heading: 'Code',

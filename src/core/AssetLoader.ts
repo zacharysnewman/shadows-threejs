@@ -31,7 +31,11 @@ import { PREFAB_FIT } from '../config';
 export interface Prefab {
   name: string;
   geometry: THREE.BufferGeometry;
-  material: THREE.Material;
+  /**
+   * One material, or one per geometry group where the model is several things at once — a
+   * tree's trunk and its leaves. `THREE.Mesh` and `THREE.InstancedMesh` both take either.
+   */
+  material: THREE.Material | THREE.Material[];
   /** Height in metres, used for collider extents and for sitting the mesh on the floor. */
   height: number;
   /** True when no `.glb` was found and a placeholder stands in. */
@@ -162,10 +166,25 @@ export class AssetLoader {
     return this.fromScene(name, gltf.scene, tileSize);
   }
 
+  /**
+   * Flatten a loaded scene into one geometry and the material(s) that go with it.
+   *
+   * **A prefab may have more than one material.** Most of the kit is one — a wall is brick
+   * and nothing else — and taking the first one was right until a model arrived that is two
+   * things at once: a tree is a brown trunk and green leaves, and keeping only the first
+   * rendered the whole tree brown. So the geometries are merged into *groups*, one per
+   * distinct material, and the prefab carries the material array those groups index.
+   *
+   * Single-material prefabs keep the old path exactly — one geometry, no groups, one
+   * material — because that is the common case and because §7 counts draw calls: a grouped
+   * geometry costs one draw call per group, and a wall has no reason to pay for two.
+   */
   private fromScene(name: string, scene: THREE.Object3D, tileSize: number): Prefab {
     const fit = PREFAB_FIT[name] ?? {};
-    const geometries: THREE.BufferGeometry[] = [];
-    let material: THREE.Material | null = null;
+    /** Distinct materials in first-seen order; the index is the group's material index. */
+    const materials: THREE.Material[] = [];
+    /** Geometries per material index, so the merge can build groups in that order. */
+    const byMaterial = new Map<number, THREE.BufferGeometry[]>();
 
     scene.updateMatrixWorld(true);
 
@@ -177,26 +196,61 @@ export class AssetLoader {
     }
     (root ?? scene).traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
+      const nodeMaterial = Array.isArray(node.material) ? node.material[0] : node.material;
+      if (!nodeMaterial) return;
+
+      let index = materials.indexOf(nodeMaterial);
+      if (index === -1) {
+        index = materials.length;
+        materials.push(nodeMaterial);
+      }
+
       const geometry = node.geometry.clone();
       geometry.applyMatrix4(node.matrixWorld);
-      geometries.push(geometry);
-      if (!material) {
-        material = Array.isArray(node.material) ? node.material[0] ?? null : node.material;
-      }
+      const bucket = byMaterial.get(index);
+      if (bucket) bucket.push(geometry);
+      else byMaterial.set(index, [geometry]);
     });
 
-    if (geometries.length === 0 || !material) {
+    if (materials.length === 0) {
       this.missing.add(name);
       return this.makePlaceholder(name, tileSize);
     }
 
-    const merged =
-      geometries.length === 1
-        ? (geometries[0] as THREE.BufferGeometry)
-        : (BufferGeometryUtils.mergeGeometries(geometries, false) ?? geometries[0]!);
+    // In material order, so group `i` indexes `materials[i]`.
+    const ordered = materials.map((_, index) => byMaterial.get(index) ?? []);
+    const flattened = ordered.flat();
+    if (flattened.length === 0) {
+      this.missing.add(name);
+      return this.makePlaceholder(name, tileSize);
+    }
+
+    let merged: THREE.BufferGeometry;
+    if (materials.length === 1) {
+      merged =
+        flattened.length === 1
+          ? (flattened[0] as THREE.BufferGeometry)
+          : (BufferGeometryUtils.mergeGeometries(flattened, false) ?? flattened[0]!);
+    } else {
+      // One merged geometry per material first, so the grouped merge produces exactly one
+      // group per material rather than one per source mesh.
+      const perMaterial = ordered.map(
+        (group) =>
+          (group.length === 1
+            ? group[0]
+            : BufferGeometryUtils.mergeGeometries(group, false)) as THREE.BufferGeometry,
+      );
+      merged = BufferGeometryUtils.mergeGeometries(perMaterial, true) ?? perMaterial[0]!;
+    }
 
     const height = normalisePrefab(merged, name, fit.fitHeight);
-    return { name, geometry: merged, material, height, placeholder: false };
+    return {
+      name,
+      geometry: merged,
+      material: materials.length === 1 ? materials[0]! : materials,
+      height,
+      placeholder: false,
+    };
   }
 
   private makePlaceholder(name: string, tileSize: number): Prefab {
@@ -220,7 +274,7 @@ export class AssetLoader {
     for (const pending of this.cache.values()) {
       void pending.then((prefab) => {
         prefab.geometry.dispose();
-        prefab.material.dispose();
+        for (const material of [prefab.material].flat()) material.dispose();
       });
     }
     this.cache.clear();

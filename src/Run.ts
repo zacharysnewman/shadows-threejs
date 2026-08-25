@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three';
-import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_SOURCE, SIM } from './config';
+import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_KITS, SIM } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -509,12 +509,14 @@ export async function createRun(
   if (loaded.geometry.placeholders.length > 0) {
     overlay.addRow('assets', () => {
       const missing = loaded.geometry.placeholders.length;
-      // §1 — the art's provenance, on screen. CC0 requires no attribution; this is here so
-      // the question "where did this come from" has an answer without a git archaeology
-      // session, and so a run on placeholder boxes is obvious rather than assumed.
-      return missing === 0
-        ? `${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`
-        : `${missing} placeholder prefab(s) · rest: ${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`;
+      // §1 — the art's provenance, on screen, so "where did this come from" has an answer
+      // without a git archaeology session, and so a run on placeholder boxes is obvious
+      // rather than assumed. A kit whose terms nobody has confirmed is named as such here
+      // too: the readout is where a developer would notice, and noticing is the point.
+      const kits = PREFAB_KITS.map(
+        (kit) => `${kit.kit} (${kit.licence ?? 'licence not stated'})`,
+      ).join(' · ');
+      return missing === 0 ? kits : `${missing} placeholder prefab(s) · rest: ${kits}`;
     });
   }
 

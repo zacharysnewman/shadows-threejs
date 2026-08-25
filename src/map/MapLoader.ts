@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { AssetLoader } from '../core/AssetLoader';
 import { buildColliders, buildFloorGapColliders } from './colliders';
+import { buildLandmarks, type LandmarkSet } from './Landmarks';
 import { EntityRegistry } from './EntityRegistry';
 import { buildMapGeometry, type MapGeometry } from './MapGeometry';
 import { parseMap, parseTileset } from './validate';
@@ -25,6 +26,8 @@ export interface LoadedMap {
   colliders: readonly BoxCollider[];
   grid: WalkabilityGrid;
   entities: EntityRegistry;
+  /** §2 — the map's landmarks, their meshes and their footprints. */
+  landmarks: LandmarkSet;
   /** Static geometry root; add this to the scene. */
   root: THREE.Group;
   /** Map extent in world space, for camera clamping (§3.2). */
@@ -65,6 +68,20 @@ export async function loadMap(
   }
 
   const geometry = await buildMapGeometry(data, tileset, loader);
+  const entities = new EntityRegistry(data.entities);
+
+  // §2 — landmarks are the one piece of static geometry that is not a tile, so they are
+  // built here rather than in `buildMapGeometry`: they come from the entity list, and their
+  // footprints have to exist before the colliders and the grid are derived.
+  const landmarks = await buildLandmarks(data, entities.byType('Landmark'), loader);
+  landmarks.root.name = 'Landmarks';
+  geometry.root.add(landmarks.root);
+  for (const name of landmarks.missing) {
+    const warning = `landmark prefab "${name}" is missing; those landmarks are skipped`;
+    data.warnings.push(warning);
+    console.warn(`[map] ${dir}map.json — ${warning}`);
+  }
+
   // Colliders take their height from the prefab that was actually instanced, so a debug
   // box always matches the geometry the player will hit. Holes in the floor get barriers
   // of their own (§2, §3.1): they are unwalkable, and what is unwalkable for pathfinding
@@ -72,9 +89,11 @@ export async function loadMap(
   const colliders = [
     ...buildColliders(data, tileset, (id) => geometry.tileHeights.get(id) ?? 3),
     ...buildFloorGapColliders(data, tileset),
+    ...landmarks.colliders,
   ];
-  const grid = new WalkabilityGrid(data, tileset);
-  const entities = new EntityRegistry(data.entities);
+  // The grid takes the landmarks' tiles as *static* blockers, so what the pathfinder
+  // refuses and what the colliders refuse are the same ground (§2).
+  const grid = new WalkabilityGrid(data, tileset, landmarks.blocked);
 
   // Anything that has to stand somewhere is worth checking against the derived grid: an
   // enemy spawned inside a wall has no path out, and it is far cheaper to catch here than
@@ -103,9 +122,11 @@ export async function loadMap(
     colliders,
     grid,
     entities,
+    landmarks,
     root: geometry.root,
     bounds,
     dispose() {
+      landmarks.dispose();
       geometry.dispose();
       // `MapGeometry.dispose` empties the group; taking it out of the scene is the
       // caller's, and a run that leaves it behind leaves an empty group per life.

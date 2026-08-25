@@ -8,8 +8,9 @@
  */
 
 import * as THREE from 'three';
+import { readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { PREFAB_FIT, PREFAB_SOURCE } from '../src/config';
+import { PREFAB_FIT, PREFAB_KITS } from '../src/config';
 import { normalisePrefab } from '../src/core/AssetLoader';
 
 /** A box with explicit bounds, standing in for a loaded prefab's merged geometry. */
@@ -111,12 +112,37 @@ describe('normalisePrefab (§1)', () => {
   });
 });
 
-describe('prefab provenance (§1)', () => {
-  it('records where the art came from, since CC0 will not remind anyone', () => {
-    expect(PREFAB_SOURCE.licence).toBe('CC0 1.0');
-    expect(PREFAB_SOURCE.attributionRequired).toBe(false);
-    // A pinned commit, not a branch: the exact files have to be re-fetchable.
-    expect(PREFAB_SOURCE.commit).toMatch(/^[0-9a-f]{40}$/);
-    expect(PREFAB_SOURCE.repo).toContain('/');
+describe('prefab provenance (§1, §8.2)', () => {
+  it('records where every kit came from, since a licence will not remind anyone', () => {
+    expect(PREFAB_KITS.length).toBeGreaterThan(0);
+    for (const kit of PREFAB_KITS) {
+      expect(kit.kit, 'kit name').not.toBe('');
+      expect(kit.author, `${kit.kit} author`).not.toBe('');
+      // Somewhere the exact files can be fetched again from.
+      expect(kit.source, `${kit.kit} source`).toMatch(/\S/);
+      expect(kit.prefabs.length, `${kit.kit} claims no prefabs`).toBeGreaterThan(0);
+    }
+  });
+
+  it('treats an unstated licence as attribution-required, not as permission', () => {
+    // The conservative reading, and the only one available: a kit that states no terms has
+    // not granted any. Recording it as `false` would be inventing a permission.
+    for (const kit of PREFAB_KITS) {
+      if (kit.licence === null) {
+        expect(kit.attributionRequired, `${kit.kit} states no licence`).toBe(true);
+      }
+    }
+  });
+
+  it('claims each prefab exactly once, and claims the ones that are shipped', () => {
+    // The failure this catches: art added to `public/prefabs/` and credited nowhere, which
+    // is how a kit ends up shipped with nobody able to say whose it is.
+    const claimed = PREFAB_KITS.flatMap((kit) => kit.prefabs);
+    expect(new Set(claimed).size, 'a prefab claimed by two kits').toBe(claimed.length);
+
+    const shipped = readdirSync(new URL('../public/prefabs/', import.meta.url))
+      .filter((file) => file.endsWith('.glb'))
+      .map((file) => file.replace(/\.glb$/, ''));
+    expect([...claimed].sort()).toEqual([...shipped].sort());
   });
 });
