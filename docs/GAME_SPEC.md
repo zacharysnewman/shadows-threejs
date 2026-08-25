@@ -309,15 +309,41 @@ ground actually covered: standing still the gait stops, and the sprint is the sa
 hurried rather than a second animation. The same rule §5.1 states for the spider, and what
 makes a sprint look like one without asking the art for a second clip.
 
-Art that ships without a skeleton gets one derived from its mesh — a hip, and a leg either
-side — with vertices shared through a band at the waist so the join bends rather than
-shears. It is an approximation, and the thing that makes it good enough is §3.2's camera:
-from 14 m up a leg is a few pixels and only the cadence reads. A model too flat or too empty
-to be a standing figure is left unrigged and static, because a bad rig is worse than none.
-An authored skeleton, when the art has one, is used instead and this is dead code.
+Art that ships without a skeleton gets one derived from its mesh — a hip, a leg either side,
+and an arm either side — with vertices shared through a band at the waist and another at the
+shoulder so the joins bend rather than shear. It is an approximation, and the thing that
+makes it good enough is §3.2's camera: from 14 m up a limb is a few pixels and only the
+cadence reads. A model too flat or too empty to be a standing figure is left unrigged and
+static, and one with nothing beyond the shoulder line is given no arms rather than two made
+up, because a bad rig is worse than none. An authored skeleton, when the art has one, is used
+instead and this is dead code.
+
+**The arms carry the torch, in both hands.** They reach for the point §4.1 emits the beam
+from, solved for rather than posed: the hips rise and fall twice a stride, and an arm at a
+fixed rotation would swing the hand through several centimetres a step while the light it is
+supposed to be holding sat perfectly still. Two hands rather than one because it costs
+nothing and settles a question the mesh cannot answer — a bounding box knows which side of
+centre a vertex is on but not which side is the model's right, so a one-handed carry would be
+picking a hand by guess. With no torch in hand (§6.1) the arms simply hang.
+
+An arm that cannot reach straightens along the line to the target and stops there; it never
+stretches. The kit's arms are about half a metre on a 1.8 m body and §4.1's mount is far
+enough forward that this is the ordinary case rather than the edge case, which is why §4.1
+draws the torch from the hand out to the beam rather than parenting it to either.
 
 - Hips at **48%** of the model's height, blended over a band **12%** of it; feet **12%** of
   the model's width either side of centre.
+- An arm is whatever sits above the hips and more than **33%** of the model's half-width off
+  its centreline, blended over a band **12%** of the half-width — a standing figure's arms
+  are the outermost thing above its waist, and that is the only thing in a bounding box that
+  separates a sleeve from a ribcage. The shoulder and the hand are the centroids of the
+  innermost and outermost **15%** of that run, rather than single vertices: one vertex is a
+  fingertip or a shoulder pad, and either puts the joint centimetres out on an arm this
+  short. The elbow is halfway between them, blended over **30%** of the arm's length, and it
+  is pushed **80%** towards straight down and **20%** straight out from the body — a target
+  and two bone lengths leave it free anywhere on a circle, and nothing but this decides
+  which part of that circle it sits on.
+- Arms that are holding nothing hang **14°** out from vertical.
 - One stride is **0.9 s**, the legs swinging **±22°** and the body lifting **1.2%** of its
   height twice per stride — once over each foot.
 - The clip is authored at the walk speed, so it plays at ground speed ÷ **3.0 m/s** and
@@ -448,6 +474,43 @@ environmental lamps cast; the ambient and the moon do not. A shadow on the groun
 therefore information in itself — something is being lit — and it is what the Shadow Monster
 is built on (§5.2).
 
+**A beam is visible in the air, and only where it is casting.** The haze inside a cone is
+drawn, so a torch is a beam reaching a pool rather than a pool that appears a metre away
+from the hand holding it. It is the strongest thing tying the light to the player, and under
+§3.2's camera — which sees the cone side-on, from above and behind — it is most of what
+makes the beam read as a beam.
+
+It is presentation and nothing else. The illumination query (§4.1) never sees it, no
+light-reactive enemy responds to it, and no amount of it makes a dark corner readable: it
+adds a little glow to the air along a beam that was already there.
+
+Two rules keep it honest, and both are the same rule §4 states about shadows:
+
+- **The visible beam is cut by exactly what cuts the shadows.** An obstacle standing in the
+  cone takes the haze behind it as well as the light on the floor, so the airborne beam
+  ends at the wall it is pointed at rather than glowing on the far side. This applies to the
+  Shadow Monster too, and gains it a tell rather than costing it one: a monster in the beam
+  is a wedge of missing haze in the air as well as a shadow on the floor, which is the same
+  shadow, seen twice. It is still nothing at all outside a light (§5.2).
+- **Only a shadow-casting light has one.** Cutting the haze needs the depth the light
+  already drew for its shadows, and a light with no shadow map has nothing to cut it with —
+  an uncut cone is a beam that shines through walls. So the visible beam is spent on exactly
+  the lights §7 gives shadows to: the flashlight always, and whichever two lamps hold §7's
+  environmental slots. A lamp's arrives and leaves over a fraction of a second as those
+  slots change hands, so walking across a room does not flash cones on and off across it.
+
+The beam dims with the light it belongs to: the battery's falloff (§4.1), §5.2's
+interference, a lamp's flicker (§4.2). A light emitting nothing has no haze in it either,
+which is the same rule §4.1's query is written on.
+
+How thick the air is: **0.05** per metre of lit beam for the flashlight, **0.018** for a
+lamp, and a lamp's fades in and out over **0.4 s** as §7's slots change hands. The lamp's is
+the thinner of the two and by more than the numbers suggest, because a lamp is four metres
+straight up over a six-metre pool and the camera looks almost straight down its cone: what
+would be a shaft seen side-on is a wash seen end-on, and a wash over every working light
+turns a powered room into fog. §4's dark is the point, and the torch is what the game is
+played by.
+
 The ambient stays *under* the flashlight, and that ceiling is what keeps the beam a
 mechanic: a silhouette in the gloom cannot be identified, the floor cannot be read for a
 route, and a note, a switch or a pick-up cannot be found without light on it. The beam is
@@ -459,6 +522,14 @@ no surface, and no light-reactive enemy responds to it. It applies to whatever b
 player has, art or placeholder: a kit's own colours go to black under §4's ambient like
 anything else, so the allowance is a property of *being the player*, not of a particular
 mesh.
+
+**And it is a fraction of the body's own colours, not a colour of its own.** A flat lift is
+the same shade wherever it lands, and at §4's ambient it is most of what an unlit body is:
+a red shirt, bare arms and black shorts all come out the one pale grey, and the player reads
+as a ghost rather than as a person. Lifting each surface by a fraction of *its own* colour is
+what a very dim light falling on them would do — which is what the allowance is pretending to
+be — so the body keeps its colours and its internal contrast, and internal contrast is most
+of what makes a shape read as a figure at all. The lift is **9%** of each surface's colour.
 
 **The player's body faces their aim, never their movement.** §3.1 makes the two
 independent, and that independence is the game's signature move — backing away with the beam
@@ -495,6 +566,21 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   where the near edge of the pool falls, whether a torch carried off-centre reads as being
   held or as being broken — and there is no arithmetic that settles any of it. Hence knobs
   rather than a pose fixed in code.
+- **The torch is a thing in the hand**, not a light with no source: a barrel a few
+  centimetres across, never drawn shorter than **12 cm**, with a lens at the far end that the
+  beam comes out of. The lens is as bright as the beam it is throwing, so a battery running
+  down dims the thing the player is holding as well as the pool on the floor. It casts no
+  shadow: a torch that shadowed its own cone would put a black core down the middle of the
+  beam and a bite out of the pool, which is a rendering artefact rather than anything anybody
+  has seen a torch do.
+
+  **The hand goes to the light; the light never goes to the hand.** Where the beam is
+  emitted is settled by the five values above, and by nothing about the body. The arms reach
+  for that point (§3.1) and the barrel is drawn from wherever the hand got to out to it — so
+  a body whose arms are too short for the reach still holds a torch that meets its own beam,
+  no part of the mechanic depends on the proportions of a particular kit, and moving any of
+  those five knobs takes the hand with it. Solving it the other way round would hang the beam
+  off the walk cycle's bob, which is the mounting rule broken by an animation.
 - **Toggle:** `F` / gamepad `X` / the on-screen action button. A toggle is refused outright,
   with no state change, once the battery is flat.
 - **Battery Drain (mechanic):**
@@ -984,6 +1070,15 @@ constraint and not a polish-phase concern.
   mean a light is on something.
 - Shadow map 2048×2048 for the flashlight, 1024×1024 for environmental lights; PCF soft
   shadows; shadow camera near/far tightened to the light's range to keep depth precision.
+- One visible beam (§4) per shadow-casting light and no more — the flashlight's plus the two
+  environmental slots, so three draw calls at most. Each is a cone of the light's own shape,
+  raymarched per pixel against that light's shadow map: **24** steps for the flashlight and
+  **14** for a lamp, whose cone is far wider and covers far more of the screen for far less
+  of the picture. Bounded three ways — it starts where the ray enters the cone, stops at the
+  light's range, and stops at the floor, which receives shadows but does not cast them and so
+  cannot stop it itself. Samples are dithered in screen space; a march this short bands into
+  visible shells otherwise, and the dither is a rendering detail with no bearing on a
+  replayed run (Cross-Cutting: determinism).
 - Filmic tone mapping. The scene is a handful of small, close lights against near-black
   (§4) — exactly the range that clips. Without a tone curve the middle of a light pool goes
   flat white and takes the detail with it, including the shadows the game is played by.
@@ -1069,8 +1164,10 @@ builds; this is about what a *development* build shows by default, so that runni
 and testing the game are different acts rather than the same one.
 
 **The balance tuner.** Debug mode carries a panel of sliders over the values §11's tuning
-pass has to settle — the speeds, the reaction times, the beam and the night — writing them
-into the running game as they move, and remembering them in the browser between sessions.
+pass has to settle — the speeds, the reaction times, the beam and the night, and the look
+values §4 gives the dark: how thick the air inside a beam is, inside a lamp's cone, and how
+far the player's own body is lifted off black — writing them into the running game as they
+move, and remembering them in the browser between sessions.
 It is hidden until asked for even under `?debug`, because two panels at once is most of the
 screen; the readout is the one worth leaving up.
 

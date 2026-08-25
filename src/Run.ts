@@ -17,7 +17,17 @@
  */
 
 import * as THREE from 'three';
-import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_KITS, SIM } from './config';
+import {
+  AMBIENT,
+  HEALTH,
+  ILLUMINATION,
+  INTERACTION,
+  LIGHT_SHAFT,
+  MOON,
+  PLAYER,
+  PREFAB_KITS,
+  SIM,
+} from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -669,16 +679,21 @@ export async function createRun(
    * §8.3 — re-push the tuned values that nothing would otherwise notice.
    *
    * Most of `Tuning`'s knobs write to a config object the systems read every tick, so they
-   * land by themselves. These three were read once, when something was constructed: the
-   * night's two lights were built from `AMBIENT` and `MOON`, and the beam's cone and reach
-   * were derived in the flashlight's constructor. Without this they would only take effect
-   * on the next run, which for a value you are trying to *feel* is no use at all.
+   * land by themselves. These were read once, when something was constructed: the night's
+   * two lights were built from `AMBIENT` and `MOON`, the beam's cone and reach were derived
+   * in the flashlight's constructor, the shafts took their density when they were built
+   * (§4), and the player's body took §4's readability allowance when its materials were
+   * first touched. Without this they would only take effect on the next run, which for a
+   * value you are trying to *feel* is no use at all.
    */
   if (tuning) {
     tuning.onChange = (): void => {
       night.ambient.intensity = AMBIENT.intensity;
       night.moon.intensity = MOON.intensity;
       flashlight.refresh();
+      flashlight.shaftDensity = LIGHT_SHAFT.flashlightDensity;
+      environment.shaftDensity = LIGHT_SHAFT.environmentDensity;
+      player.lift();
     };
     tuning.onChange();
   }
@@ -935,6 +950,10 @@ export async function createRun(
       player.aim.x,
       player.aim.y,
     );
+    // §4.1 — and then the hands go to it, and the torch is drawn between the two. In this
+    // order because the beam's placement is the fixed thing and the arm is what gives: a
+    // hand solved before the beam moved would be holding last frame's light.
+    flashlight.carry(player.reachFor(flashlight.held ? flashlight.origin : null));
     // §7 — the moon's shadow camera is fitted to what is on screen, so it travels with the
     // player rather than trying to cover the level.
     night.follow(player.object.position.x, player.object.position.z);
@@ -961,7 +980,7 @@ export async function createRun(
       rig.update(realDelta, player.object.position.x, player.object.position.z);
     }
 
-    environment.update(viewport.camera);
+    environment.update(viewport.camera, realDelta);
     props.refresh(objectives);
     updateHud();
     overlay.update(realDelta);

@@ -33,11 +33,18 @@
  * Three.js. Phase 8's flicker (§5.2) modulates the rendered intensity through
  * `intensityScale` without touching the charge — a monster interfering with the beam is
  * not the same event as the beam running down.
+ *
+ * Two things hang off the beam and are drawn from it rather than the other way round: the
+ * haze inside the cone (`LightShaft`) and the torch itself (`TorchBody`). Both read the
+ * origin and the axis derived here, and neither can move them — §4.1 decides where the
+ * light is, and everything else follows it, the player's own hand included (`ArmIk`).
  */
 
 import * as THREE from 'three';
-import { FLASHLIGHT, RENDER } from '../config';
+import { FLASHLIGHT, LIGHT_SHAFT, RENDER } from '../config';
 import { Battery } from './Battery';
+import { LightShaft } from './LightShaft';
+import { TorchBody } from './TorchBody';
 
 export class Flashlight {
   readonly battery = new Battery();
@@ -53,6 +60,16 @@ export class Flashlight {
 
   /** True once the player is carrying the flashlight; the pick-up is Phase 9 (§6). */
   held = true;
+
+  /** Where the beam is emitted, in world space — §4.1's mounting point. */
+  readonly origin = new THREE.Vector3();
+  /** Unit direction the beam is thrown along, declined onto the floor per §4.1. */
+  readonly axis = new THREE.Vector3(0, 0, 1);
+
+  /** §4 — the beam you can see in the air. */
+  private readonly shaft: LightShaft;
+  /** §4.1 — the thing in the hand the beam comes out of. */
+  private readonly body = new TorchBody();
 
   /** Ground distance the beam axis is aimed at; see the declination note above. */
   private aimDistance = 0;
@@ -74,11 +91,25 @@ export class Flashlight {
     this.light.shadow.bias = -0.0006;
     this.light.shadow.normalBias = 0.02;
 
+    this.shaft = new LightShaft(this.light, {
+      steps: LIGHT_SHAFT.flashlightSteps,
+      density: LIGHT_SHAFT.flashlightDensity,
+    });
+
     this.refresh();
 
     this.defaultTarget = this.light.target;
-    scene.add(this.light, this.defaultTarget, this.target);
+    scene.add(this.light, this.defaultTarget, this.target, this.shaft.mesh, this.body.root);
     this.light.target = this.target;
+  }
+
+  /** Haze per metre of visible beam — the debug tuner's knob (§8.3). */
+  get shaftDensity(): number {
+    return this.shaft.density;
+  }
+
+  set shaftDensity(value: number) {
+    this.shaft.density = value;
   }
 
   /**
@@ -112,6 +143,8 @@ export class Flashlight {
     this.light.distance = slantRange;
     this.light.shadow.camera.far = slantRange;
     this.light.shadow.camera.updateProjectionMatrix();
+    // The shaft is the same cone, so it is re-derived from the same three numbers.
+    this.shaft.refresh();
   }
 
   get on(): boolean {
@@ -151,19 +184,42 @@ export class Flashlight {
     const beamX = aimX * cos + rightX * sin;
     const beamZ = aimZ * cos + rightZ * sin;
 
-    this.light.position.set(originX, hold.height, originZ);
+    this.origin.set(originX, hold.height, originZ);
+    this.light.position.copy(this.origin);
     this.target.position.set(
       originX + beamX * this.aimDistance,
       0,
       originZ + beamZ * this.aimDistance,
     );
     this.target.updateMatrixWorld();
+    this.axis.subVectors(this.target.position, this.origin).normalize();
 
     const fraction = this.battery.intensityFraction * this.intensityScale;
     // Hidden rather than zero-intensity when off: an invisible light still costs a shadow
     // map render every frame, and §7 has no budget to waste on a light that is off.
     this.light.visible = fraction > 0;
     this.light.intensity = FLASHLIGHT.baseIntensity * fraction;
+    this.shaft.update(fraction);
+  }
+
+  /**
+   * Draw the torch, now that whatever is carrying it has been asked where its hand ended up.
+   *
+   * Called after `update` and after the arm has reached (`ArmIk`), because the hand is
+   * solved *against* the beam's origin and cannot be known before it. `grip` is null when
+   * there is no rigged hand — a placeholder body, or art the rig declined.
+   */
+  carry(grip: THREE.Vector3 | null): void {
+    if (!this.held) {
+      this.body.hide();
+      return;
+    }
+    this.body.place(
+      this.origin,
+      this.axis,
+      grip,
+      this.battery.intensityFraction * this.intensityScale,
+    );
   }
 
   dispose(): void {
@@ -174,6 +230,8 @@ export class Flashlight {
     this.defaultTarget.removeFromParent();
     this.light.removeFromParent();
     this.target.removeFromParent();
+    this.shaft.dispose();
+    this.body.dispose();
     this.light.dispose();
   }
 }

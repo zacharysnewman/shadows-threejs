@@ -23,7 +23,7 @@
  * `TuningPanel` is the part that needs one.
  */
 
-import { AMBIENT, ENEMY, FLASHLIGHT, MOON, PLAYER } from '../config';
+import { AMBIENT, ENEMY, FLASHLIGHT, LIGHT_SHAFT, MOON, PLAYER } from '../config';
 import { ENEMY_PROFILES } from '../enemies/Enemy';
 
 /** Where a run's overridden values live between sessions. */
@@ -108,6 +108,20 @@ export const TUNABLES: readonly Tunable[] = [
     PLAYER,
     'accelerationTime',
   ),
+  field(
+    {
+      key: 'player.readable',
+      group: 'Player',
+      label: 'unlit readability',
+      min: 0,
+      max: 0.5,
+      step: 0.005,
+      needsPush: true,
+    },
+    PLAYER,
+    'readabilityLift',
+  ),
+
 
   field(
     { key: 'spider.wander', group: 'Spider', label: 'wander speed', min: 0.2, max: 5, step: 0.1, unit: 'm/s' },
@@ -354,6 +368,35 @@ export const TUNABLES: readonly Tunable[] = [
     'yawTrimDegrees',
   ),
 
+  field(
+    {
+      key: 'torch.haze',
+      group: 'Flashlight',
+      label: 'beam haze',
+      min: 0,
+      max: 0.25,
+      step: 0.002,
+      unit: '/m',
+      needsPush: true,
+    },
+    LIGHT_SHAFT,
+    'flashlightDensity',
+  ),
+
+  field(
+    {
+      key: 'night.lampHaze',
+      group: 'Night',
+      label: 'lamp haze',
+      min: 0,
+      max: 0.12,
+      step: 0.001,
+      unit: '/m',
+      needsPush: true,
+    },
+    LIGHT_SHAFT,
+    'environmentDensity',
+  ),
   field(
     {
       key: 'night.ambient',

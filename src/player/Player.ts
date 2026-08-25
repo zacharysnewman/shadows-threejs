@@ -25,6 +25,7 @@
 
 import * as THREE from 'three';
 import type { Character } from '../core/CharacterLoader';
+import { Arm } from './ArmIk';
 import { buildHumanoidRig } from './autoRig';
 import { PLAYER, PLAYER_RIG } from '../config';
 import type { PlayerSpawnEntity } from '../map/types';
@@ -61,6 +62,10 @@ export class Player {
   /** §3.1 — the walk, once there is a body with a rig to play it on. */
   private mixer: THREE.AnimationMixer | null = null;
   private walk: THREE.AnimationAction | null = null;
+  /** §3.1, §4.1 — the arms that reach for the torch. Empty when the art has no rig. */
+  private readonly arms: Arm[] = [];
+  /** §4 — every material the readability allowance is applied to, art or placeholder. */
+  private readonly readable: THREE.MeshStandardMaterial[] = [];
 
   /** True while the last resolved move ended in contact with a collider. Debug readout. */
   private _touchingWall = false;
@@ -92,6 +97,12 @@ export class Player {
 
     this.placeholderParts.push(...buildPlaceholderMesh());
     this.object.add(...this.placeholderParts);
+    for (const part of this.placeholderParts) {
+      if (part instanceof THREE.Mesh && part.material instanceof THREE.MeshStandardMaterial) {
+        this.readable.push(part.material);
+      }
+    }
+    this.lift();
     this.render(1);
   }
 
@@ -301,15 +312,16 @@ export class Player {
    * body that faced its direction of travel would show the player their own back every time
    * they retreated with the beam held on something — which is the game's signature move.
    *
-   * §4's readability allowance is applied to the art too: the materials get a little
-   * emissive so the player stays legible as a silhouette in the dark. It is not a light —
-   * it illuminates nothing and no light-reactive enemy responds to it.
+   * §4's readability allowance is applied to the art too, as a fraction of each surface's
+   * own colour rather than a wash over it — see `lift`. It is not a light: it illuminates
+   * nothing and no light-reactive enemy responds to it.
    */
   attachCharacter(character: Character): void {
     if (character.missing) return;
 
     for (const part of this.placeholderParts) part.removeFromParent();
     this.placeholderParts.length = 0;
+    this.readable.length = 0;
 
     character.scene.scale.setScalar(PLAYER.height / character.authoredHeight);
     character.scene.traverse((node) => {
@@ -317,15 +329,11 @@ export class Player {
       node.castShadow = true;
       node.receiveShadow = true;
       for (const material of [node.material].flat()) {
-        if (material instanceof THREE.MeshStandardMaterial) {
-          // §4 — readable in the dark without lighting anything. The same value the
-          // placeholder capsule was tuned to: the kit's own colours are kept, and this only
-          // lifts them off pure black where no beam reaches. Emissive rather than a light,
-          // so it illuminates nothing and no light-reactive enemy responds to it.
-          material.emissive = new THREE.Color(PLAYER_EMISSIVE);
-        }
+        // §4 — readable in the dark without lighting anything.
+        if (material instanceof THREE.MeshStandardMaterial) this.readable.push(material);
       }
     });
+    this.lift();
     this.object.add(character.scene);
 
     // §3.1 — a rig, if the art did not bring one. The kit is a posed mesh, and unrigged the
@@ -337,6 +345,9 @@ export class Player {
     if (!walk) {
       const rig = buildHumanoidRig(character.scene);
       walk = rig?.walk ?? null;
+      // §4.1 — and the arms, which is what lets the body hold the torch rather than have a
+      // light hanging in the air beside it.
+      for (const chain of rig?.arms ?? []) this.arms.push(new Arm(chain));
     }
     if (!walk) return;
 
@@ -365,6 +376,59 @@ export class Player {
     this.mixer.update(delta);
   }
 
+  /**
+   * §4 — lift the body off black so the player can see which shape is theirs.
+   *
+   * Each surface glows at a fraction of *its own* colour, so a red shirt glows red and a
+   * black shoe stays dark. A flat emissive would be the same grey wherever it landed, and
+   * at §4's ambient it is most of what the unlit body is — every material comes out one
+   * pale blue-grey and the character reads as a ghost rather than as a person.
+   *
+   * Public because the debug tuner moves the fraction while the game is running (§8.3), and
+   * the value was read once, here.
+   */
+  lift(): void {
+    for (const material of this.readable) {
+      material.emissive.copy(material.color).multiplyScalar(PLAYER.readabilityLift);
+    }
+  }
+
+  /**
+   * §4.1 — put the hands where the torch is, and say where they ended up.
+   *
+   * `target` is the beam's origin while the player is carrying it, and null when they are
+   * not (§6.1) — then the arms hang instead. Returns the point between the hands in world
+   * space, which is what the torch is drawn from, or null when the art has no arms to ask.
+   *
+   * Runs after the walk and after the beam has been placed, and in that order for a reason:
+   * the hips rise and fall twice a stride (§3.1) and the beam does not care, so the arm has
+   * to be solved against a target that is already final. Doing it the other way round would
+   * hang the light off the body's bob.
+   */
+  reachFor(target: THREE.Vector3 | null): THREE.Vector3 | null {
+    if (this.arms.length === 0) return null;
+
+    const rest = THREE.MathUtils.degToRad(PLAYER_RIG.armRestDegrees);
+    _hands.set(0, 0, 0);
+
+    for (const arm of this.arms) {
+      const hand = arm.handPosition(_hand);
+      // Outward from the body's own centreline at the hand's height, so the elbow is pushed
+      // away from the ribs whichever way the player is facing.
+      const outward = _outward
+        .set(hand.x - this.object.position.x, 0, hand.z - this.object.position.z);
+      if (outward.lengthSq() < 1e-8) outward.set(1, 0, 0).applyQuaternion(this.object.quaternion);
+      outward.normalize();
+
+      if (target) arm.reachFor(target, outward);
+      else arm.rest(_direction.set(0, -Math.cos(rest), 0).addScaledVector(outward, Math.sin(rest)));
+
+      _hands.add(arm.handPosition(_hand));
+    }
+
+    return _hands.divideScalar(this.arms.length);
+  }
+
   render(alpha: number, delta = 0): void {
     this.advanceWalk(delta);
     this.object.position.set(
@@ -382,18 +446,16 @@ export class Player {
   }
 }
 
+const _hand = new THREE.Vector3();
+const _hands = new THREE.Vector3();
+const _outward = new THREE.Vector3();
+const _direction = new THREE.Vector3();
+
 /**
  * Placeholder body: a capsule at the spec's radius and height, and a wedge showing aim.
  * The wedge exists because Phase 2 has no flashlight yet — without it, aim is invisible
  * and untestable by eye.
  */
-/**
- * §4 — how far the player's own body is lifted off black so it stays readable unlit. Shared
- * by the placeholder and the real art: two values would drift, and the one that mattered
- * would be whichever was on screen.
- */
-const PLAYER_EMISSIVE = 0x2a3038;
-
 function buildPlaceholderMesh(): THREE.Object3D[] {
   const cylinderHeight = Math.max(0.1, PLAYER.height - PLAYER.radius * 2);
 
@@ -404,10 +466,8 @@ function buildPlaceholderMesh(): THREE.Object3D[] {
       // capsule blows out to a featureless blob.
       color: 0x8a94a2,
       roughness: 0.7,
-      // §4 — the player stays readable as a silhouette in the dark. Emissive rather than a
-      // light: it illuminates nothing, so it cannot be used to see by and no light-reactive
-      // enemy responds to it.
-      emissive: PLAYER_EMISSIVE,
+      // §4's readability allowance is applied by `Player.lift`, from this colour — the same
+      // rule the real art gets, so the two cannot drift apart.
     }),
   );
   body.position.y = PLAYER.height / 2;

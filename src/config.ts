@@ -140,6 +140,22 @@ export const PLAYER = {
    * beam held on something. `Player.render` already does this; the model inherits it.
    */
   character: 'player',
+  /**
+   * §4 — how far the player's own body is lifted off black so their silhouette stays
+   * readable in the dark, as a fraction of each surface's own colour.
+   *
+   * A *fraction of the colour*, not a colour of its own. A flat grey added to every
+   * material is the same grey whatever it is added to, and at §4's ambient it is most of
+   * what the body is: a red shirt, bare arms and black shorts all come out the one pale
+   * blue-grey, and the character reads as a ghost rather than as a person. Scaling their
+   * own colours is the same thing a very dim light falling on them would do — which is
+   * what the allowance is pretending to be — so the body keeps its colours and its own
+   * internal contrast, which is most of what makes a shape read as a figure at all.
+   *
+   * It is still not a light: it illuminates nothing, lights no surface, and no
+   * light-reactive enemy responds to it (§4).
+   */
+  readabilityLift: 0.09,
 } as const;
 
 /** §3.4 — the health pool. A buffer against the spider only; the monster ignores it. */
@@ -248,6 +264,73 @@ export const FLASHLIGHT = {
   falloffCharge: 0.25,
   /** Intensity fraction at zero charge, interpolated up to full at `falloffCharge` (§4.1). */
   minIntensityFraction: 0.4,
+} as const;
+
+/**
+ * §4.1 — the torch as a thing in the hand, rather than a light with no source.
+ *
+ * A body the player's arms reach for (§3.1) and the beam comes out of. It is not what
+ * places the light: §4.1 decides where the beam is emitted, and the torch is drawn from
+ * the hand that got closest to that point out to it, so the two always meet however short
+ * the reach turns out to be.
+ */
+export const TORCH = {
+  /** Barrel radius in metres — §4.1's "a few centimetres across". */
+  radius: 0.035,
+  /** Shortest the barrel is ever drawn, when the hand reaches the beam's origin outright. */
+  minLength: 0.12,
+  /** Radius of the lens at the far end, which is where the beam starts. */
+  lensRadius: 0.05,
+} as const;
+
+/**
+ * §4 — the beam you can see in the air, for the lights that cast shadows (§7).
+ *
+ * Presentation only: nothing here reaches §4.1's illumination query, so a thicker haze
+ * cannot make a corner readable or a monster deterred. What it decides is how much of a
+ * beam is visible between the torch and the pool it makes.
+ */
+export const LIGHT_SHAFT = {
+  /**
+   * Raymarch steps through the flashlight's cone, and through a lamp's.
+   *
+   * The lamp's is lower because its cone is the wider of the two by a long way — 4 m up
+   * over a 6 m pool (§4.2) — so it covers far more of the screen for far less of the
+   * picture, and §7 spends the frame on the beam that is the mechanic.
+   */
+  flashlightSteps: 24,
+  environmentSteps: 14,
+  /**
+   * Haze added per metre of lit beam. The whole look, in one number each.
+   *
+   * The lamp's is the thinner: a shaft under every working light would turn a powered room
+   * into fog, and §4's dark is the point. A lamp gets enough to show the cone it pools
+   * with, and the torch gets enough to be a beam.
+   */
+  flashlightDensity: 0.05,
+  environmentDensity: 0.018,
+  /**
+   * Seconds a lamp's shaft takes to arrive or leave as it gains or loses one of §7's two
+   * shadow slots. The slots change hands as the camera moves, and a shaft that appeared
+   * the instant a lamp won one would pop on across the room.
+   */
+  handoverSeconds: 0.4,
+  /**
+   * Height the march stops at, in metres. The floor receives shadows but never casts them
+   * (§7), so the shadow map cannot tell the march the ground is there — and most of the
+   * flashlight's cone is below it (§4.1).
+   */
+  floorHeight: 0.02,
+  /**
+   * Extra shadow-map bias for a sample in mid-air, on top of the light's own. A sample is
+   * not on the surface the light's bias was tuned against, and acne in the haze reads as
+   * the beam fizzing rather than as a depth artefact.
+   */
+  shadowBias: -0.0015,
+  /** Radial segments of the proxy cone the shaft is rasterised through. */
+  proxySegments: 24,
+  /** How far the proxy is grown past the true cone, so its edge is never the shaft's. */
+  proxyMargin: 1.02,
 } as const;
 
 /** §4.2 — environmental lights, and §7's budget for how many of them cast shadows. */
@@ -735,6 +818,40 @@ export const PLAYER_RIG = {
    * walking is ×1 and sprinting reads as hurrying rather than as a different animation.
    */
   walkClipSpeed: 3.0,
+
+  /**
+   * §3.1 — the arms, which the same bounding box has to find before they can hold anything.
+   *
+   * A standing figure's arms are the outermost thing above its hips, so lateral distance is
+   * what separates them from the torso. `armInsetFraction` is that distance as a fraction of
+   * the model's half-width: beyond it and above the waist is an arm, and the band either
+   * side of the line is shared so the shoulder bends rather than tearing.
+   */
+  armInsetFraction: 0.33,
+  armInsetBandFraction: 0.12,
+  /** Where the elbow sits along the arm, from shoulder to hand. */
+  elbowFraction: 0.5,
+  /** Blend band between two arm bones, as a fraction of the arm's length. */
+  armBlendFraction: 0.3,
+  /**
+   * How much of an arm's run is averaged into each end when the shoulder and the hand are
+   * measured from the mesh. A single extreme vertex is a fingertip or a shoulder pad, and
+   * either one puts the joint centimetres out on an arm half a metre long.
+   */
+  armEndFraction: 0.15,
+  /**
+   * How far the arms hang from straight down when they are holding nothing, in degrees
+   * outward from the body. The kit is authored with its arms out level, which from §3.2's
+   * camera is the most visible pose there is and reads as a scarecrow rather than a person.
+   */
+  armRestDegrees: 14,
+  /**
+   * Which way the elbow is pushed, as a mix of straight down and straight out: 1 is
+   * directly below the arm, 0 is directly out from the body. Two bones and a target leave
+   * the elbow free anywhere on a circle around the line between them, and nothing in the
+   * lengths decides where — this is what puts it under the arm rather than up by the ear.
+   */
+  elbowDrop: 0.8,
 } as const;
 
 export const CHARACTER_FIT: Readonly<
