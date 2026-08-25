@@ -649,6 +649,34 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
  * statement about the *file*, never about how the game wants a character to stand: rotating
  * a character to face somewhere is `Player.render`'s job and changes with the aim.
  */
+/**
+ * §3.1 — the rig derived for player art that ships without one (`autoRig`).
+ *
+ * Fractions of the model's own height rather than metres, so the same numbers suit a
+ * character of any size. Every one of them is a guess a real rig would not have to make;
+ * they are here, and not buried in the code, because the day the art arrives with its own
+ * skeleton this whole block goes.
+ */
+export const PLAYER_RIG = {
+  /** Where the hip sits, up from the feet. A little under half a standing figure. */
+  hipFraction: 0.48,
+  /** Height of the blend band across the hip: wider bends, narrower shears. */
+  blendFraction: 0.12,
+  /** How far each leg bone sits from centre, as a fraction of the model's width. */
+  legSpreadFraction: 0.12,
+  /** One stride, in seconds, at `walkClipSpeed`. */
+  strideSeconds: 0.9,
+  /** Peak leg swing from vertical. Small: the camera is 14 m up and looking down (§3.2). */
+  legSwingDegrees: 22,
+  /** How far the hips rise over each supporting foot, as a fraction of height. */
+  bobFraction: 0.012,
+  /**
+   * Ground speed the stride above is authored at, in m/s — the player's own walk (§3.1), so
+   * walking is ×1 and sprinting reads as hurrying rather than as a different animation.
+   */
+  walkClipSpeed: 3.0,
+} as const;
+
 export const CHARACTER_FIT: Readonly<
   Record<string, { rotateX?: number; rotateY?: number }>
 > = {

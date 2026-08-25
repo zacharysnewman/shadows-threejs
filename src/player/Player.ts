@@ -25,7 +25,8 @@
 
 import * as THREE from 'three';
 import type { Character } from '../core/CharacterLoader';
-import { PLAYER } from '../config';
+import { buildHumanoidRig } from './autoRig';
+import { PLAYER, PLAYER_RIG } from '../config';
 import type { PlayerSpawnEntity } from '../map/types';
 import { moveCircle, type ColliderIndex } from './collision';
 import { Health } from './Health';
@@ -57,6 +58,9 @@ export class Player {
   readonly object = new THREE.Group();
   /** The capsule and its aim wedge, kept so real art can take them back out. */
   private readonly placeholderParts: THREE.Object3D[] = [];
+  /** §3.1 — the walk, once there is a body with a rig to play it on. */
+  private mixer: THREE.AnimationMixer | null = null;
+  private walk: THREE.AnimationAction | null = null;
 
   /** True while the last resolved move ended in contact with a collider. Debug readout. */
   private _touchingWall = false;
@@ -323,9 +327,46 @@ export class Player {
       }
     });
     this.object.add(character.scene);
+
+    // §3.1 — a rig, if the art did not bring one. The kit is a posed mesh, and unrigged the
+    // character slides across the ground like furniture: worse than the capsule, which at
+    // least did not promise legs. `buildHumanoidRig` derives three bones from the mesh and
+    // returns null rather than guessing badly, in which case the body is simply static.
+    const clips = character.clips;
+    let walk = clips.get('walk') ?? null;
+    if (!walk) {
+      const rig = buildHumanoidRig(character.scene);
+      walk = rig?.walk ?? null;
+    }
+    if (!walk) return;
+
+    this.mixer = new THREE.AnimationMixer(character.scene);
+    this.walk = this.mixer.clipAction(walk);
+    this.walk.play();
   }
 
-  render(alpha: number): void {
+  /**
+   * Advance the walk, at the rate the player is actually covering ground (§3.1).
+   *
+   * The same rule §5.1 states for the spider, for the same reason: a fixed playback rate is
+   * right at exactly one speed, and the player has two. Sprinting is the walk hurried rather
+   * than a second animation, which is what makes the aim lock — not a new gait — the thing
+   * that reads as sprinting.
+   *
+   * Runs on the render delta, like every other presentation effect (§7).
+   */
+  private advanceWalk(delta: number): void {
+    if (!this.mixer || !this.walk) return;
+    // Below a crawl the legs stop rather than creeping, so a player standing still is
+    // standing still and not shuffling on the spot.
+    const rate = this.speed / PLAYER_RIG.walkClipSpeed;
+    this.walk.timeScale = rate;
+    this.walk.paused = rate < 0.02;
+    this.mixer.update(delta);
+  }
+
+  render(alpha: number, delta = 0): void {
+    this.advanceWalk(delta);
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
       0,

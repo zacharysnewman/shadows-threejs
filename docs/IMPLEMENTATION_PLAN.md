@@ -800,15 +800,56 @@ happens when a kit is not. It now carries the normalisation rule and the two per
 exceptions, because "the assets are on-grid" turned out to be a thing the loader has to
 *make* true rather than something it can assume.
 
+*A rig derived from a mesh, and two ways to bind it wrong.* The player's kit is a posed
+model with no skeleton and no clips: unrigged it slides across the ground like furniture,
+which reads worse than the capsule it replaced. `src/player/autoRig.ts` derives three bones
+from the bounding box and generates a stride, driven by ground covered exactly as §5.1 drives
+the spider's. It is meant to be replaced by an authored skeleton and says so.
+
+Both ways it went wrong were silent, and neither looked like a binding bug — they looked like
+bad art. Three renders a skinned vertex as `boneWorldNow · boneInverseAtBind · bindMatrix · v`,
+re-deriving the mesh's own inverse from `matrixWorld` every frame, so the bind matrix is the
+only thing carrying geometry into the space the bones were measured in. An identity there
+rendered a Z-up kit flat on its back, several metres from the player. The second was the
+measurement: a loader wraps a model in orientation and grounding nodes, so a vertex's own
+coordinates, its mesh's and the character root's are three different frames. The rig now
+measures, places and binds in one — the node the meshes hang from — and
+`tests/autoRig.test.ts` asserts the invariant the whole thing rests on: at rest, skinning
+moves no vertex at all. That test only fails under the loader's nesting, which is why it
+builds it.
+
+*A body standing beside the player it represents.* Nothing in a `.glb` says where the feet
+are. `CharacterLoader` grounded a model on `y = 0` and left it wherever its origin put it
+horizontally — and the player's kit comes out of a bundle whose characters are laid along an
+axis, 1.5 m from theirs. Measured in the browser: the body's centre at `(5.59, 3.67)` for a
+player standing at `(5, 5)`. It now centres horizontally as well as grounding, which is
+`standOn` in `CharacterLoader` and four tests over the arithmetic; the spider and the monster
+were already centred and did not move.
+
+*Verified in a browser*, since none of this is assertable from a test runner:
+
+| Case | Measured |
+| --- | --- |
+| The rig, on the loaded player | 3 bones, 7 skinned meshes, 0 plain — every mesh converted |
+| Standing | leg angle 0.00°, the clip paused rather than playing in place |
+| Walking at 0.67 m/s | leg angles across ten samples: 13.2, 3.2, −21.2, 6.6, 9.7, −18.0, 1.7, 16.3, −11.4, −6.5 |
+| Sprinting at 4.5 m/s | still swinging, at the rate the ground goes by |
+| Placement | hips at `(5.008, 0.864, 5.003)` for a player at `(5, 0, 5)` — 48% of 1.8 m up, on the spot |
+| Body against the player marker | the character's feet land on the projected player position, screenshot `walk.png` |
+| Spider and Shadow Monster | centres `(18.81, 31.57)` and `(46.35, 3.35)` against positions `(18.83, 31.52)` and `(46.35, 3.35)`; both grounded at `y = 0`, heights 0.71 m and 2.20 m |
+
 *Outstanding — the phase's actual content.*
 
 - **The real level.** Authored in the external editors §1 names and dropped into
   `public/maps/`. Every map in the repo is scaffolding and none of them is the level.
-- **The art pass — the map prefabs are done, the enemies are not.** `public/prefabs/` now
-  holds a real CC0 kit (KayKit Dungeon Remastered 1.0, Kay Lousberg, CC0 1.0), pinned to a
-  commit and vendored with its licence; the six prefab roles all load from `.glb` and no
-  placeholder box remains on the example map. Still outstanding: the enemy bodies, which are
-  procedural meshes, and the spider's two clips, which `Gait` already drives the timing of.
+- **The art pass — the models are in, the authoring is not.** `public/prefabs/` holds a real
+  CC0 kit (KayKit Dungeon Remastered 1.0, Kay Lousberg, CC0 1.0), pinned to a commit and
+  vendored with its licence; the six prefab roles all load from `.glb` and no placeholder box
+  remains on the example map. The player, the spider and the Shadow Monster all have bodies,
+  loaded through `CharacterLoader` rather than `AssetLoader` — a prefab is merged into one
+  geometry with every node transform baked in, which is right for a wall and is deleting the
+  skeleton for a character. Still outstanding: the audio, the level itself, and a real
+  authored rig for the player (below).
 
   **The kit is medieval stone, and the prefab names are not.** `floor_concrete` is a
   flagstone and `fence_chainlink` is a timber barrier. The names are the *roles* the map

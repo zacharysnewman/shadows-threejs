@@ -280,6 +280,34 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
   lock is the resource, not a bar.
 - There is no jump or crouch.
 
+**The player's body walks.** The legs swing and the body rises and falls in time with the
+ground actually covered: standing still the gait stops, and the sprint is the same gait
+hurried rather than a second animation. The same rule §5.1 states for the spider, and what
+makes a sprint look like one without asking the art for a second clip.
+
+Art that ships without a skeleton gets one derived from its mesh — a hip, and a leg either
+side — with vertices shared through a band at the waist so the join bends rather than
+shears. It is an approximation, and the thing that makes it good enough is §3.2's camera:
+from 14 m up a leg is a few pixels and only the cadence reads. A model too flat or too empty
+to be a standing figure is left unrigged and static, because a bad rig is worse than none.
+An authored skeleton, when the art has one, is used instead and this is dead code.
+
+- Hips at **48%** of the model's height, blended over a band **12%** of it; feet **12%** of
+  the model's width either side of centre.
+- One stride is **0.9 s**, the legs swinging **±22°** and the body lifting **1.2%** of its
+  height twice per stride — once over each foot.
+- The clip is authored at the walk speed, so it plays at ground speed ÷ **3.0 m/s** and
+  stops when the player does.
+- Every value here is a fraction of the model's own size rather than a length, so the same
+  numbers suit a character of any height.
+
+**A character stands on the point it occupies.** Nothing in a model file says where the feet
+are, so a loaded character is grounded on the floor and centred horizontally on its own
+bounds. Kits are authored around whatever origin their artist left — the player's comes out
+of a bundle laid along an axis, one and a half metres from its own origin — and a body
+standing beside the collider that represents it walks through walls the player stopped at
+and holds its flashlight out of empty air.
+
 **On touch**, the same two independent controls are floating sticks: the left half of the
 screen moves, the right half aims, and each anchors wherever the thumb lands rather than at
 a fixed spot on the glass — the only arrangement that survives different hand sizes and both

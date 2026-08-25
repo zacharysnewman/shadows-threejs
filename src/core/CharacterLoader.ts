@@ -41,6 +41,24 @@ export interface Character {
 }
 
 /**
+ * Where to move a model so it stands on its own origin: grounded on `y = 0` and centred
+ * horizontally on the point it occupies (§1).
+ *
+ * A kit's origin is wherever the artist left it, and the player's came out of a bundle whose
+ * characters are laid out in a row — its model sits 1.5 m along x from the origin the game
+ * places it at. Unmoved, the body stands a metre and a half from the player it represents:
+ * the flashlight comes out of empty air, and the art walks through walls the collider
+ * stopped at. Grounding without centring fixes the half of that anybody thinks to check.
+ */
+export function standOn(box: THREE.Box3): THREE.Vector3 {
+  return new THREE.Vector3(
+    -(box.min.x + box.max.x) / 2,
+    -box.min.y,
+    -(box.min.z + box.max.z) / 2,
+  );
+}
+
+/**
  * Clip names arrive as `HumanArmature|Spider_Walk` — the exporter's rig name, a pipe, and
  * the clip. Neither half is worth carrying into gameplay code, and the rig name in
  * particular is a detail of whoever authored the kit.
@@ -130,11 +148,11 @@ export class CharacterLoader {
     // scalable by whoever uses it:
     //
     //   root   — what the caller scales, and what `Character.scene` is
-    //     lift — raises the model until its lowest point is y = 0
+    //     stand — moves the model onto its own origin (`standOn`)
     //       orient — the kit's convention turned into this one
     //         gltf.scene
     //
-    // The lift has to be the *parent* of the orient, or the rotation would turn the
+    // The stand has to be the *parent* of the orient, or the rotation would turn the
     // translation with it. Both are in authored units, so scaling `root` scales them
     // together and the model still stands on the floor at any size.
     //
@@ -166,14 +184,14 @@ export class CharacterLoader {
     orient.rotation.copy(rotation);
     orient.add(gltf.scene);
 
-    const lift = new THREE.Group();
-    lift.name = `${name}:lift`;
-    lift.position.y = -box.min.y;
-    lift.add(orient);
+    const stand = new THREE.Group();
+    stand.name = `${name}:stand`;
+    stand.position.copy(standOn(box));
+    stand.add(orient);
 
     const root = new THREE.Group();
     root.name = name;
-    root.add(lift);
+    root.add(stand);
 
     const authoredHeight = Math.max(1e-6, box.max.y - box.min.y);
 

@@ -920,7 +920,8 @@ export async function createRun(
     // plays over a world that has stopped, not one still walking around behind it.
     if (outcome.simulating) clock.advance(realDelta);
 
-    player.render(clock.alpha);
+    // §7 — the render delta, not the tick: the walk cycle is a presentation effect.
+    player.render(clock.alpha, realDelta);
     // §7 — the render delta, not the tick: an animation is a presentation effect.
     enemies.render(clock.alpha, realDelta);
     voices.update();
