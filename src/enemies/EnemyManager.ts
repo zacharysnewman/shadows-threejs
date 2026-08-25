@@ -113,8 +113,9 @@ export class EnemyManager {
                   kind === 'SpiderEnemy' ? ENEMY.spider.walkClipSpeed : config.pursueSpeed,
                 attackSeconds: ENEMY.spider.attack.windUpSeconds,
                 // Both kits are authored several metres tall; `profile.height` is what
-                // every other system already believes each enemy to be.
-                scale: enemy.profile.height / config.characterHeight,
+                // every other system already believes each enemy to be, and the authored
+                // height is measured from the model rather than copied into config.
+                scale: enemy.profile.height / character.authoredHeight,
               }),
             );
           }),

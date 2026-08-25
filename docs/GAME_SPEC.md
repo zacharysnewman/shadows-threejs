@@ -403,7 +403,17 @@ for knowing what something is; the ambient is only for knowing that something is
 
 **The player's own silhouette stays readable.** The character is legible in the dark as a
 dim shape. This is a rendering allowance, not a light source — it illuminates nothing, lights
-no surface, and no light-reactive enemy responds to it. A player who cannot see which of the
+no surface, and no light-reactive enemy responds to it. It applies to whatever body the
+player has, art or placeholder: a kit's own colours go to black under §4's ambient like
+anything else, so the allowance is a property of *being the player*, not of a particular
+mesh.
+
+**The player's body faces their aim, never their movement.** §3.1 makes the two
+independent, and that independence is the game's signature move — backing away with the beam
+held on a spider. A body that turned to face where it was walking would show the player
+their own back at exactly that moment, and would quietly undo the mechanic §3.1 spends the
+sprint's aim lock to protect. So the body strafes and backpedals, and the one time it moves
+the way it faces is a sprint, which is what makes a sprint look different. A player who cannot see which of the
 shapes on screen is theirs is not playing a dark game, they are playing a broken one.
 
 ### 4.1 Flashlight Mechanics & Battery

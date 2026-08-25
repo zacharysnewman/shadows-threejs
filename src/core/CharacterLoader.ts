@@ -20,6 +20,7 @@
  */
 
 import * as THREE from 'three';
+import { CHARACTER_FIT } from '../config';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
@@ -29,6 +30,12 @@ export interface Character {
   scene: THREE.Object3D;
   /** Clips as authored, keyed by the part of the name after the last `|`. */
   clips: Map<string, THREE.AnimationClip>;
+  /**
+   * Height in metres as the kit authored it, upright, measured rather than typed out.
+   * Callers scale by `whatTheGameThinksItIs / authoredHeight` — a hand-copied number is
+   * right until the art is swapped and then silently wrong (§1).
+   */
+  authoredHeight: number;
   /** True when nothing loaded and the caller should fall back to a placeholder body. */
   missing: boolean;
 }
@@ -65,11 +72,20 @@ export class CharacterLoader {
    */
   async load(name: string): Promise<Character> {
     const loaded = await this.loadSource(name);
-    if (!loaded) return { name, scene: new THREE.Group(), clips: new Map(), missing: true };
+    if (!loaded) {
+      return {
+        name,
+        scene: new THREE.Group(),
+        clips: new Map(),
+        authoredHeight: 1,
+        missing: true,
+      };
+    }
 
     return {
       name,
       scene: cloneSkinned(loaded.scene),
+      authoredHeight: loaded.authoredHeight,
       // The `Map` is rebuilt per instance so a caller cannot mutate the cached one, but the
       // clips inside are shared: an `AnimationClip` is read-only data, and the per-instance
       // state lives in the mixer.
@@ -107,6 +123,60 @@ export class CharacterLoader {
     const clips = new Map<string, THREE.AnimationClip>();
     for (const clip of gltf.animations) clips.set(clipKey(clip.name), clip);
 
+    // §1 — stand the model up if the kit authored it in another convention, and stand it
+    // *on the ground* whatever its origin was.
+    //
+    // Three nested groups, because the two corrections do not commute and each has to be
+    // scalable by whoever uses it:
+    //
+    //   root   — what the caller scales, and what `Character.scene` is
+    //     lift — raises the model until its lowest point is y = 0
+    //       orient — the kit's convention turned into this one
+    //         gltf.scene
+    //
+    // The lift has to be the *parent* of the orient, or the rotation would turn the
+    // translation with it. Both are in authored units, so scaling `root` scales them
+    // together and the model still stands on the floor at any size.
+    //
+    // The rotation goes on a wrapper rather than on `gltf.scene` so the clips, which drive
+    // the nodes underneath, are untouched: rotating an animated root is safe, rotating the
+    // nodes an animation writes to is not.
+    const fit = CHARACTER_FIT[name];
+    const rotation = new THREE.Euler(
+      THREE.MathUtils.degToRad(fit?.rotateX ?? 0),
+      THREE.MathUtils.degToRad(fit?.rotateY ?? 0),
+      0,
+    );
+
+    // Measured *before* the model is attached to anything, then transformed by the same
+    // rotation the wrapper will apply.
+    //
+    // Order is the whole difficulty here. `setFromObject` reports world space, so measuring
+    // after attaching either includes the rotation or does not depending on what the
+    // matrices happen to hold — and both mistakes are silent. Measuring a parentless
+    // `gltf.scene` is unambiguous: it is the model's own bounds, and one matrix takes it to
+    // where the wrapper will put it.
+    gltf.scene.updateMatrixWorld(true);
+    const box = new THREE.Box3()
+      .setFromObject(gltf.scene)
+      .applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(rotation));
+
+    const orient = new THREE.Group();
+    orient.name = `${name}:orient`;
+    orient.rotation.copy(rotation);
+    orient.add(gltf.scene);
+
+    const lift = new THREE.Group();
+    lift.name = `${name}:lift`;
+    lift.position.y = -box.min.y;
+    lift.add(orient);
+
+    const root = new THREE.Group();
+    root.name = name;
+    root.add(lift);
+
+    const authoredHeight = Math.max(1e-6, box.max.y - box.min.y);
+
     gltf.scene.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
       // §5.1 — a spider is seen by sight *and* throws a shadow; §7 budgets for both.
@@ -117,7 +187,7 @@ export class CharacterLoader {
       node.frustumCulled = false;
     });
 
-    return { scene: gltf.scene, clips };
+    return { scene: root, clips, authoredHeight };
   }
 
   dispose(): void {
@@ -137,4 +207,5 @@ export class CharacterLoader {
 interface LoadedCharacter {
   scene: THREE.Object3D;
   clips: Map<string, THREE.AnimationClip>;
+  authoredHeight: number;
 }

@@ -169,6 +169,9 @@ export async function createRun(
   // on its placeholder, and a run that blocks on a character `.glb` is a run that does not
   // start when the file moves.
   void enemies.attachCharacters(characters);
+  // §3.1, §4 — and the player's own body, on the same terms: not awaited, because a run
+  // with a capsule in it is a run, and one that never starts is not.
+  void characters.load(PLAYER.character).then((body) => player.attachCharacter(body));
 
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.

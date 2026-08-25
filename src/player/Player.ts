@@ -24,6 +24,7 @@
  */
 
 import * as THREE from 'three';
+import type { Character } from '../core/CharacterLoader';
 import { PLAYER } from '../config';
 import type { PlayerSpawnEntity } from '../map/types';
 import { moveCircle, type ColliderIndex } from './collision';
@@ -54,6 +55,8 @@ export class Player {
 
   /** Scene graph node — a placeholder capsule until the art pass (Phase 11). */
   readonly object = new THREE.Group();
+  /** The capsule and its aim wedge, kept so real art can take them back out. */
+  private readonly placeholderParts: THREE.Object3D[] = [];
 
   /** True while the last resolved move ended in contact with a collider. Debug readout. */
   private _touchingWall = false;
@@ -83,7 +86,8 @@ export class Player {
     const facing = directionFromRotation(spawn.rotation);
     this.aim.set(facing.x, facing.z);
 
-    this.object.add(...buildPlaceholderMesh());
+    this.placeholderParts.push(...buildPlaceholderMesh());
+    this.object.add(...this.placeholderParts);
     this.render(1);
   }
 
@@ -284,6 +288,43 @@ export class Player {
    * Place the mesh for rendering. `alpha` is the sim clock's fraction into the pending
    * tick; interpolating with it decouples visible smoothness from the 60 Hz tick rate.
    */
+  /**
+   * Swap the capsule for real art (§3.1, §4).
+   *
+   * Scaled from the model's own measured height rather than a copied constant, and left
+   * facing local `+z`, which `render` turns onto the *aim*. That is the whole reason the
+   * player's body can be a character at all: §3.1 makes movement and aim independent, so a
+   * body that faced its direction of travel would show the player their own back every time
+   * they retreated with the beam held on something — which is the game's signature move.
+   *
+   * §4's readability allowance is applied to the art too: the materials get a little
+   * emissive so the player stays legible as a silhouette in the dark. It is not a light —
+   * it illuminates nothing and no light-reactive enemy responds to it.
+   */
+  attachCharacter(character: Character): void {
+    if (character.missing) return;
+
+    for (const part of this.placeholderParts) part.removeFromParent();
+    this.placeholderParts.length = 0;
+
+    character.scene.scale.setScalar(PLAYER.height / character.authoredHeight);
+    character.scene.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      node.castShadow = true;
+      node.receiveShadow = true;
+      for (const material of [node.material].flat()) {
+        if (material instanceof THREE.MeshStandardMaterial) {
+          // §4 — readable in the dark without lighting anything. The same value the
+          // placeholder capsule was tuned to: the kit's own colours are kept, and this only
+          // lifts them off pure black where no beam reaches. Emissive rather than a light,
+          // so it illuminates nothing and no light-reactive enemy responds to it.
+          material.emissive = new THREE.Color(PLAYER_EMISSIVE);
+        }
+      }
+    });
+    this.object.add(character.scene);
+  }
+
   render(alpha: number): void {
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
@@ -305,6 +346,13 @@ export class Player {
  * The wedge exists because Phase 2 has no flashlight yet — without it, aim is invisible
  * and untestable by eye.
  */
+/**
+ * §4 — how far the player's own body is lifted off black so it stays readable unlit. Shared
+ * by the placeholder and the real art: two values would drift, and the one that mattered
+ * would be whichever was on screen.
+ */
+const PLAYER_EMISSIVE = 0x2a3038;
+
 function buildPlaceholderMesh(): THREE.Object3D[] {
   const cylinderHeight = Math.max(0.1, PLAYER.height - PLAYER.radius * 2);
 
@@ -318,7 +366,7 @@ function buildPlaceholderMesh(): THREE.Object3D[] {
       // §4 — the player stays readable as a silhouette in the dark. Emissive rather than a
       // light: it illuminates nothing, so it cannot be used to see by and no light-reactive
       // enemy responds to it.
-      emissive: 0x2a3038,
+      emissive: PLAYER_EMISSIVE,
     }),
   );
   body.position.y = PLAYER.height / 2;

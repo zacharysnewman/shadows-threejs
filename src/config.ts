@@ -131,6 +131,15 @@ export const PLAYER = {
   radius: 0.4,
   /** Capsule height in metres (§3.1). Visual and, later, the flashlight mount height. */
   height: 1.8,
+  /**
+   * §3.1, §4 — the body the player sees themselves as, from `public/characters/`.
+   *
+   * Scaled to `height`, and turned to face the *aim* rather than the direction of travel:
+   * §3.1's whole design is that the two are independent, and a character facing where it
+   * walks would put the player's back to their own torch every time they retreat with the
+   * beam held on something. `Player.render` already does this; the model inherits it.
+   */
+  character: 'player',
 } as const;
 
 /** §3.4 — the health pool. A buffer against the spider only; the monster ignores it. */
@@ -378,12 +387,6 @@ export const ENEMY = {
     /** §5.1 — the animated body, from `public/characters/`. */
     character: 'spider',
     /**
-     * Height of that model as authored, in metres, so it can be scaled to `height`. The
-     * kit's spider is nearly two metres tall and five across; §5.1's is dog-sized, and
-     * `height` is what every other system already believes.
-     */
-    characterHeight: 1.93,
-    /**
      * Ground speed the walk clip was authored at, in m/s. §5.1 drives the cycle's playback
      * rate from actual speed, and this is the rate that means "×1" — measured by watching
      * the legs against the ground, which is the only way to measure it.
@@ -452,8 +455,6 @@ export const ENEMY = {
      * show them.
      */
     character: 'shadow_monster',
-    /** Height of that model as authored, in metres, so it can be scaled to `height`. */
-    characterHeight: 7.77,
     wanderSpeed: 1.4,
     pursueSpeed: 1.8,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
@@ -597,6 +598,18 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     attributionRequired: true,
     prefabs: ['shadow_monster'],
   },
+  {
+    kit: 'Fitness Characters',
+    author: 'iPoly3D',
+    url: 'https://poly.pizza/bundle/Fitness-Characters-7PwJehPdnZ',
+    /** Public domain, so the credit is a courtesy — offered anyway (§8.2). */
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source: 'https://poly.pizza/bundle/Fitness-Characters-7PwJehPdnZ',
+    attributionRequired: false,
+    /** §3.1's player body. Static: the kit ships no rig, so there is no locomotion cycle. */
+    prefabs: ['player'],
+  },
 ];
 
 /**
@@ -622,6 +635,30 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
  * Half-extents in metres, before rotation. An entry here needs a reason of that kind —
  * "the mesh overhangs ground you can walk under" — and not a preference about difficulty.
  */
+/**
+ * §1, §5.1 — the orientation a character model was authored in, where it is not this
+ * game's.
+ *
+ * The counterpart to `PREFAB_FIT`, and it exists for the same reason: a kit authored by
+ * somebody else will not match, and editing their file means re-editing it every time the
+ * kit updates. glTF is Y-up by convention and most exporters honour it, but a model
+ * converted out of a Z-up tool can arrive lying on its back — which is not a bug in the
+ * model, just a fact about where it came from.
+ *
+ * Degrees, applied in X then Y, before anything else touches the model. An entry here is a
+ * statement about the *file*, never about how the game wants a character to stand: rotating
+ * a character to face somewhere is `Player.render`'s job and changes with the aim.
+ */
+export const CHARACTER_FIT: Readonly<
+  Record<string, { rotateX?: number; rotateY?: number }>
+> = {
+  // Empty, and worth staying that way. Every kit so far turned out to be honest Y-up glTF
+  // once loaded — including one whose raw vertex data reads Z-up, because the node above it
+  // carries the conversion. Reading a `.glb`'s accessors and concluding the model is on its
+  // side is a mistake this table exists to be the *fix* for, not the evidence of: measure a
+  // loaded model, never a parsed one.
+};
+
 export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
   /** Pole and base only; the backboard and rim are overhead (§2). */
   prop_hoop: { hx: 0.3, hz: 0.3 },
