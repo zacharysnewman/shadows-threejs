@@ -22,6 +22,7 @@ function prefabOf(name: string, sizeX: number, sizeZ: number): Prefab {
     geometry,
     material: new THREE.MeshStandardMaterial(),
     height: 1,
+    footprint: { x: sizeX, z: sizeZ },
     placeholder: false,
   };
 }

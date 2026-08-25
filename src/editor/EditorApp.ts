@@ -24,6 +24,7 @@ import {
   facingIsVisible,
   missingProperties,
   mountOptions,
+  nameSuggestions,
   normalise,
 } from './palette';
 import { EDITOR_STYLE } from './style';
@@ -186,6 +187,7 @@ export class EditorApp {
         button('Fit', () => this.canvas.fit()),
       ]),
       group([
+        button('Checks', () => this.showChecks(), 'checks'),
         button('Copy', () => void this.copy(), 'copy'),
         button('Stamps', () => this.showStampJson(), 'stamps'),
         button('Play', () => this.play(), 'play'),
@@ -207,6 +209,11 @@ export class EditorApp {
       if (name === 'layer') element.textContent = this.layer === 1 ? 'Walls' : 'Floor';
       if (name === 'undo') element.disabled = !this.doc.canUndo;
       if (name === 'redo') element.disabled = !this.doc.canRedo;
+      if (name === 'checks') {
+        const findings = this.audit?.findings.length ?? 0;
+        element.textContent = findings === 0 ? 'Checks' : `Checks ${findings}`;
+        element.classList.toggle('is-bad', (this.audit?.blocking.length ?? 0) > 0);
+      }
     }
   }
 
@@ -694,13 +701,29 @@ export class EditorApp {
       row.className = 'ed-row';
       row.append(Object.assign(document.createElement('span'), { textContent: key }));
 
+      const options = choice.choices?.[key];
       if (key === 'facing' && choice.mounts) {
         row.append(this.facingControl(entity, choice));
+      } else if (options) {
+        row.append(this.choiceControl(entity, key, options));
       } else {
         const input = document.createElement('input');
         input.dataset['prop'] = key;
         input.value = String(entity.properties[key] ?? '');
         input.placeholder = choice.required.includes(key) ? 'required' : '';
+        // §9.1 — the names already on the map, so a switch is wired to a lamp by picking
+        // its group rather than by remembering how it was spelled.
+        const role = choice.namesEntity?.[key];
+        const suggestions = role ? nameSuggestions(this.doc.entities, role) : [];
+        if (suggestions.length > 0) {
+          const list = document.createElement('datalist');
+          list.id = `ed-names-${key}`;
+          for (const name of suggestions) {
+            list.append(Object.assign(document.createElement('option'), { value: name }));
+          }
+          input.setAttribute('list', list.id);
+          row.append(list);
+        }
         input.addEventListener('change', () => {
           const raw = input.value;
           const numeric = Number(raw);
@@ -737,6 +760,39 @@ export class EditorApp {
     });
     actions.append(remove, close);
     this.sheet.append(actions);
+  }
+
+  /**
+   * A property with a fixed set of values, as buttons (§9.1).
+   *
+   * The same shape as the facing control, and for the same reason: on a phone a row of
+   * buttons is one tap and a text field is a keyboard, a guess and a typo.
+   */
+  private choiceControl(
+    entity: AuthoredEntity,
+    key: string,
+    options: readonly string[],
+  ): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'ed-facing';
+    const current = String(entity.properties[key] ?? '');
+    for (const option of options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset['choice'] = `${key}:${option}`;
+      button.textContent = option;
+      button.classList.toggle('is-on', option === current);
+      button.addEventListener('click', () => {
+        this.doc.edit((draft) => {
+          const target = draft.entities.find((e) => e.x === entity.x && e.y === entity.y);
+          if (target) target.properties[key] = option;
+        });
+        this.selected = this.doc.entityAt(entity.x, entity.y) ?? null;
+        this.showSheet();
+      });
+      wrap.append(button);
+    }
+    return wrap;
   }
 
   /** Turning a mounted entity, restricted to the walls it could actually be on (§9.2). */
@@ -935,11 +991,68 @@ export class EditorApp {
 
     if (!this.audit) return `${this.doc.width}×${this.doc.height}`;
     const blocking = this.audit.blocking;
-    if (blocking.length > 0) return `⚠ ${blocking[0]!.message}`;
-    const warnings = this.audit.findings.length;
-    return warnings > 0
-      ? `${warnings} warning(s) · ${this.audit.reachableTiles} tiles reachable`
-      : `clean · ${this.audit.reachableTiles} tiles reachable`;
+    if (blocking.length > 0) {
+      const more = blocking.length > 1 ? ` (+${blocking.length - 1})` : '';
+      return `⚠ ${blocking[0]!.message}${more}`;
+    }
+    // §9 — the first warning in full, not a tally of them. A count is a number you learn
+    // to ignore: "3 warning(s)" is what an author reads while placing lamps that will
+    // never come on, and the sentence that would have told them so is one the editor
+    // already has. `Checks` has the rest.
+    const warnings = this.audit.findings;
+    const first = warnings[0];
+    if (first) {
+      const more = warnings.length > 1 ? ` (+${warnings.length - 1})` : '';
+      return `${first.message}${more}`;
+    }
+    return `clean · ${this.audit.reachableTiles} tiles reachable`;
+  }
+
+  /** §9 — everything the audit found, as a list rather than as the one line that fits. */
+  private showChecks(): void {
+    this.selected = null;
+    this.sheet.hidden = false;
+    this.sheet.textContent = '';
+
+    const title = document.createElement('div');
+    title.className = 'ed-sheet-title';
+    const findings = this.audit?.findings ?? [];
+    title.textContent = findings.length === 0 ? 'Checks — nothing to report' : 'Checks';
+    this.sheet.append(title);
+
+    const incomplete = this.doc.entities.filter((e) => missingProperties(e).length > 0);
+    for (const entity of incomplete) {
+      const row = document.createElement('div');
+      row.className = 'ed-note is-bad';
+      row.textContent = `${entity.type} at ${entity.x}, ${entity.y}: ${missingProperties(entity).join(', ')} not set`;
+      this.sheet.append(row);
+    }
+
+    for (const finding of findings) {
+      const row = document.createElement('div');
+      row.className = 'ed-note';
+      if (finding.severity === 'blocking') row.classList.add('is-bad');
+      row.textContent = `${finding.severity === 'blocking' ? '⚠ ' : ''}${finding.message}`;
+      this.sheet.append(row);
+    }
+
+    if (this.audit) {
+      const row = document.createElement('div');
+      row.className = 'ed-note';
+      row.textContent = `${this.audit.reachableTiles} tiles reachable · ${this.audit.strandedTiles} stranded`;
+      this.sheet.append(row);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => {
+      this.sheet.hidden = true;
+    });
+    actions.append(close);
+    this.sheet.append(actions);
   }
 }
 

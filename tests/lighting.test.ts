@@ -35,7 +35,7 @@ describe('Flashlight', () => {
     expect(THREE.MathUtils.radToDeg(light.angle)).toBeCloseTo(FLASHLIGHT.coneAngleDegrees / 2);
     expect(light.penumbra).toBeCloseTo(FLASHLIGHT.penumbra);
     // The light's range is the slant distance to a ground point at the spec's range.
-    expect(light.distance).toBeCloseTo(Math.hypot(FLASHLIGHT.range, FLASHLIGHT.mountHeight));
+    expect(light.distance).toBeCloseTo(Math.hypot(FLASHLIGHT.range, FLASHLIGHT.hold.height));
   });
 
   it('is the one shadow-casting spotlight, at the resolution §7 budgets for it', () => {
@@ -45,7 +45,7 @@ describe('Flashlight', () => {
     expect(light.shadow.mapSize.width).toBe(RENDER.flashlightShadowMapSize);
     // Tightened to the beam, not left at Three's default far plane.
     expect(light.shadow.camera.far).toBeCloseTo(
-      Math.hypot(FLASHLIGHT.range, FLASHLIGHT.mountHeight),
+      Math.hypot(FLASHLIGHT.range, FLASHLIGHT.hold.height),
     );
   });
 
@@ -55,10 +55,10 @@ describe('Flashlight', () => {
 
     // Just in front of the player, not inside them: a light at the capsule's centre is
     // shadowed by the capsule, which puts a black wedge across the player's own beam.
-    expect(flashlight.light.position.x).toBeGreaterThan(10 + PLAYER.radius);
-    expect(flashlight.light.position.x).toBeLessThan(10 + PLAYER.radius + 0.5);
+    expect(flashlight.light.position.x).toBeCloseTo(10 + FLASHLIGHT.hold.forward);
+    expect(FLASHLIGHT.hold.forward).toBeGreaterThan(PLAYER.radius);
     expect(flashlight.light.position.z).toBe(20);
-    expect(flashlight.light.position.y).toBe(FLASHLIGHT.mountHeight);
+    expect(flashlight.light.position.y).toBe(FLASHLIGHT.hold.height);
 
     // Aimed east, at a point on the ground rather than level with the mount: a flat beam
     // lights walls and leaves the floor near the player dark under a pitched camera.
@@ -74,17 +74,110 @@ describe('Flashlight', () => {
 
     const halfAngle = THREE.MathUtils.degToRad(FLASHLIGHT.coneAngleDegrees / 2);
     const declination = Math.atan2(
-      FLASHLIGHT.mountHeight,
+      FLASHLIGHT.hold.height,
       flashlight.target.position.x - flashlight.light.position.x,
     );
 
     // Upper edge of the cone meets the ground at the spec's 12 m, and the lower edge lands
     // just over a metre out — close enough that the pool reads as attached to the player.
-    const far = FLASHLIGHT.mountHeight / Math.tan(declination - halfAngle);
-    const near = FLASHLIGHT.mountHeight / Math.tan(declination + halfAngle);
+    const far = FLASHLIGHT.hold.height / Math.tan(declination - halfAngle);
+    const near = FLASHLIGHT.hold.height / Math.tan(declination + halfAngle);
     expect(far).toBeCloseTo(FLASHLIGHT.range, 1);
     expect(near).toBeGreaterThan(0.5);
     expect(near).toBeLessThan(2);
+  });
+
+  it('holds the torch to one side when told to, without turning the beam', () => {
+    // §4.1's `hold` — moving where it is carried must not move where it points, or a torch
+    // in the right hand would aim right of everything the player is looking at.
+    const flashlight = new Flashlight(new THREE.Scene());
+    const hold = FLASHLIGHT.hold as { lateral: number };
+    const before = hold.lateral;
+    try {
+      hold.lateral = 0.4;
+      // Aimed north: `-z`, which puts the player's right at `+x` (§3.2's camera never yaws).
+      flashlight.update(0, 0, 0, -1);
+      expect(flashlight.light.position.x).toBeCloseTo(0.4);
+      expect(flashlight.light.position.z).toBeCloseTo(-FLASHLIGHT.hold.forward);
+      // The aim point is straight ahead of the origin, not of the player.
+      expect(flashlight.target.position.x).toBeCloseTo(0.4);
+    } finally {
+      hold.lateral = before;
+    }
+  });
+
+  it('turns the beam off the aim by the yaw trim, and leaves the origin where it is', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    const hold = FLASHLIGHT.hold as { yawTrimDegrees: number };
+    const before = hold.yawTrimDegrees;
+    try {
+      flashlight.update(0, 0, 0, -1);
+      const origin = flashlight.light.position.clone();
+      const straight = flashlight.target.position.clone();
+
+      hold.yawTrimDegrees = 30;
+      flashlight.update(0, 0, 0, -1);
+      expect(flashlight.light.position.x).toBeCloseTo(origin.x);
+      expect(flashlight.light.position.z).toBeCloseTo(origin.z);
+
+      // Turned to the player's right — `+x` when aimed north — by the angle asked for.
+      // Measured on the ground plane: the trim is a yaw, and the declination is untouched.
+      const reach = new THREE.Vector2(straight.x - origin.x, straight.z - origin.z);
+      const turned = new THREE.Vector2(
+        flashlight.target.position.x - origin.x,
+        flashlight.target.position.z - origin.z,
+      );
+      expect(turned.x).toBeGreaterThan(0);
+      expect(turned.length()).toBeCloseTo(reach.length(), 4);
+      // Signed on the x/z plane, where turning from `+x` towards `+z` is turning right.
+      const cross = reach.x * turned.y - reach.y * turned.x;
+      const dot = reach.dot(turned);
+      expect(THREE.MathUtils.radToDeg(Math.atan2(cross, dot))).toBeCloseTo(30, 3);
+    } finally {
+      hold.yawTrimDegrees = before;
+    }
+  });
+
+  it('pulls the pool in when the pitch is trimmed down, and pushes it out when up', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    const hold = FLASHLIGHT.hold as { pitchTrimDegrees: number };
+    const before = hold.pitchTrimDegrees;
+    const reach = (): number => {
+      flashlight.refresh();
+      flashlight.update(0, 0, 1, 0);
+      return flashlight.target.position.x - flashlight.light.position.x;
+    };
+    try {
+      const level = reach();
+      hold.pitchTrimDegrees = 10;
+      expect(reach()).toBeLessThan(level);
+      hold.pitchTrimDegrees = -10;
+      expect(reach()).toBeGreaterThan(level);
+    } finally {
+      hold.pitchTrimDegrees = before;
+      flashlight.refresh();
+    }
+  });
+
+  it('keeps a trimmed beam pointing at the ground rather than at the horizon', () => {
+    // A slider that can aim the beam at nothing is a slider that makes the scene vanish
+    // instead of showing you why the value is wrong.
+    const flashlight = new Flashlight(new THREE.Scene());
+    const hold = FLASHLIGHT.hold as { pitchTrimDegrees: number };
+    const before = hold.pitchTrimDegrees;
+    try {
+      for (const trim of [-90, -30, 30, 90]) {
+        hold.pitchTrimDegrees = trim;
+        flashlight.refresh();
+        flashlight.update(0, 0, 1, 0);
+        const forward = flashlight.target.position.x - flashlight.light.position.x;
+        expect(Number.isFinite(forward)).toBe(true);
+        expect(forward).toBeGreaterThan(0);
+      }
+    } finally {
+      hold.pitchTrimDegrees = before;
+      flashlight.refresh();
+    }
   });
 
   it('renders nothing at all while off, rather than a zero-intensity light', () => {
@@ -179,6 +272,43 @@ describe('EnvironmentLights', () => {
     expect(THREE.MathUtils.radToDeg(light.angle)).toBeCloseTo(56.3, 1);
     expect(light.distance).toBeCloseTo(Math.hypot(height, 6));
     expect(light.target.position.y).toBe(0);
+  });
+
+  it('stands a fixture under every lamp, so an unpowered one is off rather than absent', () => {
+    // §4.2 — the bug this is the fix for: a lamp placed with no switch wired to its group
+    // is correctly dark, and used to be *nothing at all*, so a level with lamps and no
+    // power looked like a level with no lamps in it.
+    const lights = new EnvironmentLights([lamp(3, 3, 'Yard')]);
+    const meshes: THREE.Mesh[] = [];
+    lights.root.traverse((node) => {
+      if (node instanceof THREE.Mesh) meshes.push(node);
+    });
+
+    expect(meshes.length).toBeGreaterThan(0);
+    for (const mesh of meshes) {
+      expect(mesh.position.x).toBeCloseTo((3 + 0.5) * 2);
+      expect(mesh.position.z).toBeCloseTo((3 + 0.5) * 2);
+      // The light is a point at the top of its own post: a post that cast would put a
+      // black bar through the middle of the pool the lamp exists to throw.
+      expect(mesh.castShadow).toBe(false);
+    }
+  });
+
+  it('lights the lamp head with the lamp, and guts it as the lamp strains (§4.2)', () => {
+    const lights = new EnvironmentLights([lamp(3, 3, 'Yard')]);
+    const head = lights.lamps[0]!.head;
+    expect(head.emissiveIntensity).toBe(0);
+
+    lights.setGroupPowered('Yard', true);
+    expect(head.emissiveIntensity).toBeGreaterThan(0);
+    expect(head.color.getHex()).toBe(ENVIRONMENT_LIGHT.fixture.litColour);
+
+    // §4.2's tell: a lamp guttering across the map is what says where the monster is, and
+    // a bulb that stayed bright while its pool flickered would deny the player it.
+    const bright = head.emissiveIntensity;
+    lights.lamps[0]!.flicker = 0.3;
+    lights.setGroupPowered('Yard', true);
+    expect(head.emissiveIntensity).toBeLessThan(bright);
   });
 
   it('starts every group off — a lamp is dark until its group is powered (§4.2)', () => {

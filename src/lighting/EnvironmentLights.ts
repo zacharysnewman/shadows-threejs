@@ -2,9 +2,16 @@
  * Environmental lights (§4.2, §7).
  *
  * One downward `THREE.SpotLight` per `EnvironmentLight` entity, mounted at 4 m and shaped
- * so its cone pools to the entity's ground radius. They are off until their group is
+ * so its cone pools to the entity's ground radius, and a post and shade under it so there
+ * is a lamp to see as well as a pool to stand in. They are off until their group is
  * powered — a `PowerSwitch` acts on every light sharing a `groupId` (§2, §6). Phase 9
  * wires the switches; until then the debug harness powers them all at once.
+ *
+ * **A lamp with no switch never lights**, and that is the design (§4.2) rather than a
+ * fault: power is something the player routes. What it must not be is invisible, which is
+ * what it was before the fixture existed — an author who placed lamps and no switch got a
+ * level that looked like it had no lamps in it. The map audit says so too
+ * (`group-no-switch`), and the editor shows it while the level is being built (§9).
  *
  * §7 caps the shadow budget at two of them at a time, chosen each frame by proximity to
  * the camera, with the rest illuminating without casting. That cap is a design constraint
@@ -34,6 +41,8 @@ export type SabotageState = 'steady' | 'strain' | 'failed';
 export interface EnvironmentLamp {
   entity: EnvironmentLightEntity;
   light: THREE.SpotLight;
+  /** §4.2 — the head of the fixture, which lights up with the lamp. */
+  head: THREE.MeshStandardMaterial;
   /** §4.2 — the switch's answer. Untouched by a failure. */
   powered: boolean;
   sabotage: SabotageState;
@@ -117,10 +126,13 @@ export class EnvironmentLights {
 
       light.target.position.set(entity.wx, 0, entity.wz);
 
+      const head = this.addFixture(entity, height);
+
       this.root.add(light, light.target);
       this.lamps.push({
         entity,
         light,
+        head,
         powered: false,
         sabotage: 'steady',
         dwell: 0,
@@ -128,6 +140,10 @@ export class EnvironmentLights {
         flicker: 1,
       });
       if (!this.powered.has(entity.groupId)) this.powered.set(entity.groupId, false);
+      // Put the lamp in its off state explicitly rather than relying on the state a fresh
+      // material happens to start in: unlit is a look this owns, and it is the look every
+      // lamp has until the player finds its switch (§4.2, §6.3).
+      this.applyLamp(this.lamps[this.lamps.length - 1]!);
     }
   }
 
@@ -259,6 +275,61 @@ export class EnvironmentLights {
     lamp.light.visible = lamp.powered && lamp.sabotage !== 'failed';
     lamp.light.intensity =
       ENVIRONMENT_LIGHT.baseIntensity * lamp.entity.intensity * lamp.flicker;
+
+    // §4.2 — the head follows the light it is the source of, flicker and all: a lamp
+    // straining across the map is the clearest tell the player gets about where the
+    // monster is, and a bulb that stayed lit while its pool guttered would deny them it.
+    const fixture = ENVIRONMENT_LIGHT.fixture;
+    const lit = lamp.light.visible;
+    lamp.head.color.setHex(lit ? fixture.litColour : fixture.headColour);
+    lamp.head.emissive.setHex(lit ? fixture.litColour : 0x000000);
+    lamp.head.emissiveIntensity = lit ? fixture.litEmissive * lamp.flicker : 0;
+  }
+
+  /**
+   * §4.2 — the post and head, at the entity's tile. Returns the head's material, which is
+   * what `applyLamp` drives.
+   *
+   * Neither piece casts a shadow. The light is a point at the top of its own post, so a
+   * post that cast would put a black bar through the middle of the pool it exists to
+   * throw — the one shadow in the game that would be an artefact rather than information.
+   */
+  private addFixture(
+    entity: EnvironmentLightEntity,
+    mountHeight: number,
+  ): THREE.MeshStandardMaterial {
+    const fixture = ENVIRONMENT_LIGHT.fixture;
+
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(fixture.postRadius, fixture.postRadius, mountHeight, 8),
+      new THREE.MeshStandardMaterial({
+        color: fixture.postColour,
+        roughness: 0.8,
+        metalness: 0.3,
+      }),
+    );
+    post.position.set(entity.wx, mountHeight / 2, entity.wz);
+
+    const head = new THREE.MeshStandardMaterial({
+      color: fixture.headColour,
+      roughness: 0.5,
+      metalness: 0.1,
+    });
+    const shade = new THREE.Mesh(
+      // Wider at the bottom: a shade, so which way it throws is readable from above.
+      new THREE.ConeGeometry(fixture.headRadius, fixture.headDepth, 10, 1, true),
+      head,
+    );
+    shade.material.side = THREE.DoubleSide;
+    shade.position.set(entity.wx, mountHeight + fixture.headDepth / 2, entity.wz);
+
+    for (const piece of [post, shade]) {
+      piece.name = `EnvironmentLightFixture:${entity.groupId}@${entity.gx},${entity.gy}`;
+      piece.castShadow = false;
+      piece.receiveShadow = true;
+      this.root.add(piece);
+    }
+    return head;
   }
 
   /** Debug stand-in for the switches that do not exist until Phase 9. */
@@ -318,6 +389,13 @@ export class EnvironmentLights {
 
   dispose(): void {
     for (const lamp of this.lamps) lamp.light.dispose();
+    // The fixtures own their geometry and materials outright — nothing is shared with the
+    // asset cache — so a run that left them behind would leak one set per lamp per life.
+    this.root.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      node.geometry.dispose();
+      for (const material of [node.material].flat()) material.dispose();
+    });
     this.root.clear();
     this.root.removeFromParent();
   }

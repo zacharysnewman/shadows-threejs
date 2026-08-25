@@ -65,6 +65,10 @@ export const EDITOR_STYLE = `<style>
   border: 1px solid rgba(255,255,255,0.14); background: #171b24; color: #e8e4dc; font: inherit; }
 .ed-facing button.is-on { background: #2b6cb0; border-color: #4a90d9; }
 .ed-facing.is-bad { color: #ff9a8f; font-size: 13px; align-items: center; }
+/* §9 — the audit's own findings, read as sentences rather than as a tally. */
+.ed-note { display: block; margin-bottom: 8px; font-size: 13px; line-height: 1.4; color: #cdc7bb; }
+.ed-note.is-bad { color: #ff9a8f; }
+.ed-bar button.is-bad { color: #ff9a8f; border-color: rgba(255,154,143,0.4); }
 
 .ed-dumpwrap { position: absolute; inset: 0; z-index: 10; display: flex; flex-direction: column;
   gap: 10px; padding: 16px; background: rgba(6,8,12,0.96); }

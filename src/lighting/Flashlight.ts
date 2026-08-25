@@ -22,6 +22,13 @@
  * a black wedge across their own pool — the most conspicuous artefact this phase produced,
  * and the reason a torch is held out in front rather than swallowed.
  *
+ * **Where it is held is `FLASHLIGHT.hold`, and every part of it is a knob** (§4.1, §8.3):
+ * height, how far forward, how far to the hand's side, and a trim on both the declination
+ * and the aim. The defaults are the beam described above — the trims are zero and the
+ * offsets are the capsule clearance — so the spec's beam is what the knobs start at rather
+ * than a pose they happen to reach. `refresh` re-derives the shape; the placement is read
+ * every frame, so moving the torch about while the game runs costs nothing.
+ *
  * Battery arithmetic lives in `Battery`; this class is the part that has to know about
  * Three.js. Phase 8's flicker (§5.2) modulates the rendered intensity through
  * `intensityScale` without touching the charge — a monster interfering with the beam is
@@ -29,7 +36,7 @@
  */
 
 import * as THREE from 'three';
-import { FLASHLIGHT, PLAYER, RENDER } from '../config';
+import { FLASHLIGHT, RENDER } from '../config';
 import { Battery } from './Battery';
 
 export class Flashlight {
@@ -49,8 +56,6 @@ export class Flashlight {
 
   /** Ground distance the beam axis is aimed at; see the declination note above. */
   private aimDistance = 0;
-  /** How far in front of the player the beam is emitted, clear of their own capsule. */
-  private readonly originOffset = PLAYER.radius + 0.15;
   /** The target the `SpotLight` was constructed with, kept only so it can be removed. */
   private readonly defaultTarget: THREE.Object3D;
 
@@ -85,14 +90,24 @@ export class Flashlight {
    * read once at build time, so nothing else would notice them changing.
    */
   refresh(): void {
+    const hold = FLASHLIGHT.hold;
     // Three.js takes the half angle from the beam axis; §4.1 quotes the full cone.
     const halfAngle = THREE.MathUtils.degToRad(FLASHLIGHT.coneAngleDegrees / 2);
-    const declination = halfAngle + Math.atan2(FLASHLIGHT.mountHeight, FLASHLIGHT.range);
-    this.aimDistance = FLASHLIGHT.mountHeight / Math.tan(declination);
+    const derived = halfAngle + Math.atan2(hold.height, FLASHLIGHT.range);
+    // §4.1 — the trim is an offset on the declination the spec derives, so zero is the
+    // spec's beam. Clamped clear of the horizon and of straight down: at either the aim
+    // point stops existing, and a slider that can produce a beam pointing at nothing is a
+    // slider that makes the scene disappear rather than one that shows you why.
+    const declination = THREE.MathUtils.clamp(
+      derived + THREE.MathUtils.degToRad(hold.pitchTrimDegrees),
+      0.02,
+      Math.PI / 2 - 0.02,
+    );
+    this.aimDistance = hold.height / Math.tan(declination);
 
     // The spec's range is how far the beam reaches along the ground; the light's own range
     // is the slant distance from the mount to that point.
-    const slantRange = Math.hypot(FLASHLIGHT.range, FLASHLIGHT.mountHeight);
+    const slantRange = Math.hypot(FLASHLIGHT.range, hold.height);
     this.light.angle = halfAngle;
     this.light.distance = slantRange;
     this.light.shadow.camera.far = slantRange;
@@ -119,14 +134,28 @@ export class Flashlight {
    * the light does not visibly step at the 60 Hz tick rate.
    */
   update(playerX: number, playerZ: number, aimX: number, aimZ: number): void {
-    const originX = playerX + aimX * this.originOffset;
-    const originZ = playerZ + aimZ * this.originOffset;
+    const hold = FLASHLIGHT.hold;
+    // Screen-right of the aim direction, which is the player's right: the camera never
+    // yaws (§3.2), so `+x` is right on screen and this is the hand the torch is in.
+    const rightX = -aimZ;
+    const rightZ = aimX;
 
-    this.light.position.set(originX, FLASHLIGHT.mountHeight, originZ);
+    const originX = playerX + aimX * hold.forward + rightX * hold.lateral;
+    const originZ = playerZ + aimZ * hold.forward + rightZ * hold.lateral;
+
+    // The beam may be turned off the aim direction (§4.1's `hold`); the origin is not,
+    // because where the torch is held and where it points are two separate questions.
+    const yaw = THREE.MathUtils.degToRad(hold.yawTrimDegrees);
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const beamX = aimX * cos + rightX * sin;
+    const beamZ = aimZ * cos + rightZ * sin;
+
+    this.light.position.set(originX, hold.height, originZ);
     this.target.position.set(
-      originX + aimX * this.aimDistance,
+      originX + beamX * this.aimDistance,
       0,
-      originZ + aimZ * this.aimDistance,
+      originZ + beamZ * this.aimDistance,
     );
     this.target.updateMatrixWorld();
 

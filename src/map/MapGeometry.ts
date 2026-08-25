@@ -13,6 +13,43 @@ import { MAP_LIMITS } from '../config';
 import type { GameMap, Tileset } from './types';
 
 /**
+ * §2 — is this module a *length* of something, or a thing that stands on its own?
+ *
+ * Read off the fitted footprint rather than named in a table: a wall, a fence and a gate
+ * are all modelled as a 2 m run across x with only enough depth to be solid, and a crate is
+ * square. `runFraction` is how much narrower than long a module has to be before it counts
+ * — three-quarters, so an all-but-square module is left alone and a 2 × 1 wall is not.
+ */
+const RUN_FRACTION = 0.75;
+
+export function isRun(footprint: { x: number; z: number }): boolean {
+  return footprint.z < footprint.x * RUN_FRACTION;
+}
+
+/**
+ * The turn a run-shaped tile needs to follow the run it is in, in radians (§2).
+ *
+ * Tiles carry no rotation in the map format and are not getting one — a rotating tile in
+ * the *data* would break the collider merge and would be a field every author had to get
+ * right. This is derived instead, from the solid tiles beside it, and it is presentation
+ * only: the tile is solid across its whole square whichever way the model faces, so nothing
+ * about collision, walkability or the merge can see it.
+ *
+ * A module with solid neighbours north or south and none east or west is in a north–south
+ * run and turns a quarter. Everything else — a run across x, a corner, a tile on its own —
+ * keeps the way it was modelled, which is the direction the kit authored it in.
+ */
+export function runRotation(
+  isSolidAt: (gx: number, gy: number) => boolean,
+  gx: number,
+  gy: number,
+): number {
+  const alongX = isSolidAt(gx - 1, gy) || isSolidAt(gx + 1, gy);
+  const alongZ = isSolidAt(gx, gy - 1) || isSolidAt(gx, gy + 1);
+  return alongZ && !alongX ? Math.PI / 2 : 0;
+}
+
+/**
  * A handle on one tile's instance in the batch that drew it, so a gate can be moved (§6).
  * Only the obstacle layer is indexed: nothing in the game animates a floor tile, and an
  * index over every tile on a 50×50 map would be 2500 entries nobody reads.
@@ -88,6 +125,19 @@ export async function buildMapGeometry(
   let instanceCount = 0;
 
   const matrix = new THREE.Matrix4();
+  const rotation = new THREE.Matrix4();
+
+  /**
+   * §2 — a tile is solid when its obstacle-layer id is one the tileset calls solid. This is
+   * the same question the walkability derivation asks, asked here about the neighbours a
+   * run-shaped module has to line up with.
+   */
+  const obstacles = map.layers[MAP_LIMITS.obstacleLayerIndex];
+  const isSolidAt = (gx: number, gy: number): boolean => {
+    if (!obstacles || gx < 0 || gy < 0 || gx >= map.width || gy >= map.height) return false;
+    const id = obstacles.data[gy * map.width + gx] ?? 0;
+    return id !== 0 && tileset.get(id)?.solid === true;
+  };
 
   map.layers.forEach((layer, layerIndex) => {
     const perId = usage[layerIndex]!;
@@ -115,10 +165,16 @@ export async function buildMapGeometry(
       mesh.castShadow = !isFloor;
       mesh.receiveShadow = true;
 
+      // §2 — only a length of something has a way round to be wrong; a crate does not.
+      const turns = !isFloor && isRun(prefab.footprint);
+
       indices.forEach((tileIndex, instance) => {
         const gx = tileIndex % map.width;
         const gy = Math.floor(tileIndex / map.width);
         matrix.makeTranslation((gx + 0.5) * map.tileSize, 0, (gy + 0.5) * map.tileSize);
+        if (turns) {
+          matrix.multiply(rotation.makeRotationY(runRotation(isSolidAt, gx, gy)));
+        }
         mesh.setMatrixAt(instance, matrix);
         if (!isFloor) {
           obstacleInstances.set(tileIndex, { mesh, instance, rest: matrix.clone() });
