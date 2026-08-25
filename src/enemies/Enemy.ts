@@ -17,6 +17,7 @@
  */
 
 import * as THREE from 'three';
+import type { CharacterRig } from './CharacterRig';
 import { ENEMY } from '../config';
 import type { Rng } from '../core/rng';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
@@ -116,6 +117,12 @@ export interface IlluminationSampler {
     z: number,
   ): {
     lit: boolean;
+    /**
+     * §5.2 — the torch is on and pointed here, whatever its intensity. Only the Shadow
+     * Monster asks: it is the one thing that can put the beam out, so during its own blink
+     * "is there light on me" answers with the darkness it caused.
+     */
+    inBeam?: boolean;
     amount: number;
     /**
      * Which light is responsible. §5.2 needs it: the flashlight's interference blinks the
@@ -193,6 +200,14 @@ export class Enemy {
   private readonly limbs: THREE.Object3D[] = [];
   private body: THREE.Object3D | null = null;
   private bodyRestY = 0;
+  /**
+   * §5.1 — the real animated body, once the art has loaded. Until then (and for anything
+   * with no character art) the placeholder above stands in, driven by the gait: the two are
+   * alternatives, never both, so `poseBody` stops as soon as this exists.
+   */
+  private rig: CharacterRig | null = null;
+  /** Placeholder parts, kept so attaching a rig can take them back out. */
+  private readonly placeholderParts: THREE.Object3D[] = [];
 
   private wanderPause = 0;
   /** Seconds left of a `recoil` hold, or of any other timed state (§5.3). */
@@ -210,6 +225,7 @@ export class Enemy {
     this.object.name = `${profile.kind}:${key}`;
     const built = buildPlaceholderMesh(profile);
     this.object.add(...built.parts);
+    this.placeholderParts.push(...built.parts);
     this.body = built.body;
     this.bodyRestY = built.body.position.y;
     this.limbs.push(...built.limbs);
@@ -238,18 +254,6 @@ export class Enemy {
     return Math.hypot(this.position.x - x, this.position.y - z);
   }
 
-  /**
-   * Whether the body throws its shadow at all.
-   *
-   * For the Shadow Monster the shadow *is* the body (§5.2), so this is the switch between
-   * being a thing on the floor and being nothing whatsoever — and §5.2's hard rule, that it
-   * is never both moving and visible, is enforced through it.
-   */
-  protected setCasting(casting: boolean): void {
-    this.object.traverse((node) => {
-      if (node instanceof THREE.Mesh) node.castShadow = casting;
-    });
-  }
 
   /**
    * Draw a body that §5.2 says is never drawn. Debug harness only — finding the Shadow
@@ -569,8 +573,44 @@ export class Enemy {
     return 0;
   }
 
-  /** Interpolated between ticks, like the player, so movement is smooth above 60 fps (§7). */
-  render(alpha: number): void {
+  /**
+   * Swap the placeholder body for real animated art (§5.1).
+   *
+   * The placeholder is removed rather than hidden: it is eight boxes and a sphere, and a
+   * hidden mesh is still a mesh the shadow pass walks. The rig owns the scale, so nothing
+   * here touches the group's transform — `render` still moves the group, and the character
+   * lives inside it exactly as the placeholder did.
+   */
+  attachCharacter(rig: CharacterRig): void {
+    this.rig?.dispose();
+    for (const part of this.placeholderParts) part.removeFromParent();
+    this.placeholderParts.length = 0;
+    this.limbs.length = 0;
+    this.body = null;
+
+    this.rig = rig;
+    this.object.add(rig.character.scene);
+
+    // §5.2 — the Shadow Monster's body is never drawn, and real art does not change that.
+    // The same treatment the placeholder gets: `colorWrite` and `depthWrite` off rather
+    // than `visible = false`, because an invisible object is skipped by the shadow pass and
+    // the shadow is the entire creature. What the art buys is the *outline*, which is all
+    // the player ever sees of it.
+    if (this.profile.kind === 'ShadowMonster') this.setBodyRevealed(false);
+  }
+
+  /** Whether this enemy is running on real art rather than on the placeholder. */
+  get hasCharacter(): boolean {
+    return this.rig !== null;
+  }
+
+  /**
+   * Interpolated between ticks, like the player, so movement is smooth above 60 fps (§7).
+   *
+   * `delta` is the *render* delta, and it is only used by the rig: an animation is a
+   * presentation effect and belongs on the display's clock, not on the 60 Hz tick.
+   */
+  render(alpha: number, delta = 0): void {
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
       0,
@@ -579,7 +619,8 @@ export class Enemy {
     if (this.velocity.lengthSq() > 1e-4) {
       this.object.rotation.y = Math.atan2(this.velocity.x, this.velocity.y);
     }
-    this.poseBody();
+    if (this.rig) this.rig.update(this._state, this.speed, delta);
+    else this.poseBody();
   }
 
   /**

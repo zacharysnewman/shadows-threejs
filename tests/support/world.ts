@@ -75,7 +75,15 @@ export function fakeIllumination(
   source: () => 'flashlight' | 'environment' = () => 'flashlight',
 ) {
   return {
-    sample: () => ({ lit: lit(), amount: lit() ? 1 : 0, source: lit() ? source() : null }),
+    sample: () => ({
+      lit: lit(),
+      // §5.2 — what the *player* is doing, which is all a fake can know. The real service
+      // reports this true through a blink, when `lit` has gone false because the monster
+      // put the beam out; a fake has no beam to put out, so the two agree here.
+      inBeam: lit() && source() === 'flashlight',
+      amount: lit() ? 1 : 0,
+      source: lit() ? source() : null,
+    }),
   };
 }
 
@@ -134,6 +142,7 @@ export function beam(on = false, source: 'flashlight' | 'environment' = 'flashli
     source,
     sample: () => ({
       lit: state.on,
+      inBeam: state.on && state.source === 'flashlight',
       amount: state.on ? 1 : 0,
       source: state.on ? state.source : null,
     }),

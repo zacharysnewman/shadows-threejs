@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { FLASHLIGHT, ILLUMINATION } from '../src/config';
+import { FLASHLIGHT, FLICKER, ILLUMINATION } from '../src/config';
 import { EnvironmentLights } from '../src/lighting/EnvironmentLights';
 import { Flashlight } from '../src/lighting/Flashlight';
 import { coneStrength, IlluminationService, poolStrength } from '../src/lighting/Illumination';
@@ -171,6 +171,64 @@ describe('IlluminationService', () => {
     expect(sample.lit).toBe(true);
     expect(sample.source).toBe('flashlight');
     expect(sample.amount).toBeGreaterThan(0);
+  });
+
+  it('lights nothing while the beam is out, however well aimed (§4.1, §5.2)', () => {
+    // The invariant every light rule rests on: `lit` is about light arriving, not about the
+    // torch's charge. Reading the charge alone had the spider deterred by a beam that was
+    // out and the monster frozen by darkness — and §5.2's hard rule turns on exactly this,
+    // because a monster walking through a blink must not be standing in something the rest
+    // of the game still calls light.
+    const { flashlight, service } = build();
+    flashlight.toggle();
+    aim(flashlight, 4, 4, 1, 0);
+    expect(service.sample('a', 9, 4).lit).toBe(true);
+
+    flashlight.intensityScale = 0;
+    const dark = service.sample('a', 9, 4);
+    expect(dark.lit).toBe(false);
+    expect(dark.amount).toBe(0);
+    expect(dark.source).toBeNull();
+
+    // But the torch is still on and still pointed there, which is a different question and
+    // the one the monster's blink asks (§5.2).
+    expect(dark.inBeam).toBe(true);
+  });
+
+  it('dims without unlighting, so a flicker is not a blackout (§5.2)', () => {
+    const { flashlight, service } = build();
+    flashlight.toggle();
+    aim(flashlight, 4, 4, 1, 0);
+    const full = service.sample('a', 9, 4).amount;
+
+    flashlight.intensityScale = FLICKER.floor;
+    const dipped = service.sample('a', 9, 4);
+    expect(dipped.lit).toBe(true);
+    expect(dipped.amount).toBeLessThan(full);
+    expect(dipped.amount).toBeGreaterThan(0);
+  });
+
+  it('says a point is not in the beam when the torch is off', () => {
+    const { flashlight, service } = build();
+    aim(flashlight, 4, 4, 1, 0);
+    expect(service.sample('a', 9, 4).inBeam).toBe(false);
+  });
+
+  it('keeps in-beam true when a lamp is the brighter source', () => {
+    // A lamp winning on strength says nothing about where the torch is pointed, and the
+    // monster's blink turns on that answer.
+    const { flashlight, environment, service } = build(OPEN, [lamp(4, 4)]);
+    environment.setGroupPowered('Yard', true);
+    flashlight.toggle();
+    flashlight.intensityScale = 0;
+    aim(flashlight, 4, 4, 1, 0);
+
+    // (9, 4) is straight down the beam from (4, 4) and 5 m from the lamp's pool centre at
+    // (9, 9), so both reach it.
+    const sample = service.sample('a', 9, 4);
+    expect(sample.source).toBe('environment');
+    expect(sample.lit).toBe(true);
+    expect(sample.inBeam).toBe(true);
   });
 
   it('does not light through a wall (§4.1)', () => {

@@ -4,6 +4,7 @@
  * that owns it.
  */
 
+import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ENEMY, FLICKER } from '../src/config';
 import { Rng } from '../src/core/rng';
@@ -258,67 +259,88 @@ describe('Shadow Monster blink (§5.2)', () => {
     expect(perTick).toBeLessThanOrEqual(ENEMY.shadowMonster.pursueSpeed * TICK + 1e-6);
   });
 
-  it('keeps the beam alive through the blink instead of switching it off (§5.2)', () => {
+  it('puts the beam out for the blink, and never for the flicker (§5.2)', () => {
     const built = world(OPEN);
     const light = beam(true);
     const monster = monsterAt(20, 20);
     const context = contextFor(built, 20, 8, { illumination: light });
 
-    let floor = 1;
-    let blinkFractions: number[] = [];
+    let flickerFloor = 1;
+    const blinkFractions: number[] = [];
     for (let t = 0; t < 8; t += TICK) {
       monster.tick(TICK, context);
-      floor = Math.min(floor, monster.beamFraction);
       if (monster.state === 'blink') blinkFractions.push(monster.beamFraction);
+      else flickerFloor = Math.min(flickerFloor, monster.beamFraction);
     }
 
-    // The bug: the curve went negative at high severity and clamped to 0, which hides the
-    // spotlight outright. Nothing may take the beam below the floor, blink or flicker.
-    expect(floor).toBeGreaterThanOrEqual(FLICKER.floor - 1e-9);
-    expect(floor).toBeGreaterThan(0);
-    // And the blink itself is one steady dip, not a strobe inside a strobe.
+    // The struggle is the information (§5.2): a beam oscillating down to nothing reads as
+    // the torch dying rather than as something reaching into the light, so the curve keeps
+    // its floor everywhere except the window it is deliberately out for.
+    expect(flickerFloor).toBeGreaterThanOrEqual(FLICKER.floor - 1e-9);
+    expect(FLICKER.floor).toBeGreaterThan(0);
+
+    // And the blink is off. Not dim, not the floor — off, and steady for the whole window
+    // rather than a strobe inside a strobe.
     expect(blinkFractions.length).toBeGreaterThan(0);
-    for (const fraction of blinkFractions) expect(fraction).toBeCloseTo(FLICKER.floor, 9);
+    for (const fraction of blinkFractions) expect(fraction).toBe(0);
   });
 
-  it('never casts on a tick it moved — §5.2\'s hard rule (§5.2)', () => {
-    // "Never both moving and visible" is the whole design: the shadow is the only way to
-    // see this creature, and a second, easier way would be a second way. The beam holds at
-    // 15% through a blink, which is plenty to cast by, so nothing but this stops it being
-    // a silhouette sliding across the floor for half a second at a time.
+  it('never has light on it on a tick it moved — §5.2\'s hard rule (§5.2)', () => {
+    // "Never both moving and visible" is the whole design: the shadow is the only way to see
+    // this creature, and a second, easier way would be a second way.
+    //
+    // The rule used to be enforced against the renderer — the beam held at 15% and the
+    // monster's shadow switched off underneath it. It is physical now: the window it walks
+    // in is a window the torch emits nothing in, so there is no light to cast by and nothing
+    // to enforce.
     const built = world(OPEN);
     const light = beam(true);
     const monster = monsterAt(20, 20);
     const context = contextFor(built, 20, 8, { illumination: light });
 
-    const casting = (): boolean => {
-      let any = false;
-      monster.object.traverse((node) => {
-        if (node.castShadow) any = true;
-      });
-      return any;
-    };
-
     let movingTicks = 0;
-    let castingWhileStill = 0;
+    let litAndStill = 0;
     for (let t = 0; t < 8; t += TICK) {
       const before = { x: monster.position.x, y: monster.position.y };
       monster.tick(TICK, context);
-      // The game renders after it ticks, and the shadow pass reads what render left.
       monster.render(1);
 
       const moved = Math.hypot(monster.position.x - before.x, monster.position.y - before.y);
       if (moved > 1e-9) {
         movingTicks += 1;
-        expect(casting(), `visible while moving at t=${t.toFixed(2)}`).toBe(false);
-      } else if (casting()) {
-        castingWhileStill += 1;
+        expect(monster.beamFraction, `lit while moving at t=${t.toFixed(2)}`).toBe(0);
+      } else if (monster.beamFraction > 0) {
+        litAndStill += 1;
       }
     }
 
     expect(movingTicks).toBeGreaterThan(0);
-    // Not vacuous the other way either: standing in the beam, it is very much there.
-    expect(castingWhileStill).toBeGreaterThan(0);
+    // Not vacuous the other way: standing in the beam, it is very much lit.
+    expect(litAndStill).toBeGreaterThan(0);
+  });
+
+  it('always casts, so its shadow is there whenever a light is (§5.2)', () => {
+    // The other half of the same rule, and the half that used to be broken: the shadow *is*
+    // the creature, so a mesh that stops casting is a creature that has stopped existing
+    // under a light that is on it. Nothing switches it off any more.
+    const built = world(OPEN);
+    const light = beam(true);
+    const monster = monsterAt(20, 20);
+    const context = contextFor(built, 20, 8, { illumination: light });
+
+    const casts = (): boolean => {
+      let all = true;
+      monster.object.traverse((node) => {
+        if (node instanceof THREE.Mesh && !node.castShadow) all = false;
+      });
+      return all;
+    };
+
+    for (let t = 0; t < 8; t += TICK) {
+      monster.tick(TICK, context);
+      monster.render(1);
+      expect(casts(), `stopped casting at t=${t.toFixed(2)} in ${monster.state}`).toBe(true);
+    }
   });
 
   it('can be heard walking while the beam is down', () => {

@@ -33,15 +33,13 @@
  * health (§5.3). Everything below is that asymmetry made arithmetic.
  */
 
-import { ENEMY, FLICKER as FLICKER_CURVE } from '../config';
+import { ENEMY } from '../config';
 import type { Rng } from '../core/rng';
 import { drawJitter, flickerFraction, severityAt } from '../lighting/flicker';
 import { Enemy, ENEMY_PROFILES, type EnemyContext } from './Enemy';
 
 const FLICKER = ENEMY.shadowMonster.flicker;
 const BLINK = ENEMY.shadowMonster.blink;
-/** What the beam holds at through a blink — the same floor the curve is clamped to. */
-const FLICKER_FLOOR = FLICKER_CURVE.floor;
 
 export class ShadowMonster extends Enemy {
   /** Seconds of *continuous* flashlight focus, driving the severity ramp (§5.2). */
@@ -78,7 +76,7 @@ export class ShadowMonster extends Enemy {
    */
   override render(alpha: number): void {
     super.render(alpha);
-    this.setCasting(this.state !== 'blink');
+
   }
 
   /**
@@ -194,7 +192,13 @@ export class ShadowMonster extends Enemy {
     // From this tick, not the next: the tick that triggers the blink is already part of it,
     // and leaving the curve's value on the beam would put one bright frame at the front of
     // a window whose whole job is to be dark.
-    this._beamFraction = FLICKER_FLOOR;
+    //
+    // Zero, not the flicker's floor. §5.2's hard rule is that this creature is never both
+    // moving and visible, and the only thing that makes it visible is a light casting its
+    // shadow — so the window in which it walks is a window in which the torch emits nothing
+    // at all. Held at 15% the rule needed enforcing against the renderer, by switching the
+    // monster's shadow off underneath a beam that was still lit; off, it enforces itself.
+    this._beamFraction = 0;
     this._blinks += 1;
     this.setState('blink');
   }
@@ -211,19 +215,28 @@ export class ShadowMonster extends Enemy {
   private advanceBlink(dt: number, context: EnemyContext): void {
     const sample = context.illumination.sample(this.key, this.position.x, this.position.y);
 
+    // `inBeam`, not `lit`. The beam is out *because of this blink*, so asking whether there
+    // is light here would answer with the monster's own darkness and end the window one tick
+    // after it opened. The question is whether the player still has the torch on and still
+    // has it pointed here (§5.2).
+    const held = sample.inBeam === true;
+    // A lamp reaches it: light it cannot interfere with, so the blink is over and §5.2 step
+    // 1 applies again on this tick, before anything moves.
+    const lamped = sample.lit && sample.source === 'environment';
+
     // The beam has left it, or a lamp has caught it. Either ends the blink on this tick.
     //
     // A blink is half a second long and the player can sweep the torch away inside it —
     // and §5.2 is absolute that a beam not on the monster is a clean beam. Running the
-    // window out regardless would hold their torch dimmed while it points at something
+    // window out regardless would hold their torch out while it points at something
     // else, and hold the severity ramp open across a break in focus that should have
     // reset it. Both were true of the first version of this walk.
-    if (!sample.lit || sample.source !== 'flashlight') {
+    if (!held || lamped) {
       this.releaseBeam();
       this.blinkFor = 0;
       this.blinkCooldown = BLINK.cooldownSeconds;
       // §5.2 step 1 — a lamp freezes it exactly as the beam did; nothing else does.
-      if (sample.lit) {
+      if (lamped) {
         this.setState('frozen');
         return;
       }
@@ -233,11 +246,11 @@ export class ShadowMonster extends Enemy {
     }
 
     this.blinkFor = Math.max(0, this.blinkFor - dt);
-    this._beamFraction = FLICKER_FLOOR;
+    this._beamFraction = 0;
 
     if (this.blinkFor > 0) {
-      // Free, and hunting. §5.2 — the beam is too far down to hold it, whatever the
-      // illumination service still calls "lit".
+      // Free, and hunting — in the dark it is standing in, which is what §5.2 licenses it
+      // to walk through.
       super.decide(dt, context);
       return;
     }
@@ -245,7 +258,14 @@ export class ShadowMonster extends Enemy {
     // The beam is back, and it is still in it — so it freezes again, the ramp goes on from
     // where it was (a blink is not a reprieve from the focus that caused it), and the dead
     // time starts now rather than half a second ago.
+    //
+    // `interfere` on this tick, not the next: the window is over, so the torch is emitting
+    // again *now*. Leaving the fraction at zero until the next tick would keep the player in
+    // the dark for a frame after the blink they just survived — and would leave the monster
+    // recorded as frozen by a light that is out. It cannot re-trigger from here, because the
+    // dead time is set first.
     this.blinkCooldown = BLINK.cooldownSeconds;
     this.setState('frozen');
+    this.interfere(dt);
   }
 }

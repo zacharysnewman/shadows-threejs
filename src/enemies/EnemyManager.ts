@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { ENEMY } from '../config';
+import type { CharacterLoader } from '../core/CharacterLoader';
 import type { Rng } from '../core/rng';
 import type { EntityRegistry } from '../map/EntityRegistry';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
@@ -26,6 +27,7 @@ import {
   type PlayerActions,
 } from './Enemy';
 import { ShadowMonster } from './ShadowMonster';
+import { CharacterRig } from './CharacterRig';
 import { Spider } from './Spider';
 
 /** Fired for every enemy overlapping the player, every tick the overlap lasts (§5.3). */
@@ -74,6 +76,51 @@ export class EnemyManager {
     };
     spawn('SpiderEnemy');
     spawn('ShadowMonster');
+  }
+
+  /**
+   * §5.1, §5.2 — give every enemy its real body once the art has loaded.
+   *
+   * Asynchronous and after the fact rather than part of construction, deliberately: a run
+   * that waits on a character `.glb` is a run that does not start if the file moved, and
+   * every enemy is fully playable on its placeholder in the meantime.
+   *
+   * Both enemies get art, for opposite reasons. The spider is seen, so it needs a body and
+   * §5.1's speed-driven locomotion. The monster is never seen at all — but the shadow *is*
+   * the creature (§5.2), and a shadow is only frightening if its outline is, so what its
+   * model buys is a silhouette. `Enemy.attachCharacter` is what keeps it undrawn; the
+   * monster's clips, if the art ever has any, stay unplayed because §5.2 is absolute that
+   * it is never both moving and visible.
+   */
+  async attachCharacters(loader: CharacterLoader): Promise<void> {
+    const wanted = [
+      { kind: 'SpiderEnemy' as const, config: ENEMY.spider },
+      { kind: 'ShadowMonster' as const, config: ENEMY.shadowMonster },
+    ];
+
+    await Promise.all(
+      wanted.flatMap(({ kind, config }) =>
+        this.enemies
+          .filter((enemy) => enemy.profile.kind === kind)
+          .map(async (enemy) => {
+            const character = await loader.load(config.character);
+            if (character.missing) return;
+            enemy.attachCharacter(
+              new CharacterRig(character, {
+                // Only the spider has a locomotion cycle to drive (§5.1); the monster's
+                // rig holds no clips, so neither number is ever read for it.
+                walkReferenceSpeed:
+                  kind === 'SpiderEnemy' ? ENEMY.spider.walkClipSpeed : config.pursueSpeed,
+                attackSeconds: ENEMY.spider.attack.windUpSeconds,
+                // Both kits are authored several metres tall; `profile.height` is what
+                // every other system already believes each enemy to be, and the authored
+                // height is measured from the model rather than copied into config.
+                scale: enemy.profile.height / character.authoredHeight,
+              }),
+            );
+          }),
+      ),
+    );
   }
 
   get enabled(): boolean {
@@ -164,8 +211,8 @@ export class EnemyManager {
     }
   }
 
-  render(alpha: number): void {
-    for (const enemy of this.enemies) enemy.render(alpha);
+  render(alpha: number, delta = 0): void {
+    for (const enemy of this.enemies) enemy.render(alpha, delta);
   }
 
   dispose(): void {

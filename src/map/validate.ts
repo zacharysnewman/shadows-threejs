@@ -361,6 +361,15 @@ function buildEntity(
       };
     }
 
+    case 'Landmark': {
+      // §2 — a landmark with no prefab names nothing, and a landmark whose prefab is
+      // missing is skipped by the loader rather than standing an anonymous grey box where
+      // the map promised something recognisable.
+      const prefab = str('prefab');
+      if (prefab === null) return null;
+      return { ...base, type, prefab, rotation: num('rotation', ENTITY_DEFAULTS.landmarkRotation) };
+    }
+
     case 'Gate': {
       const id = str('id');
       const targetId = str('targetId');

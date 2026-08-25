@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three';
-import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_SOURCE, SIM } from './config';
+import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_KITS, SIM } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -25,6 +25,7 @@ import { MonsterFootsteps } from './enemies/MonsterFootsteps';
 import { Spider } from './enemies/Spider';
 import { SpiderVoices } from './enemies/SpiderVoices';
 import type { AssetLoader } from './core/AssetLoader';
+import type { CharacterLoader } from './core/CharacterLoader';
 import type { Input } from './core/Input';
 import { OccluderFade } from './core/OccluderFade';
 import { Rng } from './core/rng';
@@ -67,6 +68,8 @@ export interface RunShell {
   overlay: DebugOverlay;
   input: Input;
   assets: AssetLoader;
+  /** §5.1 — animated enemy bodies. */
+  characters: CharacterLoader;
   audio: AudioCore;
   freeCamera: FreeCamera;
   hud: Hud;
@@ -97,7 +100,8 @@ export async function createRun(
   /** §9.3 — a level handed over by the editor rather than fetched. */
   rawMapOverride?: unknown,
 ): Promise<Run> {
-  const { viewport, overlay, input, assets, audio, freeCamera, hud, notes, tuning } = shell;
+  const { viewport, overlay, input, assets, characters, audio, freeCamera, hud, notes, tuning } =
+    shell;
   const clock = new SimClock();
   // §5.3, §6 — the run's ending, and the surface the player reads it on. Built first so
   // nothing below has to check whether they exist yet.
@@ -161,6 +165,13 @@ export async function createRun(
   // §5 — enemies spawn from the map's entities, on the grid the Phase 1 pipeline derived.
   const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
   viewport.scene.add(enemies.root);
+  // §5.1 — real bodies arrive when they arrive. Not awaited: every enemy is fully playable
+  // on its placeholder, and a run that blocks on a character `.glb` is a run that does not
+  // start when the file moves.
+  void enemies.attachCharacters(characters);
+  // §3.1, §4 — and the player's own body, on the same terms: not awaited, because a run
+  // with a capsule in it is a run, and one that never starts is not.
+  void characters.load(PLAYER.character).then((body) => player.attachCharacter(body));
 
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.
@@ -509,12 +520,14 @@ export async function createRun(
   if (loaded.geometry.placeholders.length > 0) {
     overlay.addRow('assets', () => {
       const missing = loaded.geometry.placeholders.length;
-      // §1 — the art's provenance, on screen. CC0 requires no attribution; this is here so
-      // the question "where did this come from" has an answer without a git archaeology
-      // session, and so a run on placeholder boxes is obvious rather than assumed.
-      return missing === 0
-        ? `${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`
-        : `${missing} placeholder prefab(s) · rest: ${PREFAB_SOURCE.kit} (${PREFAB_SOURCE.licence})`;
+      // §1 — the art's provenance, on screen, so "where did this come from" has an answer
+      // without a git archaeology session, and so a run on placeholder boxes is obvious
+      // rather than assumed. A kit whose terms nobody has confirmed is named as such here
+      // too: the readout is where a developer would notice, and noticing is the point.
+      const kits = PREFAB_KITS.map(
+        (kit) => `${kit.kit} (${kit.licence ?? 'licence not stated'})`,
+      ).join(' · ');
+      return missing === 0 ? kits : `${missing} placeholder prefab(s) · rest: ${kits}`;
     });
   }
 
@@ -907,8 +920,10 @@ export async function createRun(
     // plays over a world that has stopped, not one still walking around behind it.
     if (outcome.simulating) clock.advance(realDelta);
 
-    player.render(clock.alpha);
-    enemies.render(clock.alpha);
+    // §7 — the render delta, not the tick: the walk cycle is a presentation effect.
+    player.render(clock.alpha, realDelta);
+    // §7 — the render delta, not the tick: an animation is a presentation effect.
+    enemies.render(clock.alpha, realDelta);
     voices.update();
     lampVoices.update();
     paths.update();

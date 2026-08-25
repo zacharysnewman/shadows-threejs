@@ -16,6 +16,7 @@ const COLORS: Record<EntityType, number> = {
   Flashlight: 0xffe082,
   Note: 0xf5f5f5,
   PowerSwitch: 0x81c784,
+  Landmark: 0xc8a06a,
   EnvironmentLight: 0xfff176,
   Gate: 0xba68c8,
   ExitGate: 0xff8a65,

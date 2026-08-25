@@ -21,13 +21,25 @@ import {
   OBSTACLE_TILES,
   type EntityChoice,
   entityChoice,
+  facingIsVisible,
   missingProperties,
   mountOptions,
   normalise,
 } from './palette';
 import { EDITOR_STYLE } from './style';
+import { expandStamp, rotatedFootprint, stampFits } from './stamps';
+import {
+  StampLibrary,
+  captureStamp,
+  formatStampFile,
+  loadProjectStamps,
+  loadStamps,
+  saveStamps,
+  stampsFromJson,
+  uniqueStampId,
+} from './stampLibrary';
 
-type Tool = 'paint' | 'erase' | 'rect' | 'entity';
+type Tool = 'paint' | 'erase' | 'rect' | 'entity' | 'stamp';
 
 /** Where a draft lives between sessions (§9.3). Not a save system; the export is the level. */
 const AUTOSAVE_KEY = 'shadows.editor.draft';
@@ -40,6 +52,22 @@ export class EditorApp {
   private readonly root: HTMLDivElement;
 
   private tool: Tool = 'paint';
+  /** §9.4 — the project's stamps and the ones captured here, merged. */
+  private readonly stamps: StampLibrary = loadStamps();
+  /** §9.4 — which stamp is armed, and how far it is turned. */
+  private stampId: string;
+  private stampTurns = 0;
+  /**
+   * §9.4 — true while the stamp tool is dragging out a rectangle to capture rather than
+   * placing. The same drag either way; what differs is what happens on release.
+   */
+  private capturing = false;
+  /**
+   * §9.4 — the stamp the next capture replaces, or null to add a new one. Set by "Replace
+   * from selection", which is what makes a captured piece editable rather than a thing you
+   * can only delete and re-make under a different name.
+   */
+  private capturingInto: string | null = null;
   private layer = 1;
   private tileId = 2;
   private entityType = 'SpiderEnemy';
@@ -54,6 +82,7 @@ export class EditorApp {
 
   constructor(parent: HTMLElement = document.body) {
     this.doc = loadDraft() ?? EditorDocument.blank();
+    this.stampId = this.stamps.all[0]?.id ?? '';
 
     this.root = document.createElement('div');
     this.root.className = 'ed';
@@ -85,6 +114,17 @@ export class EditorApp {
 
     this.refreshPalette();
     this.frame();
+
+    // §9.4 — the level's pieces, without waiting for them. The editor is usable the moment
+    // it opens and the project's stamps appear a moment later, which is the right way round:
+    // a slow or missing `stamps.json` costs the pieces in it and never the tools.
+    void loadProjectStamps(`${import.meta.env.BASE_URL}stamps.json`).then((stamps) => {
+      if (stamps.length === 0) return;
+      this.stamps.setProject(stamps);
+      if (!this.stamps.byId(this.stampId)) this.stampId = this.stamps.all[0]?.id ?? '';
+      saveStamps(this.stamps);
+      if (this.tool === 'stamp') this.refreshPalette();
+    });
   }
 
   // --- Chrome --------------------------------------------------------------
@@ -108,13 +148,15 @@ export class EditorApp {
       return element;
     };
 
-    const tools: Tool[] = ['paint', 'erase', 'rect', 'entity'];
+    const tools: Tool[] = ['paint', 'erase', 'rect', 'entity', 'stamp'];
     const toolButtons = tools.map((tool) =>
       button(
-        { paint: 'Paint', erase: 'Erase', rect: 'Rect', entity: 'Place' }[tool],
+        { paint: 'Paint', erase: 'Erase', rect: 'Rect', entity: 'Place', stamp: 'Stamp' }[tool],
         () => {
           this.tool = tool;
           this.rectStart = null;
+          this.capturing = false;
+          this.capturingInto = null;
           this.canvas.preview = null;
           this.refreshPalette();
           this.refreshToolbar();
@@ -145,6 +187,7 @@ export class EditorApp {
       ]),
       group([
         button('Copy', () => void this.copy(), 'copy'),
+        button('Stamps', () => this.showStampJson(), 'stamps'),
         button('Play', () => this.play(), 'play'),
       ]),
     );
@@ -188,6 +231,63 @@ export class EditorApp {
       return;
     }
 
+    if (this.tool === 'stamp') {
+      const chip = (label: string, name: string, onClick: () => void, on = false) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'ed-chip';
+        button.textContent = label;
+        button.dataset['stamp'] = name;
+        button.classList.toggle('is-on', on);
+        button.addEventListener('click', onClick);
+        this.palette.append(button);
+        return button;
+      };
+
+      // §9.4 — capture first, because it is the one control that is not obvious from the
+      // others, and on a phone the palette scrolls: what is off the left edge is not found.
+      const capturingLabel = this.capturingInto
+        ? `✕ Cancel replace`
+        : this.capturing
+          ? '✕ Cancel capture'
+          : '＋ New from selection';
+      chip(capturingLabel, 'capture', () => {
+        this.capturing = !this.capturing;
+        if (!this.capturing) this.capturingInto = null;
+        this.rectStart = null;
+        this.canvas.preview = null;
+        this.refreshPalette();
+      }, this.capturing);
+
+      for (const stamp of this.stamps.all) {
+        const size = rotatedFootprint(stamp, this.stampTurns);
+        chip(
+          `${stamp.label} ${size.width}×${size.height}`,
+          stamp.id,
+          () => {
+            this.stampId = stamp.id;
+            this.refreshPalette();
+          },
+          stamp.id === this.stampId,
+        );
+      }
+
+      // §9.4 — quarter turns, because the grid is square and free angles would mean tiles
+      // at an angle, which it cannot express.
+      chip(`Rotate ${this.stampTurns * 90}°`, 'rotate', () => {
+        this.stampTurns = (this.stampTurns + 1) % 4;
+        this.refreshPalette();
+      });
+
+      // Every stamp is editable, including the project's — editing one takes a copy into
+      // this browser first (§9.4), which is what keeps the file the source of truth while
+      // still letting a committed piece be fixed.
+      if (this.stamps.byId(this.stampId)) {
+        chip('Edit', 'edit', () => this.showStampSheet(this.stampId));
+      }
+      return;
+    }
+
     for (const tile of this.layer === 0 ? FLOOR_TILES : OBSTACLE_TILES) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -210,6 +310,14 @@ export class EditorApp {
     if (phase === 'end') {
       // The rectangle is one edit, applied on release: dragging out a building should cost
       // a single undo, not one per tile the finger crossed (§9.1).
+      // §9.4 — the capture drag ends by naming what it selected, rather than by writing.
+      if (this.tool === 'stamp' && this.capturing && this.rectStart) {
+        const start = this.rectStart;
+        this.rectStart = null;
+        this.canvas.preview = null;
+        this.showCaptureSheet({ x0: start.x, y0: start.y, x1: x, y1: y });
+        return;
+      }
       if (this.tool === 'rect' && this.rectStart && this.doc.inBounds(x, y)) {
         const start = this.rectStart;
         this.doc.edit((draft) => {
@@ -255,8 +363,269 @@ export class EditorApp {
       case 'entity':
         if (phase === 'start') this.placeOrSelect(x, y);
         break;
+
+      case 'stamp':
+        if (this.capturing) {
+          // The same corner-to-corner drag `rect` uses (§9.1): one touch sets a corner and
+          // the drag previews, so what is about to be captured is visible before it is.
+          if (phase === 'start') this.rectStart = { x, y };
+          if (this.rectStart) {
+            this.canvas.preview = { x0: this.rectStart.x, y0: this.rectStart.y, x1: x, y1: y };
+          }
+          break;
+        }
+        this.previewStamp(x, y);
+        if (phase === 'start') this.placeStamp(x, y);
+        break;
     }
     this.canvas.selected = this.tool === 'entity' ? { x, y } : null;
+  }
+
+  /** §9.4 — show the footprint before the click, so what it covers is visible first. */
+  private previewStamp(x: number, y: number): void {
+    const stamp = this.stamps.byId(this.stampId);
+    if (!stamp) return;
+    const size = rotatedFootprint(stamp, this.stampTurns);
+    this.canvas.preview = { x0: x, y0: y, x1: x + size.width - 1, y1: y + size.height - 1 };
+  }
+
+  /**
+   * §9.4 — expand the stamp into ordinary tiles and entities, in one edit.
+   *
+   * One `doc.edit` call, so one undo step: the placement was one action and takes one
+   * action to take back. After that the contents are ordinary map content — move a goal and
+   * it is a field with a goal moved, not a broken instance of anything.
+   *
+   * Refused rather than clipped when it would fall off the map: half a soccer field is not
+   * a thing anybody meant to place.
+   */
+  private placeStamp(x: number, y: number): void {
+    const stamp = this.stamps.byId(this.stampId);
+    if (!stamp) return;
+    if (!stampFits(stamp, x, y, this.stampTurns, this.doc.width, this.doc.height)) {
+      this.flash(`${stamp.label} does not fit there`);
+      return;
+    }
+
+    const expanded = expandStamp(stamp, x, y, this.stampTurns);
+    this.doc.edit((draft) => {
+      for (const tile of expanded.tiles) {
+        const layer = draft.layers[tile.layer];
+        if (layer) layer[tile.y * draft.width + tile.x] = tile.id;
+      }
+      // A stamp writes over what is under it (§9.4) — that is what makes it useful for
+      // laying ground — and an entity it covers goes with the tile it stood on.
+      const covered = new Set(expanded.entities.map((e) => `${e.x},${e.y}`));
+      draft.entities = draft.entities.filter((e) => !covered.has(`${e.x},${e.y}`));
+      draft.entities.push(...expanded.entities);
+    });
+
+    // §9.4 — a quarter turn can point a note at the camera's blind side. Saying so here is
+    // the whole reason `facing` rotates with the stamp rather than staying put: a note
+    // silently left unreadable is the failure §9.2 exists to prevent.
+    const hidden = expanded.entities.filter(
+      (entity) =>
+        entityChoice(entity.type)?.mustBeVisible === true &&
+        !facingIsVisible(Number(entity.properties['facing'] ?? 0)),
+    ).length;
+    this.flash(
+      hidden > 0
+        ? `${stamp.label} placed · ${hidden} note(s) now face north, where the camera cannot read them (§9.2)`
+        : `${stamp.label} placed`,
+    );
+  }
+
+  /**
+   * §9.4 — what can be done to one stamp: rename it, re-cut it from the map, throw it away.
+   *
+   * A sheet rather than more chips in the palette, because the palette is a strip a thumb
+   * flicks through and three destructive-ish buttons hiding at the end of it is how the wrong
+   * one gets pressed.
+   *
+   * The project's pieces get one action — take a copy — and everything else follows from
+   * there. That copy keeps the id, so what comes out of the export lands back in
+   * `stamps.json` over the entry it came from rather than beside it.
+   */
+  private showStampSheet(id: string): void {
+    const stamp = this.stamps.byId(id);
+    if (!stamp) return;
+
+    const origin = this.stamps.origin(id);
+    const shadows = this.stamps.shadows(id);
+
+    this.selected = null;
+    this.sheet.hidden = false;
+    this.sheet.textContent = '';
+
+    const title = document.createElement('div');
+    title.className = 'ed-sheet-title';
+    title.textContent = `${stamp.label} · ${stamp.width}×${stamp.height}`;
+    this.sheet.append(title);
+
+    const note = document.createElement('div');
+    note.className = 'ed-hint';
+    note.textContent =
+      origin !== 'custom'
+        ? `From the ${origin === 'project' ? 'project' : 'defaults'}. Take a copy to edit it; the copy keeps its name, so the export drops back over the original.`
+        : shadows
+          ? `Your copy of a ${shadows === 'project' ? 'project' : 'default'} piece. Exported under the same name, so it replaces the original.`
+          : 'Captured in this browser. Exported with the library.';
+    this.sheet.append(note);
+
+    const close = (): void => {
+      this.sheet.hidden = true;
+    };
+    const action = (
+      label: string,
+      name: string,
+      onClick: () => void,
+      danger = false,
+    ): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset['name'] = name;
+      button.textContent = label;
+      if (danger) button.className = 'ed-danger';
+      button.addEventListener('click', onClick);
+      return button;
+    };
+
+    if (origin !== 'custom') {
+      const actions = document.createElement('div');
+      actions.className = 'ed-row';
+      actions.append(
+        action('Take a copy to edit', 'stamp-fork', () => {
+          this.stamps.override(id);
+          saveStamps(this.stamps);
+          this.flash(`Editing your copy of ${stamp.label}`);
+          this.refreshPalette();
+          this.showStampSheet(id);
+        }),
+        action('Close', 'stamp-close', close),
+      );
+      this.sheet.append(actions);
+      return;
+    }
+
+    const row = document.createElement('label');
+    row.className = 'ed-row';
+    row.append(Object.assign(document.createElement('span'), { textContent: 'name' }));
+    const input = document.createElement('input');
+    input.dataset['prop'] = 'stamp-rename';
+    input.value = stamp.label;
+    input.addEventListener('change', () => {
+      if (!this.stamps.relabel(id, input.value)) return;
+      saveStamps(this.stamps);
+      this.flash(`Renamed to ${input.value.trim()}`);
+      this.refreshPalette();
+    });
+    row.append(input);
+    this.sheet.append(row);
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    actions.append(
+      action('Replace from selection', 'stamp-replace', () => {
+        // Arms the same capture drag, pointed at this stamp: draw the fixed version in the
+        // map, drag a rectangle round it, and this one becomes that.
+        this.tool = 'stamp';
+        this.capturing = true;
+        this.capturingInto = id;
+        this.rectStart = null;
+        this.canvas.preview = null;
+        close();
+        this.flash(`Drag a rectangle to replace ${stamp.label}`);
+        this.refreshPalette();
+        this.refreshToolbar();
+      }),
+      action(
+        shadows ? 'Revert' : 'Delete',
+        'stamp-delete',
+        () => {
+          this.stamps.remove(id);
+          saveStamps(this.stamps);
+          if (!this.stamps.byId(this.stampId)) this.stampId = this.stamps.all[0]?.id ?? '';
+          close();
+          // Named after the revert, not before: the label being reverted *to* is the one
+          // underneath, and saying the name that just went away reads as a failed delete.
+          const revealed = this.stamps.byId(id);
+          this.flash(
+            revealed ? `Reverted to the ${shadows} ${revealed.label}` : `${stamp.label} deleted`,
+          );
+          this.refreshPalette();
+        },
+        true,
+      ),
+      action('Close', 'stamp-close', close),
+    );
+    this.sheet.append(actions);
+  }
+
+  /** §9.4 — name what the drag selected, and keep it. */
+  private showCaptureSheet(rect: { x0: number; y0: number; x1: number; y1: number }): void {
+    const width = Math.abs(rect.x1 - rect.x0) + 1;
+    const height = Math.abs(rect.y1 - rect.y0) + 1;
+
+    this.selected = null;
+    this.sheet.hidden = false;
+    this.sheet.textContent = '';
+
+    const replacing = this.capturingInto ? this.stamps.byId(this.capturingInto) : null;
+
+    const title = document.createElement('div');
+    title.className = 'ed-sheet-title';
+    title.textContent = replacing
+      ? `Replace ${replacing.label} with ${width}×${height} tiles`
+      : `New stamp from ${width}×${height} tiles`;
+
+    const row = document.createElement('label');
+    row.className = 'ed-row';
+    row.append(Object.assign(document.createElement('span'), { textContent: 'name' }));
+    const input = document.createElement('input');
+    input.dataset['prop'] = 'stamp-label';
+    input.placeholder = 'required';
+    input.value = replacing?.label ?? '';
+    row.append(input);
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.dataset['name'] = 'stamp-save';
+    save.textContent = 'Save';
+    save.addEventListener('click', () => {
+      const label = input.value.trim();
+      if (!label) {
+        this.flash('A stamp needs a name');
+        return;
+      }
+      const target = this.capturingInto;
+      if (target) {
+        // §9.4 — replacing keeps the id, which is what lets an edited copy of a committed
+        // piece drop back into `stamps.json` over the entry it came from.
+        this.stamps.replace(target, captureStamp(this.doc, rect, target, label));
+        this.stampId = target;
+      } else {
+        const id = uniqueStampId(label, this.stamps.all.map((stamp) => stamp.id));
+        this.stampId = this.stamps.add(captureStamp(this.doc, rect, id, label));
+      }
+      saveStamps(this.stamps);
+      this.capturing = false;
+      this.capturingInto = null;
+      this.sheet.hidden = true;
+      this.flash(`${label} ${target ? 'replaced' : 'captured'} · ${width}×${height}`);
+      this.refreshPalette();
+    });
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => {
+      this.sheet.hidden = true;
+    });
+    actions.append(save, cancel);
+
+    this.sheet.append(title, row, actions);
+    input.focus();
   }
 
   private placeOrSelect(x: number, y: number): void {
@@ -416,20 +785,93 @@ export class EditorApp {
     } catch {
       // iOS refuses the clipboard outside a user gesture it recognises; a selectable
       // textarea is the fallback that always works.
-      const area = document.createElement('textarea');
-      area.className = 'ed-dump';
-      area.value = text;
-      area.readOnly = true;
-      const close = document.createElement('button');
-      close.type = 'button';
-      close.textContent = 'Done';
-      close.addEventListener('click', () => wrap.remove());
-      const wrap = document.createElement('div');
-      wrap.className = 'ed-dumpwrap';
-      wrap.append(area, close);
-      this.root.append(wrap);
-      area.select();
+      this.showDump(text, null);
     }
+  }
+
+  /**
+   * §9.4 — the captured stamps, out and back in.
+   *
+   * One panel for both directions because they are one workflow: the text you copy out is
+   * the text you paste back, and a screen that showed you the export but made you find
+   * another button to import would be two ways of looking at the same field.
+   *
+   * The built-ins are not in it. They are in the project already, and exporting them would
+   * mean importing them back as duplicates of themselves.
+   */
+  private showStampJson(): void {
+    const text = formatStampFile(this.stamps.toJson());
+    const count = this.stamps.custom.length;
+    this.showDump(text, (edited) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(edited);
+      } catch (error) {
+        this.flash(`That is not JSON: ${String(error)}`);
+        return false;
+      }
+      const incoming = stampsFromJson(parsed);
+      if (incoming.length === 0) {
+        this.flash('No stamps in that');
+        return false;
+      }
+      const loaded = this.stamps.merge(incoming);
+      saveStamps(this.stamps);
+      if (!this.stamps.byId(this.stampId)) this.stampId = this.stamps.all[0]?.id ?? '';
+      this.flash(`${loaded} stamp(s) loaded`);
+      this.refreshPalette();
+      return true;
+    }, count === 0 ? 'No stamps captured yet — paste some here to load them' : undefined);
+    void navigator.clipboard?.writeText(text).then(
+      () => this.flash(`Copied ${count} stamp(s)`),
+      () => undefined,
+    );
+  }
+
+  /**
+   * A full-screen text panel: the export you can select, and — when `onApply` is given — the
+   * field you paste back into.
+   *
+   * The one path that always works on a phone (§9.3): no file system, no download
+   * permission, and no clipboard permission needed to *read* the text out.
+   */
+  private showDump(
+    text: string,
+    onApply: ((edited: string) => boolean) | null,
+    placeholder?: string,
+  ): void {
+    const area = document.createElement('textarea');
+    area.className = 'ed-dump';
+    area.value = text;
+    area.readOnly = onApply === null;
+    if (placeholder) area.placeholder = placeholder;
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-dumpbar';
+
+    if (onApply) {
+      const load = document.createElement('button');
+      load.type = 'button';
+      load.dataset['name'] = 'dump-load';
+      load.textContent = 'Load';
+      load.addEventListener('click', () => {
+        if (onApply(area.value)) wrap.remove();
+      });
+      actions.append(load);
+    }
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.dataset['name'] = 'dump-done';
+    close.textContent = 'Done';
+    close.addEventListener('click', () => wrap.remove());
+    actions.append(close);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ed-dumpwrap';
+    wrap.append(area, actions);
+    this.root.append(wrap);
+    area.select();
   }
 
   /** §9.3 — hand the level to the game without a round trip through the repository. */

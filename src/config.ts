@@ -81,6 +81,8 @@ export const MAP_LIMITS = {
  * the map.
  */
 export const ENTITY_DEFAULTS = {
+  /** `Landmark.rotation`, degrees clockwise from north (§2). */
+  landmarkRotation: 0,
   /** `PlayerSpawn.rotation`, degrees. */
   playerSpawnRotation: 0,
   /**
@@ -129,6 +131,15 @@ export const PLAYER = {
   radius: 0.4,
   /** Capsule height in metres (§3.1). Visual and, later, the flashlight mount height. */
   height: 1.8,
+  /**
+   * §3.1, §4 — the body the player sees themselves as, from `public/characters/`.
+   *
+   * Scaled to `height`, and turned to face the *aim* rather than the direction of travel:
+   * §3.1's whole design is that the two are independent, and a character facing where it
+   * walks would put the player's back to their own torch every time they retreat with the
+   * beam held on something. `Player.render` already does this; the model inherits it.
+   */
+  character: 'player',
 } as const;
 
 /** §3.4 — the health pool. A buffer against the spider only; the monster ignores it. */
@@ -373,6 +384,14 @@ export const ENEMY = {
     /** Dog-sized (§5.1). */
     radius: 0.5,
     height: 0.7,
+    /** §5.1 — the animated body, from `public/characters/`. */
+    character: 'spider',
+    /**
+     * Ground speed the walk clip was authored at, in m/s. §5.1 drives the cycle's playback
+     * rate from actual speed, and this is the rate that means "×1" — measured by watching
+     * the legs against the ground, which is the only way to measure it.
+     */
+    walkClipSpeed: 2.4,
     wanderSpeed: 1.2,
     pursueSpeed: 2.4,
     fleeSpeed: 3.6,
@@ -423,6 +442,19 @@ export const ENEMY = {
   shadowMonster: {
     radius: 0.55,
     height: 2.2,
+    /**
+     * §5.2 — the body that is never drawn.
+     *
+     * It still needs to be a *shape*: the shadow is the creature, and a shadow is only
+     * frightening if its outline is. So the monster gets real art for exactly the reason
+     * the spider does not need any — every pixel of it the player ever sees is a
+     * silhouette on the floor, and a capsule casts a capsule.
+     *
+     * What it does not get is animation. §5.2 is absolute that it is never both moving and
+     * visible, so a walk cycle would be frames nobody can see and a standing temptation to
+     * show them.
+     */
+    character: 'shadow_monster',
     wanderSpeed: 1.4,
     pursueSpeed: 1.8,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
@@ -461,24 +493,124 @@ export const ENEMY = {
 } as const;
 
 /**
- * §1 — where the prefab art came from.
+ * §1, §8.2 — where the prefab art came from. One entry per kit, in the order the credits
+ * list them.
  *
- * CC0 asks for nothing, so this is not a compliance record; it is a provenance one. The
- * question that gets asked later is "can we ship this, and where do we get the next
- * version", and the answer has to live somewhere that is not somebody's memory.
+ * A provenance record before it is a compliance one. The question that gets asked later is
+ * "can we ship this, and where do we get the next version", and the answer has to live
+ * somewhere that is not somebody's memory — which is exactly the case a kit with *no*
+ * stated licence makes: `licence: null` is a fact about the kit, not a gap in this file,
+ * and the credits screen says so rather than implying permission nobody gave.
  */
-export const PREFAB_SOURCE = {
-  kit: 'KayKit — Dungeon Remastered 1.0',
-  author: 'Kay Lousberg',
-  url: 'https://kaylousberg.com',
-  licence: 'CC0 1.0',
-  licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
-  /** The author's own repository, pinned, so the exact files can be re-fetched. */
-  repo: 'KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0',
-  commit: 'b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07',
-  /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
-  attributionRequired: false,
-} as const;
+export interface PrefabKit {
+  kit: string;
+  author: string;
+  url: string;
+  /** The licence as the author states it, or null where the source states none. */
+  licence: string | null;
+  licenceUrl: string | null;
+  /** Where the exact files can be re-fetched, pinned if the source allows pinning. */
+  source: string;
+  /** Whether crediting is required. Unknown counts as required — see `licence: null`. */
+  attributionRequired: boolean;
+  /** Which prefabs came from this kit, by name. */
+  prefabs: readonly string[];
+}
+
+export const PREFAB_KITS: readonly PrefabKit[] = [
+  {
+    kit: 'KayKit — Dungeon Remastered 1.0',
+    author: 'Kay Lousberg',
+    url: 'https://kaylousberg.com',
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source:
+      'KayKit-Game-Assets/KayKit-Dungeon-Remastered-1.0@b0ca9bd96a8072ab36a3a5464f00ed1e06a16d07',
+    /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
+    attributionRequired: false,
+    prefabs: [
+      'fence_chainlink',
+      'floor_concrete',
+      'floor_dirt',
+      'gate_wood',
+      'prop_crate',
+      'wall_brick',
+    ],
+  },
+  {
+    kit: 'Playground Props Collection',
+    author: 'Stanisko',
+    url: 'https://stanisko.itch.io/playground-props-collection-low-poly-game-ready',
+    /**
+     * The pack ships no licence file and the download states no terms, so there is nothing
+     * to record here but that. Treated as attribution-required and named on the credits
+     * screen, which is the conservative reading and the only one available: an unstated
+     * licence is not a permissive one, it is an unanswered question.
+     *
+     * §8.2 — outstanding before release. The terms have to be confirmed with the author,
+     * and until they are, this is the entry that says nobody has.
+     */
+    licence: null,
+    licenceUrl: null,
+    source: 'https://stanisko.itch.io/playground-props-collection-low-poly-game-ready',
+    attributionRequired: true,
+    prefabs: ['prop_goal', 'prop_hoop', 'prop_net', 'prop_slide', 'prop_swing'],
+  },
+  {
+    kit: '3D Low Poly Tree',
+    author: 'yurikokuun',
+    url: 'https://yurikokuun.itch.io/3d-low-poly-tree',
+    /**
+     * The author requires credit, which is why `attributionRequired` is true and why the
+     * credits screen names them (§8.2). Unlike CC0, this one is a condition rather than a
+     * courtesy: shipping without the line is shipping in breach.
+     */
+    licence: 'Free, attribution required',
+    licenceUrl: null,
+    source: 'https://yurikokuun.itch.io/3d-low-poly-tree',
+    attributionRequired: true,
+    prefabs: ['prop_tree'],
+  },
+  {
+    kit: 'Animated Easy Enemies',
+    author: 'Quaternius',
+    url: 'https://quaternius.itch.io/animated-easy-enemies',
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source: 'https://quaternius.itch.io/animated-easy-enemies',
+    /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
+    attributionRequired: false,
+    /** §5.2's spider. A character rather than a prefab — it is skinned (see §1). */
+    prefabs: ['spider'],
+  },
+  {
+    kit: 'Ghoul',
+    author: 'joney_lol',
+    url: 'https://poly.pizza/m/pEwXEubhxz',
+    /**
+     * CC-BY: the credit is a condition, like the tree's. §5.2 means not one pixel of this
+     * model is ever drawn — it exists to cast a shadow — but "the player never sees it" is
+     * not a licence term, and the author is named on the credits screen either way.
+     */
+    licence: 'CC BY',
+    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    source: 'https://poly.pizza/m/pEwXEubhxz',
+    attributionRequired: true,
+    prefabs: ['shadow_monster'],
+  },
+  {
+    kit: 'Fitness Characters',
+    author: 'iPoly3D',
+    url: 'https://poly.pizza/bundle/Fitness-Characters-7PwJehPdnZ',
+    /** Public domain, so the credit is a courtesy — offered anyway (§8.2). */
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    source: 'https://poly.pizza/bundle/Fitness-Characters-7PwJehPdnZ',
+    attributionRequired: false,
+    /** §3.1's player body. Static: the kit ships no rig, so there is no locomotion cycle. */
+    prefabs: ['player'],
+  },
+];
 
 /**
  * §1 — the two things prefab normalisation cannot infer.
@@ -492,6 +624,80 @@ export const PREFAB_SOURCE = {
  * exactly as authored, which is the common case and what a kit built to the 2 m standard
  * needs.
  */
+/**
+ * §2 — the ground a landmark blocks, where its own bounds are the wrong answer.
+ *
+ * A landmark's footprint is derived from its mesh, which is right almost always and is the
+ * only version that survives the art changing. The exception is a model whose bounds are
+ * not what a player walks into: a basketball hoop is a pole with a backboard three metres
+ * up, and its bounding box would fence off a square of empty yard under the board.
+ *
+ * Half-extents in metres, before rotation. An entry here needs a reason of that kind —
+ * "the mesh overhangs ground you can walk under" — and not a preference about difficulty.
+ */
+/**
+ * §1, §5.1 — the orientation a character model was authored in, where it is not this
+ * game's.
+ *
+ * The counterpart to `PREFAB_FIT`, and it exists for the same reason: a kit authored by
+ * somebody else will not match, and editing their file means re-editing it every time the
+ * kit updates. glTF is Y-up by convention and most exporters honour it, but a model
+ * converted out of a Z-up tool can arrive lying on its back — which is not a bug in the
+ * model, just a fact about where it came from.
+ *
+ * Degrees, applied in X then Y, before anything else touches the model. An entry here is a
+ * statement about the *file*, never about how the game wants a character to stand: rotating
+ * a character to face somewhere is `Player.render`'s job and changes with the aim.
+ */
+/**
+ * §3.1 — the rig derived for player art that ships without one (`autoRig`).
+ *
+ * Fractions of the model's own height rather than metres, so the same numbers suit a
+ * character of any size. Every one of them is a guess a real rig would not have to make;
+ * they are here, and not buried in the code, because the day the art arrives with its own
+ * skeleton this whole block goes.
+ */
+export const PLAYER_RIG = {
+  /** Where the hip sits, up from the feet. A little under half a standing figure. */
+  hipFraction: 0.48,
+  /** Height of the blend band across the hip: wider bends, narrower shears. */
+  blendFraction: 0.12,
+  /** How far each leg bone sits from centre, as a fraction of the model's width. */
+  legSpreadFraction: 0.12,
+  /** One stride, in seconds, at `walkClipSpeed`. */
+  strideSeconds: 0.9,
+  /** Peak leg swing from vertical. Small: the camera is 14 m up and looking down (§3.2). */
+  legSwingDegrees: 22,
+  /** How far the hips rise over each supporting foot, as a fraction of height. */
+  bobFraction: 0.012,
+  /**
+   * Ground speed the stride above is authored at, in m/s — the player's own walk (§3.1), so
+   * walking is ×1 and sprinting reads as hurrying rather than as a different animation.
+   */
+  walkClipSpeed: 3.0,
+} as const;
+
+export const CHARACTER_FIT: Readonly<
+  Record<string, { rotateX?: number; rotateY?: number }>
+> = {
+  // Empty, and worth staying that way. Every kit so far turned out to be honest Y-up glTF
+  // once loaded — including one whose raw vertex data reads Z-up, because the node above it
+  // carries the conversion. Reading a `.glb`'s accessors and concluding the model is on its
+  // side is a mistake this table exists to be the *fix* for, not the evidence of: measure a
+  // loaded model, never a parsed one.
+};
+
+export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
+  /** Pole and base only; the backboard and rim are overhead (§2). */
+  prop_hoop: { hx: 0.3, hz: 0.3 },
+  /**
+   * The trunk, measured below 3 m — 1.83 m across, and the same in both axes. The canopy is
+   * 11.84 m wide and starts nearly 15 m up (§2): a footprint from the mesh would fence off
+   * six tiles of ground you are meant to walk under, which is the whole point of the tree.
+   */
+  prop_tree: { hx: 0.92, hz: 0.92 },
+};
+
 export const PREFAB_FIT: Readonly<
   Record<string, { node?: string; fitHeight?: number }>
 > = {
@@ -508,6 +714,22 @@ export const PREFAB_FIT: Readonly<
   wall_brick: { fitHeight: 3.0 },
   /** A 1.1 m barrier where the level wants something at chest height to break sight over. */
   fence_chainlink: { fitHeight: 1.6 },
+  /**
+   * §2 — tall enough that its canopy is above the camera and never drawn.
+   *
+   * The camera eye sits `CAMERA.distance × sin(CAMERA.pitchDegrees)` above the ground —
+   * 14 × sin 72° = 13.31 m — and is pitched down, so nothing above that plane is in frame
+   * at all. In the model the leaves begin at 56.2% of its height, so 26 m puts the
+   * underside of the canopy at 14.6 m: a metre and a bit clear, with the trunk carrying on
+   * up past the camera and out of the top of the world.
+   *
+   * `fitHeight` scales the Y axis only (see `normalisePrefab`), so the canopy gets taller
+   * without getting wider and the trunk keeps its 1.83 m girth — which is what
+   * `PREFAB_FOOTPRINT` blocks. What the player gets is a trunk rising out of sight and a
+   * dark gap in the sky where the leaves are, which is what being under a tree at night
+   * looks like from below.
+   */
+  prop_tree: { fitHeight: 26 },
 };
 
 /**

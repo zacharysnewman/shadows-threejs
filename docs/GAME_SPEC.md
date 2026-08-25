@@ -31,6 +31,13 @@ generate a 3D environment with real-time lighting, shadows, and light-reactive e
   one (a door inside its wall), and a height to scale to, when a module's own is wrong for
   this game (a 4 m wall where the level wants 3 m). Both are look decisions and neither is
   something a loader should guess.
+
+  **A prefab may be more than one material.** Most are one — a wall is brick and nothing
+  else — but a model can be several things at once, and a tree is a brown trunk and green
+  leaves. The loader keeps every distinct material and merges the geometry into a group per
+  material, rather than picking one and rendering the whole model in it. A single-material
+  prefab stays exactly one draw call, which is what §7's instancing budget is counted in;
+  a two-material prefab costs two, and that is the price of the model being two things.
 - **Audio:** `THREE.PositionalAudio` for spatial 3D sound, crucial for tracking invisible
   threats.
 
@@ -113,6 +120,78 @@ alongside the map. The map file carries no art or collision information itself.
   runtime (§6). The resulting boolean grid is the A\* input and is rebuilt on any
   walkability change.
 
+### Three ways a map says "put a thing here"
+
+A tile is 2 m. Most of the world is that size or repeats at it, but a goal is 3 m wide, a
+net is over ten, and neither faces the same way twice. Rather than teach tiles about size
+and rotation, the format has three tiers, and only the middle one is about geometry bigger
+than a tile:
+
+- **A tile**, for anything that is one tile and repeats: floor, wall, fence, a crate. Solid
+  tiles merge into the largest rectangles they can (§2, colliders), which is what keeps a
+  twenty-tile wall run cheap. Tiles have no rotation and will not get one — a rotating tile
+  would break the merge, and everything that wants rotation wants size too.
+- **A `Landmark` entity**, for one model of any size at any angle. Entities already carry
+  `rotation` and already sit at continuous world positions rather than on the grid, which
+  is exactly what a 5.35-tile net at 40° needs and what a tile could never express. Its
+  footprint comes from the prefab's own bounds, so the collision follows the art.
+- **A stamp**, for an arrangement of the two: a soccer field is pitch tiles, two goals and
+  a net. Stamps are an *authoring* idea and live in the editor (§9.4). They expand into
+  ordinary tiles and entities when placed, and a map file has no trace of them.
+
+That last split is load-bearing. A stamp that survived into the map format would be a
+container, and every system that reads a map would have to learn about containers — the
+walkability derivation, pathfinding, the reachability audit, the validator, the editor's
+own undo. Expanding at author time costs the editor a feature and costs the game nothing.
+
+### Landmarks
+
+**A landmark is something you navigate by.** In a map where the beam reaches 12 m and fog
+takes the rest (§4), one dark yard looks like the next, and a player who cannot tell where
+they have already been is not exploring, they are lost. A landmark is a distinctive piece
+of geometry placed so that catching it in the beam answers "where am I".
+
+That is its whole job. Landmarks have no behaviour: nothing is triggered by reaching one,
+they are not objectives, and they hold nothing. What they change is whether the map is
+legible, which is a level-design property rather than a mechanic.
+
+- **Big enough to be recognised from a beam's width.** A landmark that needs to be walked
+  around to identify is not doing the job — the player is meant to sweep past it and know.
+- **Distinct from each other.** Two landmarks of the same prefab in one region tell the
+  player nothing they did not already know; the second one is decoration.
+- **Placed off routes, not on them.** A landmark is a thing to *see*, and one standing in a
+  corridor is a thing to walk around. Its footprint blocks the player like any other solid
+  geometry (below), so this is a real cost and not a preference.
+- **Not a substitute for a route.** The map still has to be navigable in the dark by its
+  layout; landmarks make a legible map memorable, not an illegible map passable.
+
+**Footprint.** A landmark occupies the ground its model occupies. The loader takes the
+prefab's own bounding box — real metres, as authored — rotates it, and contributes it as a
+collider like any solid tile; the walkability grid follows from that, so enemies path
+around a landmark exactly as they path around a wall. Deriving from the mesh rather than
+from an authored number means a swapped model moves its own collision, which matters
+because the alternative is a number that is right until the art changes and silently wrong
+afterwards.
+
+Some models lie, and the spec allows saying so: a basketball hoop's backboard overhangs
+ground a player can walk under, and a footprint taken from its bounds would block a square
+of empty yard. A prefab may declare an override footprint, in the same place the other two
+things prefab normalisation cannot infer already live (§1). The override is the exception
+and needs a reason; the derived box is the default.
+
+**A landmark can be taller than the camera, and the tallest ones should be.** The camera
+eye sits `distance × sin(pitch)` above the ground — 13.3 m at §3.2's values — and is
+pitched down, so nothing above that plane is ever in frame. A tree scaled so its canopy
+starts above it gives the player a trunk rising out of the top of the world and no leaves
+at all: you are under a canopy you can never see, which is what being under a tree at night
+is like from below, and it costs nothing to draw. Scaling for this is a vertical scale only
+(§1's `fitHeight`), so the canopy climbs without the trunk thickening.
+
+**Height is not footprint.** A landmark's collider is its ground area, whatever its height.
+A 4 m hoop and a 1 m bench block the same way, and both fade when they come between the
+camera and the player (§3.2's occluder rule) — which a tall landmark will exercise harder
+than anything else on the map, since it is the tallest geometry the game places.
+
 ### Entity Type Reference
 
 Every `type` the loader accepts, with its `properties` contract. Unknown types are logged
@@ -132,6 +211,7 @@ objects and a map should not fail to load over an unwritten field.
 | `EnvironmentLight` | `groupId` (required), `radius` (default `6` m), `intensity` (default `1.0`) | Off until its group is powered. |
 | `Gate` | `id`, `targetId` (both required), `locked` (default `true`) | Rotates open when triggered. |
 | `ExitGate` | `id` (required), `locked` (default `true`), `requiredSwitches` (default `3`) | Win objective. |
+| `Landmark` | `prefab` (required), `rotation` (deg, default `0`) | Decoration you navigate by; any size, any angle. Footprint from the prefab's bounds. See Landmarks above. |
 | `SpiderEnemy` | — | Spawns at tile centre. |
 | `ShadowMonster` | — | Spawns at tile centre. |
 
@@ -147,6 +227,13 @@ the run has nowhere to start, so there is nothing to degrade to.
 Multiple `EnvironmentLight` entities may share a `groupId`; a `PowerSwitch` toggles the
 whole group at once. Entity `x`/`y` are grid coordinates and are converted to world space
 by the mapping above, offset to the tile centre.
+
+A `Landmark` naming a `prefab` that does not exist is logged and skipped rather than
+standing a placeholder box in the yard. This is the one place a missing prefab is *not*
+worth a placeholder: everywhere else a placeholder keeps a map legible while the art lands,
+but a landmark whose whole purpose is to be recognisable is worse as an anonymous grey box
+than as nothing at all — it would be a distinctive thing that is not distinctive, which is
+the one failure the feature cannot survive.
 
 Rotations are degrees clockwise from north, where north is `-Z` — screen-up under the
 un-rotated camera (§3.2) — so `90` faces east. The convention has to be written down
@@ -192,6 +279,34 @@ somewhere: a spawn rotation is the player's facing before they have aimed at any
 - Sprinting requires moving. There is no sprint in place, and no stamina meter: the aim
   lock is the resource, not a bar.
 - There is no jump or crouch.
+
+**The player's body walks.** The legs swing and the body rises and falls in time with the
+ground actually covered: standing still the gait stops, and the sprint is the same gait
+hurried rather than a second animation. The same rule §5.1 states for the spider, and what
+makes a sprint look like one without asking the art for a second clip.
+
+Art that ships without a skeleton gets one derived from its mesh — a hip, and a leg either
+side — with vertices shared through a band at the waist so the join bends rather than
+shears. It is an approximation, and the thing that makes it good enough is §3.2's camera:
+from 14 m up a leg is a few pixels and only the cadence reads. A model too flat or too empty
+to be a standing figure is left unrigged and static, because a bad rig is worse than none.
+An authored skeleton, when the art has one, is used instead and this is dead code.
+
+- Hips at **48%** of the model's height, blended over a band **12%** of it; feet **12%** of
+  the model's width either side of centre.
+- One stride is **0.9 s**, the legs swinging **±22°** and the body lifting **1.2%** of its
+  height twice per stride — once over each foot.
+- The clip is authored at the walk speed, so it plays at ground speed ÷ **3.0 m/s** and
+  stops when the player does.
+- Every value here is a fraction of the model's own size rather than a length, so the same
+  numbers suit a character of any height.
+
+**A character stands on the point it occupies.** Nothing in a model file says where the feet
+are, so a loaded character is grounded on the floor and centred horizontally on its own
+bounds. Kits are authored around whatever origin their artist left — the player's comes out
+of a bundle laid along an axis, one and a half metres from its own origin — and a body
+standing beside the collider that represents it walks through walls the player stopped at
+and holds its flashlight out of empty air.
 
 **On touch**, the same two independent controls are floating sticks: the left half of the
 screen moves, the right half aims, and each anchors wherever the thumb lands rather than at
@@ -316,7 +431,17 @@ for knowing what something is; the ambient is only for knowing that something is
 
 **The player's own silhouette stays readable.** The character is legible in the dark as a
 dim shape. This is a rendering allowance, not a light source — it illuminates nothing, lights
-no surface, and no light-reactive enemy responds to it. A player who cannot see which of the
+no surface, and no light-reactive enemy responds to it. It applies to whatever body the
+player has, art or placeholder: a kit's own colours go to black under §4's ambient like
+anything else, so the allowance is a property of *being the player*, not of a particular
+mesh.
+
+**The player's body faces their aim, never their movement.** §3.1 makes the two
+independent, and that independence is the game's signature move — backing away with the beam
+held on a spider. A body that turned to face where it was walking would show the player
+their own back at exactly that moment, and would quietly undo the mechanic §3.1 spends the
+sprint's aim lock to protect. So the body strafes and backpedals, and the one time it moves
+the way it faces is a sprint, which is what makes a sprint look different. A player who cannot see which of the
 shapes on screen is theirs is not playing a dark game, they are playing a broken one.
 
 ### 4.1 Flashlight Mechanics & Battery
@@ -367,8 +492,22 @@ Monster would be a bug nobody could see, only feel.
   with a clear line to it: within the beam's range *and* half-angle for the flashlight
   (above), or within a lamp's ground radius for an environmental light (§4.2). §5.1 says
   the spider stuns "the instant the beam hits" it, so a dim beam still counts — brightness
-  never decides, only geometry. A beam that is off and a lamp that is unpowered light
-  nothing.
+  never decides, only geometry.
+- **A light emitting nothing lights nothing.** Geometry decides *where* the light reaches;
+  whether it is on at all is a separate question and it is asked first. A torch that is off,
+  a battery that is flat, a lamp that is unpowered or has failed (§4.2), and a beam that is
+  out for a blink (§5.2) all light nothing, however well aimed.
+
+  This is what keeps every rule written in terms of light agreeing with what the player can
+  see. Reading the *charge* instead would have a spider deterred by a beam that is out and
+  the Shadow Monster frozen by darkness, and §5.2's hard rule turns on it exactly: the
+  window the monster walks in is a window nothing is lighting it, so there is no shadow to
+  give it away and none to suppress.
+- **Being in the beam is a different question, and only §5.2 asks it.** The Shadow Monster
+  is the one thing that can put the torch out, so "is there light on me" during its own
+  blink answers with the darkness it caused. It asks instead whether the player still has
+  the torch switched on and still has it pointed here, which is what decides when the blink
+  ends.
 - **The amount** is reported beside it: 0–1, the strongest single source's strength at that
   point, falling off with distance and towards the edge of a cone, scaled by the beam's
   battery falloff (§4.1) or the lamp's authored intensity (§4.2). Nothing in §5 keys off it
@@ -553,18 +692,29 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     run the rule keeps itself: every frame in which the player can see anything of it is a
     frame in which it is standing still.
 
-    The blink is the one case that has to enforce it deliberately. The beam holds at 15%
-    through that window rather than going out, and 15% is enough light to cast by — so for
-    the length of a blink **the monster casts no shadow at all**. It is not dimly visible
-    and it is not a silhouette sliding across the floor; it is nothing, exactly as it is
-    everywhere the light is not. The shape on the ground goes out, and comes back somewhere
-    else half a second later.
+    The blink is the one case where the rule has to be designed for, and it is designed for
+    by **putting the beam out**. For that window the torch emits nothing at all, so there is
+    no light to cast by and nothing on the floor to see — not a faint shadow, not a
+    silhouette sliding across the ground, nothing, exactly as everywhere the light is not.
+    The shape goes out, and comes back somewhere else half a second later.
+
+    That is a rule enforced by the lighting rather than against it. The alternative — hold
+    the beam at 15% and switch the monster's shadow off underneath it — keeps the rule and
+    breaks the world: the creature is standing in light and casting nothing, which is a
+    special case that has to be remembered every time anything else about it changes. **The
+    monster always casts.** Whenever a light is on it, its shadow is on the floor.
 
     Anything that would put a moving image of this creature on screen is wrong, however
     faint, and no amount of it is a glimpse worth having: a second way to see the monster
     is a second way that is easier than the one hard way the whole design is built on.
   - **Animation: none.** One pose covers it, because no frame of it in motion is ever
     drawn.
+  - **It still needs a *model*.** "Never drawn" is not "never modelled": the shadow is the
+    creature, and a shadow is only frightening if its outline is. A capsule casts a capsule.
+    So the monster gets real art for precisely the reason it needs no animation — every
+    pixel of it the player will ever see is a silhouette on the floor, and the silhouette is
+    the entire visual design. The mesh is loaded with colour and depth writes off and shadow
+    casting on, exactly as the placeholder was.
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a
@@ -590,15 +740,18 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
      - `flickerSeverity` ramps from 0.1 to 0.95 over 3 seconds of continuous focus. Focus
        is continuous in the same sense as §5.1's deterrence timer: the instant the monster
        leaves the cone the beam is clean again and the ramp restarts from 0.1.
-     - **The beam never reaches zero.** The formula above goes negative at high severity on
-       a high jitter draw, so it is clamped to a floor of 15% of `I_base`. A beam held at
-       zero is not a beam struggling, it is a torch switched off, and the player reads it as
-       their equipment failing rather than as something reaching into their light. The
-       struggle is the information; blacking out throws it away. The same floor bounds a
-       lamp under strain (§4.2) — a lamp that has actually *failed* is dark, and that is a
-       different event.
+     - **The flicker never reaches zero.** The formula above goes negative at high severity
+       on a high jitter draw, so it is clamped to a floor of 15% of `I_base`. A beam
+       oscillating down to nothing is not a beam struggling, it is a torch switched off, and
+       the player reads it as their equipment failing rather than as something reaching into
+       their light. The struggle is the information; blacking out throws it away. The same
+       floor bounds a lamp under strain (§4.2) — a lamp that has actually *failed* is dark,
+       and that is a different event.
+
+       The floor is the flicker's, not the blink's. A blink is not a deep dip, it is the
+       light going out, and it goes all the way out.
      - **The "Blink":** during extreme flickers — intensity below 35% of `I_base` for 3
-       consecutive ticks — the beam drops to the floor and **stays there for 0.5 s**, about
+       consecutive ticks — the beam **goes out, and stays out for 0.5 s**, about
        the length of a human blink. For the whole of that window the Shadow Monster's freeze
        lifts and it simply *walks*, at its ordinary 1.8 m/s pursuit speed, along a route the
        grid allows. Roughly 0.9 m of ground, and it can be heard covering it: the blink is a
@@ -832,10 +985,18 @@ route into the game.
 The credits screen names, in this order:
 
 - **Game design:** Zack Newman.
-- **Art:** the prefab kit, its author, and its licence (§1). CC0 requires no attribution;
-  the credit is given because a project that only credits what it is forced to is a project
-  that has misunderstood why the licence is free.
-- **Code:** the libraries the game is built on, with their licences.
+- **Art:** each kit and its author (§1), linked to where it came from. Every kit is named,
+  including the ones whose licence asks for nothing: a project that credits only what it is
+  forced to has misunderstood why the licence is free.
+- **Code:** the libraries and build tools the game is built on, and who wrote them.
+
+**Attributions, not licence terms.** The screen says who made what. It does not print
+licence names, and it does not editorialise about which credits were required and which
+were courtesy — a reader wants to know whose work they are looking at, and a page that
+sorts its thanks by legal obligation makes the smaller point loudly. The terms themselves
+are a developer's concern and live where a developer looks: `PREFAB_KITS` in `config.ts`
+records each kit's licence, the vendored kits ship their own licence files, and the `assets`
+row of the debug readout (§8.3) names the terms of everything loaded.
 
 The list is generated from the same constants the game loads its assets by, not typed out
 separately — a credits screen maintained by hand is a credits screen that stops being true
@@ -939,3 +1100,124 @@ A switch has no such constraint: it needs to be reachable (§3.3), not legible.
   is a debug affordance (§8.3) and is not a route a player can reach.
 - **Autosave.** Work in progress survives the browser being closed. It is not a save
   system: the exported file is the level, and the autosave is a draft.
+
+### 9.4 Stamps
+
+A stamp is an arrangement of tiles and entities placed in one action — a soccer field is a
+rectangle of pitch tiles, a goal at each end, a net. It is a way of drawing, not a kind of
+thing a level contains.
+
+**A stamp expands on placement and leaves nothing behind.** What lands in the map is the
+tiles and the entities, exactly as if they had been drawn one at a time: no grouping, no
+reference back to the stamp, nothing in `map.json` that says a field was ever placed. Undo
+takes the whole placement back as one step, because it was one action — but the moment it
+is placed, a stamp's contents are ordinary map content and are edited as such. Move one
+goal and it is a field with a goal moved, not a broken instance of anything.
+
+This is what keeps §2 flat. A stamp that survived into the file would be a container, and
+the walkability derivation, the pathfinder, the reachability audit, the validator and undo
+itself would each need to understand it. Expanding at author time means none of them do.
+
+**A stamp is a piece, not a brush.** The library is a catalogue of distinct set-pieces — the
+soccer field, the playground, the loading bay — and a level places roughly one of each. They
+are the parts a level is assembled from, which is why they are worth keeping and naming, and
+why one is authored carefully rather than stamped in rows.
+
+That is also what makes expanding on placement cost nothing. The obvious objection to it —
+there is no way to change every field in a level at once, because after placement there are
+no fields — assumes a level with many fields in it. There is one. Whatever "editing every
+instance" would have bought is a saving of one edit.
+
+- **A stamp is data** — a footprint, its tiles per layer, and its entities with their
+  offsets and properties. A handful ship with the project; the rest are made in the editor
+  (below). Either way what a stamp *is* is the same thing.
+- **Rotation in quarter turns.** The tile grid is square and the entities inside carry their
+  own angles (§2), so a stamp rotates by rotating both. Free-angle rotation would mean
+  tiles at an angle, which the grid cannot express.
+- **Every angle an entity carries rotates**, not only `rotation`: a note's `facing` (§9.2)
+  is which wall it is mounted on, and the wall turned with the stamp. A quarter turn can
+  leave a note facing north, where the camera cannot read it — the editor says so on
+  placement rather than silently laying down an unreadable note.
+- **Placement is previewed and clamped.** The footprint is shown before the click, and a
+  stamp that would fall outside the map is refused rather than clipped: half a soccer field
+  is not a thing anybody meant to place.
+- **Overwriting is allowed and visible.** A stamp writes over what is under it — that is
+  what makes it useful for laying ground — and the preview shows what it will cover.
+
+#### Making one
+
+**A stamp is captured from the map, not drawn on a second canvas.** The author draws the
+arrangement in the level with the tools they already have, drags a rectangle round it, and
+names it. What is captured is that rectangle: both layers' tiles and every entity inside,
+measured from its top-left corner.
+
+The map is the right surface to author on because a stamp is made of nothing else — §9.4's
+whole point is that it expands into ordinary tiles and entities. A separate stamp editor
+would be a second canvas, a second set of tools and a second undo stack, to draw the same
+things in the same way. It would also break the loop that makes this worth having: place a
+stamp, adjust what landed, capture the result as a better one.
+
+Capture takes **every cell in the rectangle**, including empty ones. A stamp made from a
+yard with no walls in it clears the walls where it lands, which is what "writes over what is
+under it" has to mean for the ground-laying case to work at all. The stamps that ship with
+the project write single layers, and that is a thing a definition can express and a capture
+cannot: a captured stamp is the whole rectangle, deliberately.
+
+**The library persists in the browser, and exports as JSON.** Captured stamps are kept
+alongside the autosaved draft (§9.3) and survive the browser closing. The whole library
+copies to the clipboard as JSON in one action and is pasted back the same way. Same rules as
+the level export: no file system, no download permission, nothing that does not work on a
+phone.
+
+**A piece worth keeping goes in the project.** `public/stamps.json` holds the level's
+pieces, in exactly the format the export produces, and the editor loads it as part of the
+library. Committing a stamp there is what makes it permanent: present on every device, in
+every browser, surviving cleared site data, and visible in a diff when it changes. Browser
+storage is where a stamp lives while it is being worked out; the file is where it lives once
+it is a piece of the level.
+
+Three sources, layered, and the precedence between them is the whole of the rule:
+
+- **The defaults** — the handful defined in source, so a fresh clone has something to place
+  and a failed load still leaves a working palette.
+- **The project's** — `public/stamps.json`, loaded at startup. The level's pieces.
+- **The captured** — this browser's.
+
+**A later layer replaces an earlier one of the same name rather than sitting beside it.** One
+name is one stamp: the palette never shows two things called the same thing, and no operation
+has to guess which was meant. Only the top layer is deletable, and only the top layer is
+exported — the project's pieces are in the repository already, and exporting them would mean
+importing them back as duplicates of themselves.
+
+#### Changing one
+
+A piece is authored over time, and the first cut of it is rarely the one that ships. Every
+stamp can therefore be renamed, re-cut from the map, and thrown away:
+
+- **Rename** changes what it is called. The name it was captured under is its identity and
+  does not move, so that a piece keeps pointing at the same thing while it is being worked on.
+- **Replace from selection** re-cuts it from a rectangle, in place. The alternative — delete
+  and capture again — gives a second piece under a second name, and the level is then holding
+  the old one.
+- **Delete** removes it.
+
+**A committed piece is edited by taking a copy of it.** The project's stamps and the defaults
+cannot be changed from the editor — the file would put them straight back — so editing one
+copies it into this browser first, *under the same name*. That copy covers the original in the
+palette, is edited like anything else, and exports under the name it came from, so it lands
+back in `stamps.json` over the entry it replaces rather than beside it. Delete the copy and the
+committed piece is back.
+
+That is what makes the round trip work in both directions. Without it, fixing a committed
+piece would produce a second piece under a second name, which somebody would have to rename by
+hand on the way into the file — and forget to, once.
+
+The file loads asynchronously and the editor does not wait for it. A level designer who opens
+the editor gets the tools immediately and the project's pieces a moment later, which is the
+right way round: a missing or malformed `stamps.json` costs the pieces in it and never the
+editor.
+
+The exported form is compact rather than pretty. Tiles are run-length encoded per layer over
+the footprint's row-major index, because a captured yard is a few hundred cells that are
+almost all the same and a person is meant to be able to paste the result into a message.
+Encoding is lossless in both directions — a stamp that touches one layer stays that way.

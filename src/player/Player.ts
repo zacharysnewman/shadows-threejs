@@ -24,7 +24,9 @@
  */
 
 import * as THREE from 'three';
-import { PLAYER } from '../config';
+import type { Character } from '../core/CharacterLoader';
+import { buildHumanoidRig } from './autoRig';
+import { PLAYER, PLAYER_RIG } from '../config';
 import type { PlayerSpawnEntity } from '../map/types';
 import { moveCircle, type ColliderIndex } from './collision';
 import { Health } from './Health';
@@ -54,6 +56,11 @@ export class Player {
 
   /** Scene graph node — a placeholder capsule until the art pass (Phase 11). */
   readonly object = new THREE.Group();
+  /** The capsule and its aim wedge, kept so real art can take them back out. */
+  private readonly placeholderParts: THREE.Object3D[] = [];
+  /** §3.1 — the walk, once there is a body with a rig to play it on. */
+  private mixer: THREE.AnimationMixer | null = null;
+  private walk: THREE.AnimationAction | null = null;
 
   /** True while the last resolved move ended in contact with a collider. Debug readout. */
   private _touchingWall = false;
@@ -83,7 +90,8 @@ export class Player {
     const facing = directionFromRotation(spawn.rotation);
     this.aim.set(facing.x, facing.z);
 
-    this.object.add(...buildPlaceholderMesh());
+    this.placeholderParts.push(...buildPlaceholderMesh());
+    this.object.add(...this.placeholderParts);
     this.render(1);
   }
 
@@ -284,7 +292,81 @@ export class Player {
    * Place the mesh for rendering. `alpha` is the sim clock's fraction into the pending
    * tick; interpolating with it decouples visible smoothness from the 60 Hz tick rate.
    */
-  render(alpha: number): void {
+  /**
+   * Swap the capsule for real art (§3.1, §4).
+   *
+   * Scaled from the model's own measured height rather than a copied constant, and left
+   * facing local `+z`, which `render` turns onto the *aim*. That is the whole reason the
+   * player's body can be a character at all: §3.1 makes movement and aim independent, so a
+   * body that faced its direction of travel would show the player their own back every time
+   * they retreated with the beam held on something — which is the game's signature move.
+   *
+   * §4's readability allowance is applied to the art too: the materials get a little
+   * emissive so the player stays legible as a silhouette in the dark. It is not a light —
+   * it illuminates nothing and no light-reactive enemy responds to it.
+   */
+  attachCharacter(character: Character): void {
+    if (character.missing) return;
+
+    for (const part of this.placeholderParts) part.removeFromParent();
+    this.placeholderParts.length = 0;
+
+    character.scene.scale.setScalar(PLAYER.height / character.authoredHeight);
+    character.scene.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      node.castShadow = true;
+      node.receiveShadow = true;
+      for (const material of [node.material].flat()) {
+        if (material instanceof THREE.MeshStandardMaterial) {
+          // §4 — readable in the dark without lighting anything. The same value the
+          // placeholder capsule was tuned to: the kit's own colours are kept, and this only
+          // lifts them off pure black where no beam reaches. Emissive rather than a light,
+          // so it illuminates nothing and no light-reactive enemy responds to it.
+          material.emissive = new THREE.Color(PLAYER_EMISSIVE);
+        }
+      }
+    });
+    this.object.add(character.scene);
+
+    // §3.1 — a rig, if the art did not bring one. The kit is a posed mesh, and unrigged the
+    // character slides across the ground like furniture: worse than the capsule, which at
+    // least did not promise legs. `buildHumanoidRig` derives three bones from the mesh and
+    // returns null rather than guessing badly, in which case the body is simply static.
+    const clips = character.clips;
+    let walk = clips.get('walk') ?? null;
+    if (!walk) {
+      const rig = buildHumanoidRig(character.scene);
+      walk = rig?.walk ?? null;
+    }
+    if (!walk) return;
+
+    this.mixer = new THREE.AnimationMixer(character.scene);
+    this.walk = this.mixer.clipAction(walk);
+    this.walk.play();
+  }
+
+  /**
+   * Advance the walk, at the rate the player is actually covering ground (§3.1).
+   *
+   * The same rule §5.1 states for the spider, for the same reason: a fixed playback rate is
+   * right at exactly one speed, and the player has two. Sprinting is the walk hurried rather
+   * than a second animation, which is what makes the aim lock — not a new gait — the thing
+   * that reads as sprinting.
+   *
+   * Runs on the render delta, like every other presentation effect (§7).
+   */
+  private advanceWalk(delta: number): void {
+    if (!this.mixer || !this.walk) return;
+    // Below a crawl the legs stop rather than creeping, so a player standing still is
+    // standing still and not shuffling on the spot.
+    const rate = this.speed / PLAYER_RIG.walkClipSpeed;
+    this.walk.timeScale = rate;
+    this.walk.paused = rate < 0.02;
+    this.mixer.update(delta);
+  }
+
+  render(alpha: number, delta = 0): void {
+    this.advanceWalk(delta);
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
       0,
@@ -305,6 +387,13 @@ export class Player {
  * The wedge exists because Phase 2 has no flashlight yet — without it, aim is invisible
  * and untestable by eye.
  */
+/**
+ * §4 — how far the player's own body is lifted off black so it stays readable unlit. Shared
+ * by the placeholder and the real art: two values would drift, and the one that mattered
+ * would be whichever was on screen.
+ */
+const PLAYER_EMISSIVE = 0x2a3038;
+
 function buildPlaceholderMesh(): THREE.Object3D[] {
   const cylinderHeight = Math.max(0.1, PLAYER.height - PLAYER.radius * 2);
 
@@ -318,7 +407,7 @@ function buildPlaceholderMesh(): THREE.Object3D[] {
       // §4 — the player stays readable as a silhouette in the dark. Emissive rather than a
       // light: it illuminates nothing, so it cannot be used to see by and no light-reactive
       // enemy responds to it.
-      emissive: 0x2a3038,
+      emissive: PLAYER_EMISSIVE,
     }),
   );
   body.position.y = PLAYER.height / 2;

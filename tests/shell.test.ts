@@ -17,7 +17,7 @@
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { CREDITS, PREFAB_SOURCE } from '../src/config';
+import { CREDITS, PREFAB_KITS } from '../src/config';
 import { ACTION_NAMES } from '../src/core/Input';
 import { parseShellOptions } from '../src/core/options';
 import { creditSections, creditsText } from '../src/ui/credits';
@@ -29,14 +29,44 @@ describe('the credits (§8.2)', () => {
     expect(first?.lines[0]?.name).toBe('Zack Newman');
   });
 
-  it('names the art, its author and its licence, in that order after design', () => {
+  it('names every art kit, its author and where it came from, after design', () => {
     const [, art] = creditSections();
     expect(art?.heading).toBe('Art');
-    expect(art?.lines[0]?.name).toBe(PREFAB_SOURCE.kit);
-    expect(art?.lines[0]?.by).toBe(PREFAB_SOURCE.author);
-    expect(art?.lines[0]?.licence).toBe(PREFAB_SOURCE.licence);
-    // §8.2 — CC0 asks for nothing, and the screen says so rather than implying it had to.
-    expect(art?.note).toMatch(/requires no attribution/i);
+    expect(art?.lines.length).toBe(PREFAB_KITS.length);
+
+    PREFAB_KITS.forEach((kit, index) => {
+      expect(art?.lines[index]?.name).toBe(kit.kit);
+      expect(art?.lines[index]?.by).toBe(kit.author);
+      expect(art?.lines[index]?.url).toBe(kit.url);
+    });
+  });
+
+  it('credits every kit, including the ones that require nothing (§8.2)', () => {
+    // A project that credits only what it is forced to has misunderstood why the licence is
+    // free, so a CC0 kit is listed exactly like an attribution-required one — and nothing
+    // on the screen says which is which.
+    const [, art] = creditSections();
+    for (const kit of PREFAB_KITS) {
+      expect(art?.lines.some((entry) => entry.name === kit.kit), `${kit.kit} not listed`)
+        .toBe(true);
+    }
+  });
+
+  it('says nothing about licence terms (§8.2)', () => {
+    // The screen is attributions. Licences are a developer's question and are answered in
+    // `PREFAB_KITS`, in the vendored kits' own licence files, and in the debug readout's
+    // `assets` row — not beside a person's name, where they sort the thanks by legal
+    // obligation and say that instead of who did the work.
+    const rendered = `${creditsText()}\n${JSON.stringify(creditSections())}`;
+
+    for (const licence of [
+      ...PREFAB_KITS.map((kit) => kit.licence),
+      ...CREDITS.libraries.map((library) => library.licence),
+      ...CREDITS.tools.map((tool) => tool.licence),
+    ]) {
+      if (licence) expect(rendered, `${licence} on the credits screen`).not.toContain(licence);
+    }
+    expect(rendered).not.toMatch(/licen[cs]e|attribution|public domain/i);
   });
 
   it('credits every package the project actually ships or builds with (§8.2)', () => {

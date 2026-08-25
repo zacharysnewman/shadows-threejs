@@ -29,10 +29,20 @@ export class WalkabilityGrid {
   /** Bumped on every rebuild, so consumers can cheaply detect staleness. */
   private _version = 0;
 
+  /**
+   * §2 — tiles blocked by something that is not a tile: a landmark's footprint. Static,
+   * so it belongs in the base grid rather than in `overrides`, which is where the things
+   * that change at runtime live (§6's gates). Mixing the two would have a gate opening
+   * able to unblock the goalpost standing next to it.
+   */
+  private readonly staticBlocked: ReadonlySet<number>;
+
   constructor(
     private readonly map: GameMap,
     private readonly tileset: Tileset,
+    staticBlocked: Iterable<number> = [],
   ) {
+    this.staticBlocked = new Set(staticBlocked);
     this.width = map.width;
     this.height = map.height;
     this.tileSize = map.tileSize;
@@ -100,7 +110,7 @@ export class WalkabilityGrid {
       const floorId = floor ? floor.data[i] ?? 0 : 0;
       const obstacleId = obstacles ? obstacles.data[i] ?? 0 : 0;
       const solid = this.tileset.get(obstacleId)?.solid === true;
-      this.base[i] = floorId !== 0 && !solid ? 1 : 0;
+      this.base[i] = floorId !== 0 && !solid && !this.staticBlocked.has(i) ? 1 : 0;
     }
 
     this.effective.set(this.base);

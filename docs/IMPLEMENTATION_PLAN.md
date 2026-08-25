@@ -478,10 +478,54 @@ the beam dimmed and the severity ramp open, because the window ran to completion
 A 0.15 s window hid that; a 0.5 s one would not have. A blink now ends on the tick the beam
 leaves.
 
-Sent back to the spec: the floor and why it is not zero; the blink as a window rather than a
-step; and the one thing this costs — the monster is now dimly lit *while moving*, so "the
-monster is never both moving and visible" is no longer true and §5.2 records a walk cycle
-for the blink as an art requirement rather than pretending one pose still covers it.
+Sent back to the spec: the flicker's floor and why it is not zero, and the blink as a window
+rather than a step.
+
+*Revised again — the blink is the light going out, and the rule is physical.* The blink held
+the beam at the flicker's 15% floor, which is plenty of light to cast a shadow by. §5.2's
+hard rule — never both moving and visible — was therefore enforced *against* the renderer,
+by switching the monster's shadow off underneath a beam that was still lit. That keeps the
+rule and breaks the world: a creature standing in light and casting nothing is a special case
+that has to be remembered every time anything else about it changes.
+
+A blink now puts the beam out. The torch emits nothing for the window, so there is nothing to
+cast by and nothing to suppress, and the monster **always casts** — whenever a light is on
+it, its shadow is on the floor. The floor stays where it was for the flicker, which is a
+different thing: an oscillation down to nothing reads as the torch dying, and the struggle is
+the information.
+
+*The bug that made possible.* `IlluminationService` read the battery's charge and not what
+the torch was *emitting*, so it had no idea the beam was flickering at all — which is why
+`advanceBlink` had to carry the line "whatever the illumination service still calls lit". A
+light emitting nothing now lights nothing, and every rule written in terms of light agrees
+with what the player can see. It also closed a hole: a lamp reaching the monster mid-blink
+was invisible to the sampler, because the flashlight won the source with a beam that was out,
+so the monster could have walked under a lamp — lit, moving, and casting.
+
+That leaves one question the sampler could not answer, and `LitSample.inBeam` answers it. The
+monster is the one thing that can put the torch out, so asking "is there light on me" during
+its own blink returns the darkness it caused and ends the window a tick after it opened. It
+asks instead whether the player still has the torch on and pointed here.
+
+*A consequence worth stating.* An honest sampler means a blink is genuinely dark for
+*everyone*, and §5.1's spider grace (`resumeDelaySeconds`, 0.2 s) is shorter than the 0.5 s
+window — so a spider held at bay breaks free partway through every blink and its deterrence
+timer restarts. Measured in a browser with one spider 4 m down the beam: **57% of samples
+fleeing with no monster in the beam, 8% with one blinking it, and 31% in `pursue`** — a
+Shadow Monster in your light now makes spiders substantially harder to deter. That is what
+the light going out means, and it is a balance change §11 should look at rather than a bug;
+raising the grace above the blink's length would undo it without making the lighting dishonest
+again.
+
+*Verified in a browser* on `phase5-test`, monster held in the beam for six seconds:
+
+| Case | Measured |
+| --- | --- |
+| Beam fraction during a blink | `0`, and no other value across 61 samples |
+| `light.visible` during a blink | `false` |
+| `light.intensity` during a blink | `0` |
+| Beam fraction outside a blink | never below `0.15` — the flicker keeps its floor |
+| Shadow casting, any state | never switched off, in any of 120 samples |
 
 *Verified.* 290 unit tests (up from 256): 21 in `tests/monster.test.ts` for the curve, the
 freeze, the ramp and the blink, 8 more in `tests/lighting.test.ts` for the sabotage
@@ -800,15 +844,56 @@ happens when a kit is not. It now carries the normalisation rule and the two per
 exceptions, because "the assets are on-grid" turned out to be a thing the loader has to
 *make* true rather than something it can assume.
 
+*A rig derived from a mesh, and two ways to bind it wrong.* The player's kit is a posed
+model with no skeleton and no clips: unrigged it slides across the ground like furniture,
+which reads worse than the capsule it replaced. `src/player/autoRig.ts` derives three bones
+from the bounding box and generates a stride, driven by ground covered exactly as §5.1 drives
+the spider's. It is meant to be replaced by an authored skeleton and says so.
+
+Both ways it went wrong were silent, and neither looked like a binding bug — they looked like
+bad art. Three renders a skinned vertex as `boneWorldNow · boneInverseAtBind · bindMatrix · v`,
+re-deriving the mesh's own inverse from `matrixWorld` every frame, so the bind matrix is the
+only thing carrying geometry into the space the bones were measured in. An identity there
+rendered a Z-up kit flat on its back, several metres from the player. The second was the
+measurement: a loader wraps a model in orientation and grounding nodes, so a vertex's own
+coordinates, its mesh's and the character root's are three different frames. The rig now
+measures, places and binds in one — the node the meshes hang from — and
+`tests/autoRig.test.ts` asserts the invariant the whole thing rests on: at rest, skinning
+moves no vertex at all. That test only fails under the loader's nesting, which is why it
+builds it.
+
+*A body standing beside the player it represents.* Nothing in a `.glb` says where the feet
+are. `CharacterLoader` grounded a model on `y = 0` and left it wherever its origin put it
+horizontally — and the player's kit comes out of a bundle whose characters are laid along an
+axis, 1.5 m from theirs. Measured in the browser: the body's centre at `(5.59, 3.67)` for a
+player standing at `(5, 5)`. It now centres horizontally as well as grounding, which is
+`standOn` in `CharacterLoader` and four tests over the arithmetic; the spider and the monster
+were already centred and did not move.
+
+*Verified in a browser*, since none of this is assertable from a test runner:
+
+| Case | Measured |
+| --- | --- |
+| The rig, on the loaded player | 3 bones, 7 skinned meshes, 0 plain — every mesh converted |
+| Standing | leg angle 0.00°, the clip paused rather than playing in place |
+| Walking at 0.67 m/s | leg angles across ten samples: 13.2, 3.2, −21.2, 6.6, 9.7, −18.0, 1.7, 16.3, −11.4, −6.5 |
+| Sprinting at 4.5 m/s | still swinging, at the rate the ground goes by |
+| Placement | hips at `(5.008, 0.864, 5.003)` for a player at `(5, 0, 5)` — 48% of 1.8 m up, on the spot |
+| Body against the player marker | the character's feet land on the projected player position, screenshot `walk.png` |
+| Spider and Shadow Monster | centres `(18.81, 31.57)` and `(46.35, 3.35)` against positions `(18.83, 31.52)` and `(46.35, 3.35)`; both grounded at `y = 0`, heights 0.71 m and 2.20 m |
+
 *Outstanding — the phase's actual content.*
 
 - **The real level.** Authored in the external editors §1 names and dropped into
   `public/maps/`. Every map in the repo is scaffolding and none of them is the level.
-- **The art pass — the map prefabs are done, the enemies are not.** `public/prefabs/` now
-  holds a real CC0 kit (KayKit Dungeon Remastered 1.0, Kay Lousberg, CC0 1.0), pinned to a
-  commit and vendored with its licence; the six prefab roles all load from `.glb` and no
-  placeholder box remains on the example map. Still outstanding: the enemy bodies, which are
-  procedural meshes, and the spider's two clips, which `Gait` already drives the timing of.
+- **The art pass — the models are in, the authoring is not.** `public/prefabs/` holds a real
+  CC0 kit (KayKit Dungeon Remastered 1.0, Kay Lousberg, CC0 1.0), pinned to a commit and
+  vendored with its licence; the six prefab roles all load from `.glb` and no placeholder box
+  remains on the example map. The player, the spider and the Shadow Monster all have bodies,
+  loaded through `CharacterLoader` rather than `AssetLoader` — a prefab is merged into one
+  geometry with every node transform baked in, which is right for a wall and is deleting the
+  skeleton for a character. Still outstanding: the audio, the level itself, and a real
+  authored rig for the player (below).
 
   **The kit is medieval stone, and the prefab names are not.** `floor_concrete` is a
   flagstone and `fence_chainlink` is a timber barrier. The names are the *roles* the map
@@ -896,6 +981,141 @@ and missing from three checked-in tilesets, including `example` — the one §9.
 borrows — so a level drawn with crates would have played without them. All seven ids are now
 defined by every tileset, and `tests/editor.test.ts` fails naming the map and the id if that
 stops being true.
+
+*Added afterwards — stamps (§9.4).* A fifth tool: `src/editor/stamps.ts` holds the
+definitions and the expansion, `EditorApp` holds the palette, the quarter-turn button and
+the preview. Three stamps to start — a soccer field, a playground and a grove — each of them
+the arrangement of §2 landmarks that motivated the tier in the first place.
+
+The design decision is that a stamp is a way of *drawing*, not a kind of thing a level
+contains: placing one expands it into ordinary tiles and entities, and `map.json` has no
+trace a field was ever placed. Move a goal afterwards and it is a field with a goal moved,
+not a broken instance. That keeps §2 flat — a stamp surviving into the file would be a
+container, and the walkability derivation, the pathfinder, the audit, the validator and undo
+would each have had to learn about containers. The cost, and it is real, is that there is no
+way to change every field in a level at once; a level is authored once and played many
+times, and a format simple to *read* is worth more than one convenient to bulk-edit.
+
+Rotation is quarter turns, because the grid is square and free angles would mean tiles at an
+angle. It rotates the entities' own `rotation` as well as their positions, which is the part
+worth testing: the pitch's goals face each other, and positions alone would give a field
+with both goals facing the same way. `tests/stamps.test.ts` covers the expansion — cells
+staying inside a footprint whose axes swap on odd turns, four turns returning to identity,
+rotations normalised into 0–359, and the expansion naming nothing that refers back to the
+stamp.
+
+*And afterwards again — making them (§9.4).* The three shipped stamps were definitions in
+the source, which meant a level designer could use a soccer field and could not make one.
+`src/editor/stampLibrary.ts` closes that: a stamp is captured from the map by drawing the
+arrangement with the ordinary tools and dragging a rectangle round it.
+
+Capture rather than a second canvas, because a stamp is made of nothing but tiles and
+entities — that is §9.4's whole point — so the map is already the right surface to author one
+on. A separate stamp editor would have been a second canvas, a second tool set and a second
+undo stack for drawing the same things the same way, and it would have broken the loop that
+makes this worth having: place a stamp, fix what landed, capture the result as a better one.
+
+A capture takes **every cell in the rectangle, empty ones included**, so a yard captured
+with no walls in it clears the walls where it lands. That is what "writes over what is under
+it" has to mean for laying ground to work at all — and it is the one thing a definition can
+say that a capture cannot, since the shipped stamps write single layers and leave the rest
+standing.
+
+*A gap the captures opened.* `expandStamp` rotated an entity's `rotation` and nothing else.
+None of the three shipped stamps carries a `facing`, so nothing noticed; a captured stamp
+routinely does, and `facing` is *which wall a note is mounted on* (§9.2). Rotated without it,
+the note stays pointing at a wall that has moved. Every angle an entity carries now turns
+with the stamp, and because a quarter turn can leave a note facing north — where §3.2's
+camera cannot read it — placement says so rather than laying down an unreadable note.
+
+*The library, in and out.* Captured stamps sit beside the autosaved draft in browser storage
+and survive a reload. The whole set copies to the clipboard as JSON and pastes back the same
+way, which is §9.3's rule applied to stamps: no file system, no download permission, nothing
+that fails on a phone. Import replaces by id rather than appending, so pasting back an export
+gives what was exported and not two of everything, and a captured stamp can never take a
+built-in's id — deleting one would otherwise delete a definition out of the project from a
+text field.
+
+Tiles are run-length encoded per layer over the footprint's row-major index, and the runs are
+printed on one line. That is the difference between an export somebody pastes into a message
+and one they do not: a captured 12 × 10 yard is **340 characters**, against 720 with the runs
+indented per number and some six kilobytes as one object per cell. The codec is lossless in
+both directions, which is the part that matters — a grove that touches one layer has to come
+back touching one layer, or an imported grove would flatten walls the one in the project
+leaves alone.
+
+*And the third source — `public/stamps.json`.* Captured stamps live in one browser, so a
+piece was only ever as permanent as its site data. The editor now loads the level's pieces
+from a file in the repository, in exactly the format the export produces, so a stamp pasted
+into a conversation and committed is present on every device and visible in a diff when it
+changes.
+
+Three sources, layered by id: defaults, then the project's, then this browser's, each
+replacing an earlier one of the same id rather than sitting beside it. One id is one stamp,
+so the palette never shows two things with the same name and no operation has to guess which
+was meant. Only the top layer is deletable and only the top layer is exported.
+
+The load is asynchronous and nothing waits for it, so a slow, missing or malformed file costs
+the pieces in it and never the editor. There is no content-type probe of the kind the `.glb`
+loaders need (§1), because parsing JSON *is* the reliable test: a static host answering an
+unknown path with `index.html` and a 200 fails it immediately and for free.
+
+*Editing a piece, which the first cut of this could not do.* A stamp could be added and
+deleted and nothing else, so fixing one meant capturing it again under a second name and
+being left holding both — and a committed piece could not be touched at all. Every stamp now
+renames, re-cuts from a rectangle in place, and deletes, from one sheet rather than more chips
+at the end of a strip a thumb flicks through.
+
+A committed piece is edited by taking a copy of it, *under the same id*. That is the whole
+reason the layers replace by id rather than renaming aside: the copy covers the original in
+the palette, edits like anything else, and exports under the id it came from, so it lands back
+in `stamps.json` over the entry it replaces. Delete the copy and the committed piece returns.
+The alternative — a `soccer-field-2` that has to be renamed by hand on the way into the file —
+is the kind of step somebody forgets exactly once.
+
+Renaming moves the label and not the id. The id is what an override points at, and a rename
+that moved it would quietly unhook a copy from the piece it was replacing. It does mean a
+stamp renamed after capture keeps its original id, which is visible in the export and is
+tidied when the piece lands in the file.
+
+*Sent back to the spec.* §9.4 argued that expanding on placement costs the ability to change
+every field in a level at once. It does, and the cost is nothing: a stamp is a *piece* — the
+soccer field, the playground, the loading bay — and a level places roughly one of each. The
+objection assumed a level with many fields in it. There is one.
+
+*Verified in Chromium on a 480 × 860 touch profile, against the dev server.* A
+`stamps.json` holding one `Loading bay 6×4` appeared in the palette after the defaults,
+offered no Delete when selected, placed as the wall its runs describe, and did not appear in
+the export.
+
+| Case | Measured |
+| --- | --- |
+| Rename a captured stamp | `Bay 12×8` → `Loading bay 12×8`, in place in the palette |
+| Replace it from a 17×15 selection | `Loading bay replaced · 17×15`; one entry, not two |
+| Edit sheet on a default | offers only "Take a copy to edit"; the copy's sheet says it exports over the original |
+| Fork and rename the soccer field | palette reads `The pitch 12×8`, still first — an override does not move to the end |
+| Export after forking | `[["bay", "Loading bay"], ["soccer-field", "The pitch"]]` — the fork keeps `soccer-field` |
+| Revert the fork | `Reverted to the default Soccer field`, and the default is back in the palette |
+| Stamp palette before any capture | `New from selection`, the three built-ins, `Rotate 0°`, `Edit` |
+| Capture a 12 × 10 rectangle | sheet reads "New stamp from 12×10 tiles"; saved as `Back yard 12×10` |
+| Palette after | the built-ins, `Back yard 12×10`, `Rotate`, and `Delete Back yard` — the delete offered only for a captured one |
+| Placed at 90° | an 8 × 5 wall block lands as 5 × 8, and the chip reads `Back yard 10×12` |
+| Export | 340 characters, layer 0 as the single run `[0, 120, 1]` and layer 1 as 33 numbers |
+| Reload the browser | `Back yard 12×10` still in the palette |
+| Paste an edited export back | `1 stamp(s) loaded`, listed beside the original rather than replacing it |
+
+`tests/stampLibrary.test.ts` covers the parts a browser cannot show: the capture keeping the
+empty cells, a drag in either direction giving the same stamp, rotation lifted out of the
+properties so there is one copy of it, the codec round-tripping every built-in unchanged, a
+malformed entry costing that entry and not the paste, and the library surviving a store that
+is missing, full or full of nonsense.
+
+*Verified in Chromium against the dev server.* One soccer field placed: 96 dirt tiles
+(12×8), three landmarks, goals at (14,12)@90° and (23,12)@270° — 180° apart, facing each
+other. Rotated and placed a second: 192 dirt tiles, six landmarks, its goals at (27,18)@180°
+and (27,27)@0°, so the facing survives the turn. A drop off the left edge placed nothing
+(§9.4 refuses rather than clipping). Undo took each field back in exactly one step, and the
+second undo returned the document to its one spawn entity.
 
 *Verified in Chromium on an iPhone 13 profile (390×844, DPR 3, touch events), against the dev
 server.* Paint places one tile and erase clears it. A rectangle dragged (4,4)→(9,8) leaves
