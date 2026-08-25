@@ -24,6 +24,10 @@
  * player gets now is half a second of near-dark with heavy footsteps in it, and a shape
  * that is closer when the light comes back.
  *
+ * It throws no shadow while it walks. §5.2 is absolute that it is never both moving and
+ * visible, and a beam held at 15% is still enough to cast by — so the shadow goes out for
+ * the window and comes back somewhere else. See `render`.
+ *
  * The one thing the beam cannot do is push it back. There is no deterrence timer here and
  * no flee — §5's table gives the monster no flee speed — and its contact is fatal at any
  * health (§5.3). Everything below is that asymmetry made arithmetic.
@@ -54,6 +58,27 @@ export class ShadowMonster extends Enemy {
 
   constructor(key: string, spawnX: number, spawnZ: number, rng: Rng) {
     super(ENEMY_PROFILES.ShadowMonster, key, spawnX, spawnZ, rng);
+  }
+
+  /**
+   * §5.2's hard rule, and the one thing in this class that is not negotiable: **it is
+   * never both moving and visible.**
+   *
+   * It is visible only as the shadow it throws, so the rule is enforced by not throwing
+   * one. Everywhere else that comes free — light freezes it, so anything lighting it has
+   * already stopped it. The blink is the exception the rule has to be spelled out for: the
+   * beam holds at 15% through the window (§5.2), which is enough light to cast by, and the
+   * monster is walking. So for the length of a blink it casts nothing at all.
+   *
+   * What the player gets is the shape on the floor going out, half a second of footsteps in
+   * near-dark, and the shape back in a different place. Never a silhouette in motion.
+   *
+   * Set on the render frame rather than the tick that changes the state, so the value the
+   * shadow pass reads is always this frame's.
+   */
+  override render(alpha: number): void {
+    super.render(alpha);
+    this.setCasting(this.state !== 'blink');
   }
 
   /**

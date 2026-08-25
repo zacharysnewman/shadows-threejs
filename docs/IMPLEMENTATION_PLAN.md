@@ -959,6 +959,27 @@ build does nothing; on `?debug` it pauses the clock — which is the honest way 
 the debug keys are live, since the effect is on the handle. `?debug` also adds the `Editor`
 button and shows the readout.
 
+*Added afterwards — the balance tuner.* §8.3 gained a panel of sliders over the values
+Phase 11 has to settle: player walk and sprint, the aim turn rate and acceleration, every
+enemy speed, the spider's scare-time range (`T_flee`) and its flee and attack timings, the
+monster's blink window, cooldown, threshold and severity ramp, the torch's drain, reach,
+cone and brightness, and the night's two lights. 26 knobs. `src/debug/Tuning.ts` is the
+model, `TuningPanel.ts` the DOM; `T` opens it, and it is hidden by default even under
+`?debug` because two panels at once is most of the screen.
+
+It writes to `config.ts`'s objects — which is the only thing that makes it worth having,
+since those are what the systems read, and is why the two rules in §8.3 are rules. A player
+never constructs it, so a browser with stored overrides still runs a player's game on the
+spec's numbers. And it finds numbers rather than holding them: overrides are marked amber
+in the panel and `copy` hands back only those, for the edit to the spec and `config.ts` that
+actually decides anything.
+
+Two values had to be made re-pushable rather than read-once: `Flashlight.refresh()`
+re-derives the cone, the declination and the shadow camera's far plane, and `Run` pushes
+`AMBIENT`/`MOON` back onto the night rig on every change. Everything else was already read
+per tick — enemy speeds needed `ENEMY_PROFILES` writing too, since it snapshots them at
+module load and every enemy of a kind shares the one profile object.
+
 *Fixed afterwards — and the touch half of the same gap.* The torch had no on-screen button
 either, so on a phone it was unreachable twice over. `TOUCH_BUTTONS` is the set of actions
 that get one, and the touch layer renders a button per entry rather than the single

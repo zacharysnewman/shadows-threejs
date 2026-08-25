@@ -281,6 +281,46 @@ describe('Shadow Monster blink (§5.2)', () => {
     for (const fraction of blinkFractions) expect(fraction).toBeCloseTo(FLICKER.floor, 9);
   });
 
+  it('never casts on a tick it moved — §5.2\'s hard rule (§5.2)', () => {
+    // "Never both moving and visible" is the whole design: the shadow is the only way to
+    // see this creature, and a second, easier way would be a second way. The beam holds at
+    // 15% through a blink, which is plenty to cast by, so nothing but this stops it being
+    // a silhouette sliding across the floor for half a second at a time.
+    const built = world(OPEN);
+    const light = beam(true);
+    const monster = monsterAt(20, 20);
+    const context = contextFor(built, 20, 8, { illumination: light });
+
+    const casting = (): boolean => {
+      let any = false;
+      monster.object.traverse((node) => {
+        if (node.castShadow) any = true;
+      });
+      return any;
+    };
+
+    let movingTicks = 0;
+    let castingWhileStill = 0;
+    for (let t = 0; t < 8; t += TICK) {
+      const before = { x: monster.position.x, y: monster.position.y };
+      monster.tick(TICK, context);
+      // The game renders after it ticks, and the shadow pass reads what render left.
+      monster.render(1);
+
+      const moved = Math.hypot(monster.position.x - before.x, monster.position.y - before.y);
+      if (moved > 1e-9) {
+        movingTicks += 1;
+        expect(casting(), `visible while moving at t=${t.toFixed(2)}`).toBe(false);
+      } else if (casting()) {
+        castingWhileStill += 1;
+      }
+    }
+
+    expect(movingTicks).toBeGreaterThan(0);
+    // Not vacuous the other way either: standing in the beam, it is very much there.
+    expect(castingWhileStill).toBeGreaterThan(0);
+  });
+
   it('can be heard walking while the beam is down', () => {
     // The blink used to be silent, because a 2 m jump-cut is not eight strides. It is a
     // walk now, and the footsteps are the only thing the player has in that half second.

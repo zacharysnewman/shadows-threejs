@@ -17,7 +17,7 @@
  */
 
 import * as THREE from 'three';
-import { HEALTH, ILLUMINATION, INTERACTION, PLAYER, PREFAB_SOURCE, SIM } from './config';
+import { AMBIENT, HEALTH, ILLUMINATION, INTERACTION, MOON, PLAYER, PREFAB_SOURCE, SIM } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
 import { EnemyManager } from './enemies/EnemyManager';
@@ -37,6 +37,7 @@ import { EntityMarkers } from './debug/EntityMarkers';
 import { FrameStats } from './debug/FrameStats';
 import { FreeCamera } from './debug/FreeCamera';
 import { PathOverlay } from './debug/PathOverlay';
+import type { TuningPanel } from './debug/TuningPanel';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
 import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
@@ -70,6 +71,8 @@ export interface RunShell {
   freeCamera: FreeCamera;
   hud: Hud;
   notes: NoteLibrary;
+  /** §8.3 — the balance tuner, present only under `?debug`; null for a player. */
+  tuning: TuningPanel | null;
   /** §6 — dismissing an end screen starts the next run, which the shell owns. */
   onRestart: RestartRequest;
   /** §8.1 — the victory screen's route to the credits, which the shell also owns. */
@@ -94,7 +97,7 @@ export async function createRun(
   /** §9.3 — a level handed over by the editor rather than fetched. */
   rawMapOverride?: unknown,
 ): Promise<Run> {
-  const { viewport, overlay, input, assets, audio, freeCamera, hud, notes } = shell;
+  const { viewport, overlay, input, assets, audio, freeCamera, hud, notes, tuning } = shell;
   const clock = new SimClock();
   // §5.3, §6 — the run's ending, and the surface the player reads it on. Built first so
   // nothing below has to check whether they exist yet.
@@ -649,6 +652,24 @@ export async function createRun(
     if (raycaster.ray.intersectPlane(groundPlane, hit)) player.aimAt(hit.x, hit.z);
   }
 
+  /**
+   * §8.3 — re-push the tuned values that nothing would otherwise notice.
+   *
+   * Most of `Tuning`'s knobs write to a config object the systems read every tick, so they
+   * land by themselves. These three were read once, when something was constructed: the
+   * night's two lights were built from `AMBIENT` and `MOON`, and the beam's cone and reach
+   * were derived in the flashlight's constructor. Without this they would only take effect
+   * on the next run, which for a value you are trying to *feel* is no use at all.
+   */
+  if (tuning) {
+    tuning.onChange = (): void => {
+      night.ambient.intensity = AMBIENT.intensity;
+      night.moon.intensity = MOON.intensity;
+      flashlight.refresh();
+    };
+    tuning.onChange();
+  }
+
   // --- Debug keys ---------------------------------------------------------
   overlay.addBinding('WASD', 'move · mouse aims');
   overlay.addBinding('E', 'interact — pick up, read, throw a switch (§3.3)');
@@ -672,6 +693,7 @@ export async function createRun(
   overlay.addBinding('.', 'step one tick');
   overlay.addBinding('[ ]', 'time scale');
   overlay.addBinding('R', 'restart the run (§6 gives the player E or a click)');
+  overlay.addBinding('T', 'balance tuning panel (§8.3) — sliders, kept in this browser');
   overlay.addBinding('H', 'hide this overlay');
 
   /**
@@ -764,6 +786,9 @@ export async function createRun(
       case 'KeyR':
         shell.onRestart();
         break;
+      case 'KeyT':
+        tuning?.toggle();
+        break;
       case 'KeyH':
         overlay.toggle();
         break;
@@ -838,6 +863,9 @@ export async function createRun(
     overlays.dispose();
     clock.dispose();
     overlay.clearRows();
+    // The panel outlives the run, so the callback into this run's objects must not. A
+    // handler left behind would push `AMBIENT` into a disposed light on the next drag.
+    if (tuning) tuning.onChange = null;
   }
 
   // --- The frame ----------------------------------------------------------
