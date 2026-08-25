@@ -963,10 +963,18 @@ route into the game.
 The credits screen names, in this order:
 
 - **Game design:** Zack Newman.
-- **Art:** the prefab kit, its author, and its licence (§1). CC0 requires no attribution;
-  the credit is given because a project that only credits what it is forced to is a project
-  that has misunderstood why the licence is free.
-- **Code:** the libraries the game is built on, with their licences.
+- **Art:** each kit and its author (§1), linked to where it came from. Every kit is named,
+  including the ones whose licence asks for nothing: a project that credits only what it is
+  forced to has misunderstood why the licence is free.
+- **Code:** the libraries and build tools the game is built on, and who wrote them.
+
+**Attributions, not licence terms.** The screen says who made what. It does not print
+licence names, and it does not editorialise about which credits were required and which
+were courtesy — a reader wants to know whose work they are looking at, and a page that
+sorts its thanks by legal obligation makes the smaller point loudly. The terms themselves
+are a developer's concern and live where a developer looks: `PREFAB_KITS` in `config.ts`
+records each kit's licence, the vendored kits ship their own licence files, and the `assets`
+row of the debug readout (§8.3) names the terms of everything loaded.
 
 The list is generated from the same constants the game loads its assets by, not typed out
 separately — a credits screen maintained by hand is a credits screen that stops being true

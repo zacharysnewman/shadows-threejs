@@ -2,15 +2,9 @@
 {"path":".github/workflows/ci.yml","kind":"ci","lines":38}
 {"path":".github/workflows/deploy.yml","kind":"ci","lines":63}
 {"path":".gitignore","kind":"config","lines":6}
-{"path":".pwtmp/bounds.mjs","kind":"config","lines":14}
-{"path":".pwtmp/enemies.mjs","kind":"config","lines":35}
-{"path":".pwtmp/probe.mjs","kind":"config","lines":40}
-{"path":".pwtmp/project.mjs","kind":"config","lines":39}
-{"path":".pwtmp/rigshot.mjs","kind":"config","lines":45}
-{"path":".pwtmp/walk.mjs","kind":"config","lines":42}
 {"path":"CLAUDE.md","kind":"doc","lines":162,"sections":["Working in this repository","The spec is the source of truth","Recording progress","The project map","Constants","Commands","Verifying","Maps","Layout","Conventions"]}
 {"path":"README.md","kind":"doc","lines":250,"sections":["shadows-threejs","Running","Authoring a level","Credits","CI","Deployment","Debug harness","Status","What is left, and it is not code","Layout"]}
-{"path":"docs/GAME_SPEC.md","kind":"doc","lines":1107,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets","8. Shell: Title, Credits & Debug Mode","9. Level Editor"]}
+{"path":"docs/GAME_SPEC.md","kind":"doc","lines":1115,"sections":["Top-Down Web Horror Game — Game Design & Technical Specification","1. Project Overview & Tech Stack Architecture","2. Map Pipeline & JSON Data Schema","3. Player Controller, Camera & Interaction","4. Lighting, Visibility & Audio System","5. Enemy Design & AI Specification","6. Items & Interactivity Specification","7. Rendering & Performance Targets","8. Shell: Title, Credits & Debug Mode","9. Level Editor"]}
 {"path":"docs/IMPLEMENTATION_PLAN.md","kind":"doc","lines":1096,"sections":["Implementation Plan","Ordering Principle","Progress","Phase 0 — Scaffold","Phase 1 — Map Pipeline","Phase 2 — Player Controller & Camera","Phase 3 — Lighting Core & Flashlight","Phase 4 — Audio Core","Phase 5 — Navigation & Enemy Base","Phase 6 — Illumination Detection Service","Phase 7 — Spider AI","Phase 8 — Shadow Monster","Phase 9 — Interactables, Power & Objectives","Phase 10 — Run Lifecycle","Phase 11 — Content & Tuning","Phase 12 — Level Editor","Phase 13 — Shell: Title, Credits & Debug Mode","Cross-Cutting"]}
 {"path":"index.html","kind":"config","lines":20}
 {"path":"package.json","kind":"config","lines":26}
@@ -123,8 +117,8 @@
 {"path":"src/player/collision.ts","kind":"source","lines":275,"summary":"Circle-versus-box collision resolution for the player capsule (§3.1).","exports":["ColliderIndex","MoveResult","circleBoxContact","moveCircle"],"spec":["§2","§3.1","§3.2","§4.1","§5.3","§6"]}
 {"path":"src/ui/Hud.ts","kind":"source","lines":161,"summary":"The player-facing UI (§6, §3.3).","exports":["Hud"],"spec":["§3.3","§3.4","§6","§6.2","§6.5"]}
 {"path":"src/ui/RunOverlays.ts","kind":"source","lines":232,"summary":"How a run *feels* and how it ends (§3.4, §5.3, §6).","exports":["DeathCause","RunOverlays","VictorySummary"],"spec":["§3.4","§5.3","§6","§7","§8.1"]}
-{"path":"src/ui/TitleScreen.ts","kind":"source","lines":208,"summary":"The screens outside a run (§8.1): the title, and the credits.","exports":["TitleScreen"],"spec":["§4","§4.3","§6","§8.1","§8.3"]}
-{"path":"src/ui/credits.ts","kind":"source","lines":119,"summary":"What the credits screen says (§8.2).","exports":["CreditLine","CreditSection","creditSections","creditsText"],"spec":["§8.2"]}
+{"path":"src/ui/TitleScreen.ts","kind":"source","lines":200,"summary":"The screens outside a run (§8.1): the title, and the credits.","exports":["TitleScreen"],"spec":["§4","§4.3","§6","§8.1","§8.3"]}
+{"path":"src/ui/credits.ts","kind":"source","lines":81,"summary":"What the credits screen says (§8.2).","exports":["CreditLine","CreditSection","creditSections","creditsText"],"spec":["§8.2","§8.3"]}
 {"path":"src/world/Gates.ts","kind":"source","lines":136,"summary":"Gates swinging open (§6.4).","exports":["Gates"],"spec":["§2","§3.1","§6.4","§7"]}
 {"path":"src/world/Interaction.ts","kind":"source","lines":81,"summary":"Choosing what the context action acts on (§3.3).","exports":["Interactable","TargetQuery","findTarget","isInteractable"],"spec":["§3.1","§3.3","§6"]}
 {"path":"src/world/Notes.ts","kind":"source","lines":69,"summary":"Note bodies (§6.2).","exports":["NoteLibrary","NoteText","loadNotes"],"spec":["§2","§6.2"]}
@@ -155,7 +149,7 @@
 {"path":"tests/prefabs.test.ts","kind":"test","lines":153,"summary":"Fitting third-party prefabs to this project's grid (§1).","spec":["§1","§5.1","§8.2"]}
 {"path":"tests/project-map.test.ts","kind":"test","lines":156,"summary":"`docs/project-map.jsonl` has to be current, and a convention nobody can check is a convention that is wrong within a week.","spec":["§4.1","§5.1","§6"]}
 {"path":"tests/run.test.ts","kind":"test","lines":163,"summary":"How a run ends (§5.3, §6): the outcome state machine, and the health feedback curves it is read through (§3.4).","spec":["§3.1","§3.4","§5","§5.3","§6","§7"]}
-{"path":"tests/shell.test.ts","kind":"test","lines":214,"summary":"The shell (§8): what the credits claim, and what the URL is allowed to turn on.","spec":["§8","§8.2","§8.3","§9","§9.3"]}
+{"path":"tests/shell.test.ts","kind":"test","lines":210,"summary":"The shell (§8): what the credits claim, and what the URL is allowed to turn on.","spec":["§8","§8.2","§8.3","§9","§9.3"]}
 {"path":"tests/simclock.test.ts","kind":"test","lines":65,"summary":"Fixed-timestep simulation clock (§7).","spec":["§7"]}
 {"path":"tests/spider.test.ts","kind":"test","lines":410,"summary":"The spider's light reaction lifecycle and its attack (§5.1, §5.3).","spec":["§3.4","§4.1","§5.1","§5.3"]}
 {"path":"tests/stamps.test.ts","kind":"test","lines":176,"summary":"Stamps (§9.4) — the expansion, and the rotation arithmetic inside it.","spec":["§2","§9.4"]}

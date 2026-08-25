@@ -2,10 +2,17 @@
  * What the credits screen says (§8.2).
  *
  * Derived from the constants the game already loads its assets and its bundle by, rather
- * than written out again: `PREFAB_SOURCE` is where the art actually comes from, and
+ * than written out again: `PREFAB_KITS` is where the art actually comes from, and
  * `CREDITS.libraries` is what the bundle actually contains. A credits screen maintained by
  * hand is one that stops being true the first time a dependency changes, and nobody
  * notices, because nothing is watching a paragraph of prose.
+ *
+ * **Attributions, not licence terms.** The screen says who made what, and stops there.
+ * Printing licence names beside each entry sorts the thanks by legal obligation, which is a
+ * smaller thing to say than who did the work and says it more loudly. The terms are a
+ * developer's question and are answered where a developer looks: `PREFAB_KITS` records each
+ * kit's licence, the vendored kits ship their own licence files, and the debug readout's
+ * `assets` row names the terms of everything loaded (§8.3).
  *
  * Pure, and with no DOM in it, so what the screen *claims* can be checked without one.
  */
@@ -17,8 +24,6 @@ export interface CreditLine {
   name: string;
   /** Who made it, or null where the entry is the credit itself. */
   by: string | null;
-  /** Licence, where one applies. */
-  licence: string | null;
   /** A link a reader can follow, where there is one. */
   url: string | null;
   /** What it does here — omitted for entries that need no explaining. */
@@ -28,49 +33,14 @@ export interface CreditLine {
 export interface CreditSection {
   heading: string;
   lines: CreditLine[];
-  /** Prose under the heading, where the section needs a sentence rather than a list. */
-  note: string | null;
-}
-
-/**
- * §8.2 — the sentence under the art list. CC0 requiring nothing is worth saying, since
- * crediting it anyway is a choice; a kit with no stated terms is worth saying louder.
- */
-function artNote(): string | null {
-  const lines: string[] = [];
-
-  // The kits whose authors *require* the credit above, named so the requirement is legible
-  // rather than inferred from a licence string. CC0 crediting is a courtesy and reads like
-  // one; this is a condition, and a screen that does not distinguish them invites somebody
-  // to trim the wrong line.
-  const required = PREFAB_KITS.filter((kit) => kit.attributionRequired && kit.licence !== null);
-  if (required.length > 0) {
-    lines.push(
-      `${required.map((kit) => kit.kit).join(', ')}: used with attribution, as the licence requires.`,
-    );
-  }
-
-  const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
-  if (unstated.length > 0) {
-    lines.push(
-      `${unstated.map((kit) => kit.kit).join(', ')}: no licence is stated by the author, and terms have not been confirmed.`,
-    );
-  }
-
-  if (PREFAB_KITS.some((kit) => !kit.attributionRequired)) {
-    lines.push('Everything else is CC0, which requires no attribution.');
-  }
-
-  return lines.length > 0 ? lines.join(' ') : null;
 }
 
 const line = (
   name: string,
   by: string | null = null,
-  licence: string | null = null,
   url: string | null = null,
   role: string | null = null,
-): CreditLine => ({ name, by, licence, url, role });
+): CreditLine => ({ name, by, url, role });
 
 /** §8.2 — design, then art, then code, in that order. */
 export function creditSections(): CreditSection[] {
@@ -78,27 +48,21 @@ export function creditSections(): CreditSection[] {
     {
       heading: 'Game design',
       lines: [line(CREDITS.designer)],
-      note: null,
     },
     {
       heading: 'Art',
-      lines: PREFAB_KITS.map((kit) =>
-        // §8.2 — a kit whose terms nobody has confirmed says so on the screen. "Licence not
-        // stated" is the honest line, and it is worth a player seeing: it is the only thing
-        // that keeps an unanswered question from reading as a settled one.
-        line(kit.kit, kit.author, kit.licence ?? 'Licence not stated', kit.url, null),
-      ),
-      note: artNote(),
+      // §8.2 — every kit, including the ones whose licence asks for nothing. A project that
+      // credits only what it is forced to has misunderstood why the licence is free.
+      lines: PREFAB_KITS.map((kit) => line(kit.kit, kit.author, kit.url, null)),
     },
     {
       heading: 'Code',
       lines: [
         ...CREDITS.libraries.map((library) =>
-          line(library.name, library.author, library.licence, null, library.role),
+          line(library.name, library.author, null, library.role),
         ),
-        ...CREDITS.tools.map((tool) => line(tool.name, null, tool.licence, null, 'build')),
+        ...CREDITS.tools.map((tool) => line(tool.name, null, null, 'build')),
       ],
-      note: null,
     },
   ];
 }
@@ -108,11 +72,9 @@ export function creditsText(): string {
   return creditSections()
     .map((section) => {
       const body = section.lines
-        .map((entry) =>
-          [entry.name, entry.by, entry.licence].filter(Boolean).join(' — '),
-        )
+        .map((entry) => [entry.name, entry.by].filter(Boolean).join(' — '))
         .join('\n');
-      return `${section.heading}\n${body}${section.note ? `\n${section.note}` : ''}`;
+      return `${section.heading}\n${body}`;
     })
     .join('\n\n');
 }

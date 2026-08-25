@@ -29,7 +29,7 @@ describe('the credits (§8.2)', () => {
     expect(first?.lines[0]?.name).toBe('Zack Newman');
   });
 
-  it('names every art kit, its author and its licence, in order after design', () => {
+  it('names every art kit, its author and where it came from, after design', () => {
     const [, art] = creditSections();
     expect(art?.heading).toBe('Art');
     expect(art?.lines.length).toBe(PREFAB_KITS.length);
@@ -37,40 +37,36 @@ describe('the credits (§8.2)', () => {
     PREFAB_KITS.forEach((kit, index) => {
       expect(art?.lines[index]?.name).toBe(kit.kit);
       expect(art?.lines[index]?.by).toBe(kit.author);
-      // §8.2 — a kit with no stated terms must not render as a blank licence, which reads
-      // as "none needed". It says what is actually true: nobody has stated one.
-      expect(art?.lines[index]?.licence).toBe(kit.licence ?? 'Licence not stated');
+      expect(art?.lines[index]?.url).toBe(kit.url);
     });
   });
 
-  it('names every kit whose licence requires the credit (§8.2)', () => {
-    // A CC0 credit is a courtesy and reads like one. An attribution-required kit is a
-    // *condition*, and a screen that does not distinguish them invites somebody to trim
-    // the line that could not be trimmed.
+  it('credits every kit, including the ones that require nothing (§8.2)', () => {
+    // A project that credits only what it is forced to has misunderstood why the licence is
+    // free, so a CC0 kit is listed exactly like an attribution-required one — and nothing
+    // on the screen says which is which.
     const [, art] = creditSections();
-    const required = PREFAB_KITS.filter((kit) => kit.attributionRequired && kit.licence !== null);
-
-    for (const kit of required) {
-      expect(art?.lines.some((line) => line.name === kit.kit), `${kit.kit} not listed`).toBe(true);
-      expect(art?.note, `${kit.kit} not named in the note`).toContain(kit.kit);
+    for (const kit of PREFAB_KITS) {
+      expect(art?.lines.some((entry) => entry.name === kit.kit), `${kit.kit} not listed`)
+        .toBe(true);
     }
-    if (required.length > 0) expect(art?.note).toMatch(/as the licence requires/i);
   });
 
-  it('says on screen when a kit\'s terms have not been confirmed (§8.2)', () => {
-    const [, art] = creditSections();
-    const unstated = PREFAB_KITS.filter((kit) => kit.licence === null);
+  it('says nothing about licence terms (§8.2)', () => {
+    // The screen is attributions. Licences are a developer's question and are answered in
+    // `PREFAB_KITS`, in the vendored kits' own licence files, and in the debug readout's
+    // `assets` row — not beside a person's name, where they sort the thanks by legal
+    // obligation and say that instead of who did the work.
+    const rendered = `${creditsText()}\n${JSON.stringify(creditSections())}`;
 
-    if (unstated.length > 0) {
-      // The note has to name them. An unanswered licence question that is not visible is
-      // one nobody will answer before release.
-      for (const kit of unstated) expect(art?.note).toContain(kit.kit);
-      expect(art?.note).toMatch(/not been confirmed/i);
+    for (const licence of [
+      ...PREFAB_KITS.map((kit) => kit.licence),
+      ...CREDITS.libraries.map((library) => library.licence),
+      ...CREDITS.tools.map((tool) => tool.licence),
+    ]) {
+      if (licence) expect(rendered, `${licence} on the credits screen`).not.toContain(licence);
     }
-    // And CC0 is still said out loud, so the courtesy credits do not read as obligations.
-    if (PREFAB_KITS.some((kit) => !kit.attributionRequired)) {
-      expect(art?.note).toMatch(/requires no attribution/i);
-    }
+    expect(rendered).not.toMatch(/licen[cs]e|attribution|public domain/i);
   });
 
   it('credits every package the project actually ships or builds with (§8.2)', () => {

@@ -94,7 +94,7 @@ export class TitleScreen {
         }
         row.append(name);
 
-        const detail = [entry.by, entry.role, entry.licence].filter(Boolean).join(' · ');
+        const detail = [entry.by, entry.role].filter(Boolean).join(' · ');
         if (detail) {
           const meta = document.createElement('span');
           meta.className = 'shell-credit-meta';
@@ -102,13 +102,6 @@ export class TitleScreen {
           row.append(meta);
         }
         sheet.append(row);
-      }
-
-      if (section.note) {
-        const note = document.createElement('p');
-        note.className = 'shell-note';
-        note.textContent = section.note;
-        sheet.append(note);
       }
     }
 
@@ -203,5 +196,4 @@ const STYLE = `<style>
 .shell-credit-name { font-size: 17px; }
 .shell-credit-name a { color: inherit; }
 .shell-credit-meta { color: #9aa4b2; font-size: 14px; }
-.shell-note { margin: 8px 0 0; color: #9aa4b2; font-size: 14px; }
 </style>`;
