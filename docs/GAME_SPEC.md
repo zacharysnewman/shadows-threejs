@@ -548,16 +548,23 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     leaves it there is nothing there again. A faint visible body would be strictly worse: it
     would give the player a second, easier way to find the monster, and the whole design is
     that there is only the one hard way.
-  - **Animation: a walk cycle, for the blink only.** For almost all of a run a single pose
-    is enough: the monster is invisible unless a light is on it, and a light on it freezes
-    it, so every frame in which the player can see anything of it is a frame in which it is
-    standing still.
+  - **It is never both moving and visible. This is a hard rule, not a consequence.** It is
+    invisible unless a light is on it, and a light on it freezes it, so for almost all of a
+    run the rule keeps itself: every frame in which the player can see anything of it is a
+    frame in which it is standing still.
 
-    The blink is the exception, and it is a real one. The beam holds at 15% rather than
-    going out, so during those 0.5 s the monster is both moving *and* dimly lit — its shadow
-    is on the floor, sliding. That glimpse is wanted; a pose skating across the ground is
-    not. Until the art pass provides a cycle, the blink reads as a sliding silhouette, which
-    is recorded here as an art requirement rather than a thing to design around.
+    The blink is the one case that has to enforce it deliberately. The beam holds at 15%
+    through that window rather than going out, and 15% is enough light to cast by — so for
+    the length of a blink **the monster casts no shadow at all**. It is not dimly visible
+    and it is not a silhouette sliding across the floor; it is nothing, exactly as it is
+    everywhere the light is not. The shape on the ground goes out, and comes back somewhere
+    else half a second later.
+
+    Anything that would put a moving image of this creature on screen is wrong, however
+    faint, and no amount of it is a glimpse worth having: a second way to see the monster
+    is a second way that is easier than the one hard way the whole design is built on.
+  - **Animation: none.** One pose covers it, because no frame of it in motion is ever
+    drawn.
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a
@@ -602,6 +609,11 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
        told about after the fact — the shape was there, now it is here. Half a second of
        near-dark with heavy footsteps in it is something they are *inside*, and the dread is
        in the window rather than in the discovery afterwards.
+
+       The monster casts no shadow for the length of the blink. The beam is still on it and
+       still bright enough to cast by, so this is enforced rather than incidental — see the
+       hard rule above. The walk is something the player *hears*; it is never something they
+       watch.
 
        Those numbers interlock: the threshold is only reachable once `flickerSeverity`
        passes 0.5, which is about 1.4 s into the ramp. So the first stretch of holding the

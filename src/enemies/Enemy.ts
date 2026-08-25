@@ -67,8 +67,8 @@ export interface EnemyProfile {
 
 /**
  * §5.1 — the spider's locomotion, speed-driven so its legs land where they touch. The
- * Shadow Monster has none: §5.2 is explicit that one pose covers a creature that is never
- * both moving and visible.
+ * Shadow Monster has none, and needs none: §5.2 is absolute that it is never both moving
+ * and visible, so no frame of it in motion is ever drawn to animate.
  */
 const SPIDER_GAIT: GaitProfile = {
   /** Dog-sized and eight-legged: a short stride and a lot of them (§5.1). */
@@ -236,6 +236,19 @@ export class Enemy {
 
   distanceTo(x: number, z: number): number {
     return Math.hypot(this.position.x - x, this.position.y - z);
+  }
+
+  /**
+   * Whether the body throws its shadow at all.
+   *
+   * For the Shadow Monster the shadow *is* the body (§5.2), so this is the switch between
+   * being a thing on the floor and being nothing whatsoever — and §5.2's hard rule, that it
+   * is never both moving and visible, is enforced through it.
+   */
+  protected setCasting(casting: boolean): void {
+    this.object.traverse((node) => {
+      if (node instanceof THREE.Mesh) node.castShadow = casting;
+    });
   }
 
   /**
