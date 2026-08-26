@@ -561,6 +561,35 @@ describe('the visible beam (§4)', () => {
     expect(beam.mesh.visible).toBe(true);
   });
 
+  it('takes the light\'s own shadow map and matrix, which is what cuts it', () => {
+    // The clipping *is* this wiring: the march tests every sample against the depth the
+    // light already drew, so a shaft holding a stale matrix or no map is a shaft that
+    // shines through the wall the beam stops at, silently and without an error anywhere.
+    const light = withShadowMap(new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3));
+    light.visible = true;
+    light.shadow.bias = -0.0006;
+    light.shadow.matrix.makeTranslation(1, 2, 3);
+
+    const beam = shaft(light);
+    const uniforms = (beam.mesh.material as THREE.ShaderMaterial).uniforms;
+    expect(uniforms.uShadowed!.value).toBe(0);
+
+    beam.update(1);
+    expect(uniforms.uShadowed!.value).toBe(1);
+    expect(uniforms.uShadowMap!.value).toBe(light.shadow.map!.texture);
+    expect((uniforms.uShadowMatrix!.value as THREE.Matrix4).elements).toEqual(
+      light.shadow.matrix.elements,
+    );
+    // The light's own bias plus the extra a mid-air sample needs. Positive would push
+    // samples towards shadowed and eat the beam; too negative leaks it past the occluder.
+    expect(uniforms.uShadowBias!.value).toBeCloseTo(light.shadow.bias + LIGHT_SHAFT.shadowBias, 10);
+    expect(uniforms.uShadowBias!.value).toBeLessThan(0);
+    // The floor receives shadows but never casts them (§7), so the map cannot stop the
+    // march at the ground and this is what does.
+    expect(uniforms.uFloor!.value).toBe(LIGHT_SHAFT.floorHeight);
+    expect(uniforms.uFloor!.value).toBeGreaterThanOrEqual(0);
+  });
+
   it('goes out with the light it belongs to', () => {
     // §4.1's flat battery and §5.2's blink both arrive as a zero here, and a beam emitting
     // nothing has to have no haze in it either — otherwise the monster's blink leaves a
