@@ -35,6 +35,8 @@
 
 import { ENEMY } from '../config';
 import type { Rng } from '../core/rng';
+import type { PathOptions } from '../nav/AStar';
+import { litCostFor, unlitOnly } from '../nav/LitGrid';
 import { drawJitter, flickerFraction, severityAt } from '../lighting/flicker';
 import { Enemy, ENEMY_PROFILES, type EnemyContext } from './Enemy';
 
@@ -108,6 +110,32 @@ export class ShadowMonster extends Enemy {
       );
     }
     return this.state === 'frozen' ? 'frozen (lamp)' : 'unseen';
+  }
+
+  /**
+   * §5 — light is expensive, never impassable.
+   *
+   * The distinction is the whole of this creature's half of §5's asymmetry. A spider will
+   * not enter light at all; this one prefers the dark and pays when the dark is longer,
+   * because §5.2's threat is that it *never stops* — a monster a lamp could wall off is a
+   * monster the player can hide from, and §5.2 spends its whole length promising they
+   * cannot.
+   *
+   * It is also what keeps §4.2's sabotage in the game. The monster disables a lamp by
+   * standing in its cone (§5.2 step 3), so a monster that refused to cross a pool could
+   * never start one — the lifecycle would be waiting on a lamp to come on over its head.
+   * At this price it walks into pools when the way round is long, freezes there, and the
+   * lamp's flicker becomes the tell that it is being taken apart.
+   */
+  protected override pathOptions(context: EnemyContext): PathOptions {
+    const from = context.grid.worldToGrid(this.position.x, this.position.y);
+    return {
+      enterCost: litCostFor(context.lightTiles, ENEMY.lightAvoidance.monsterLitCost),
+      // Straightened against the dark, or the shortcut undoes the detour: string-pulling
+      // drops any waypoint the previous one can see, and the line it would replace the way
+      // round a pool with is the line straight through it.
+      smoothGrid: unlitOnly(context.grid, context.lightTiles, from.gx, from.gy),
+    };
   }
 
   /** §5.3 — fatal at any health, with no wind-up and no telegraph. */

@@ -326,21 +326,36 @@ describe('Spider attack (§5.3)', () => {
     expect(hits).toBe(3);
   });
 
-  it('is cancelled outright by light: no strike, no cooldown (§5.3)', () => {
+  it('lands a committed lunge even if the beam catches it mid-wind-up (§5.3)', () => {
+    // This reverses what the beam used to do. §5.3: light stops a spider *advancing*, and
+    // one already inside 1.0 m has nowhere to advance to — so the torch is a tool for
+    // controlling ground, not a shield held at arm's length. What answers a lunge is the
+    // 0.35 s telegraph and a metre of walking (§3.1).
     const { spider, context, player, light } = engagement();
 
     spider.onPlayerContact(0.5, context);
     tickFor(spider, context, ATTACK.windUpSeconds - 4 * TICK);
     light.on = true;
     spider.tick(TICK, context);
+    expect(spider.state).toBe('attack');
 
-    expect(spider.state).toBe('frozen');
-    expect(spider.attackCooldownRemaining).toBe(0);
+    tickFor(spider, context, 4 * TICK);
+    expect(player.damaged).toHaveLength(1);
+    expect(spider.attackCooldownRemaining).toBeGreaterThan(0);
+  });
 
-    // Well past when the strike would have landed: it never does.
-    tickFor(spider, context, 1);
-    expect(player.damaged).toHaveLength(0);
+  it('starts an attack out of a stun, when the player is already in reach (§5.3)', () => {
+    const { spider, context, player, light } = engagement();
+
+    light.on = true;
+    spider.tick(TICK, context);
     expect(spider.state).toBe('frozen');
+
+    // Standing in the beam and inside 1.0 m: stopped, and still lethal.
+    spider.onPlayerContact(0.5, context);
+    expect(spider.state).toBe('attack');
+    tickFor(spider, context, ATTACK.windUpSeconds + TICK);
+    expect(player.damaged).toHaveLength(1);
   });
 
   it('refuses to start a second attack while it is on cooldown', () => {
@@ -358,14 +373,18 @@ describe('Spider attack (§5.3)', () => {
     expect(player.damaged).toHaveLength(1);
   });
 
-  it('does not attack out of a stun or a flee', () => {
+  it('does not attack out of a flee, however close the player is (§5.1)', () => {
+    // The stun is no longer on this list (§5.3), but a flee still is: §5.1 buys the flee
+    // leg with `T_flee` of held light, and a spider that could turn and lunge mid-retreat
+    // would make that purchase worthless.
     const { spider, context, light } = engagement();
 
     light.on = true;
-    spider.tick(TICK, context);
-    expect(spider.state).toBe('frozen');
+    tickFor(spider, context, ENEMY.spider.light.fleeDelaySeconds.max + TICK);
+    expect(spider.state).toBe('flee');
+
     spider.onPlayerContact(0.5, context);
-    expect(spider.state).toBe('frozen');
+    expect(spider.state).toBe('flee');
   });
 });
 

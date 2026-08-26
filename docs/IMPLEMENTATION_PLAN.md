@@ -965,6 +965,54 @@ exactly, which is what made deleting the `.glb` and forgetting the credit imposs
 | Shade's rig | 0 clips, nothing playing, after a rendered frame |
 | Spider's rig, same mesh | 5 clips, `walk` playing |
 
+*Light became terrain.* §5 had both enemies react to light standing in it and ignore it
+completely when choosing where to walk, so a spider would path through a lamp's pool to
+reach the player and be stunned by the light it had just chosen to enter. They route around
+it now, and the two do it differently on purpose: lit tiles leave a spider's grid entirely,
+while the Shade merely pays `ENEMY.lightAvoidance.monsterLitCost` to enter one. §5.2's
+threat is that it never stops, and a monster a lamp could wall off is a monster the player
+can hide from.
+
+The asymmetry is the design and §5 now says so, because it would otherwise read as an
+inconsistency to tidy up. A player standing under a working lamp cannot be reached by
+spiders at all — and that is an invitation rather than safety, because the one thing that
+does not care walks into the pool, freezes there (§5.2 step 1) and starts degrading the
+lamp by standing in it (§5.2 step 3). The lamp's flicker is the tell that the trade is being
+collected; when it fails the spiders come back and the monster is standing next to the
+player. Give both enemies the same rule and that counter disappears.
+
+Three things had to be true for any of it to work, and each was silently false at first:
+
+- **A line that crosses light is not a clear line.** `updatePursuitPath` skips pathing
+  entirely when the player is visible, so in open ground the route was a straight line that
+  answered to nothing and the whole feature did nothing.
+- **The string-pulling has to be judged against the dark.** Smoothing drops every waypoint
+  the previous one can see, so a route the monster took the long way round a pool was
+  straightened back through it — `PathOptions.smoothGrid` is what refuses that shortcut.
+- **`null` from a search is not an empty path.** Empty means *already on the player's tile*;
+  conflating the two made an enemy that had caught the player give up on it.
+
+*And light stopped being armour.* §5.3 said light cancelled a lunge outright — a spider lit
+during its wind-up never struck. It does now: §5.1's stun stops a spider *advancing*, and
+one already inside 1.0 m has nowhere left to advance to. A stunned spider at contact range
+starts attacks too, and §5.2's freeze never protected anyone who touched the monster. What
+answers a lunge is the 0.35 s telegraph and a metre of walking (§3.1); the torch is a tool
+for controlling ground. Two tests that asserted the old rule were rewritten rather than
+deleted, because the new rule has something to say about each case they covered.
+
+*Verified in a browser* (`?debug&map=example&seed=99`), since none of it is assertable from
+a test runner:
+
+| Case | Measured |
+| --- | --- |
+| Player standing in a 6 m lamp pool, spider 11 m off | spider lit on **0 of 900** ticks, closest approach 11.02 m, state `flee` throughout, no damage taken |
+| The same, with the Shade left in | lamp on → both frozen in the pool → **lamp fails at t≈4.5 s** → spiders resume and reach the player: §4.2's sabotage is the counter to camping, unscripted |
+| Spider held on the beam's centreline at 0.9 m | lit on **420 of 420** frames, seen both `frozen` and `attack`, **3 hits**, player 1.00 → 0.00 |
+| Player walking into a lamp-frozen Shade | dead on the tick of contact |
+| Cost of ten seconds of simulation | **29.7 ms** for the whole sim including every repath — the per-search memo keeps §5's tile queries off the frame |
+
+*The frame rate is still outstanding*, on a software rasteriser as always (§7).
+
 *The beam you can see, and the hand holding it.* A `SpotLight` lights the surfaces it
 reaches and nothing in between, so a torch in a dark room was a pool on the floor with no
 visible connection to the player. `src/lighting/LightShaft.ts` draws the haze inside the

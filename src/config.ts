@@ -523,6 +523,25 @@ export const ENEMY = {
   /** Distance from a waypoint at which it counts as reached, in metres. */
   waypointRadius: 0.45,
 
+  /**
+   * §5 — light as terrain. What an enemy *outside* a light does about it, as distinct from
+   * what light does to one standing in it (§5.1, §5.2).
+   */
+  lightAvoidance: {
+    /**
+     * What a lit tile costs the Shadow Monster, against 1 for a dark one (§5).
+     *
+     * It is a detour budget in disguise: at 4, the monster will walk up to about four tiles
+     * of darkness to avoid one tile of light, and takes the lit route the moment the dark
+     * one is longer than that. High enough that it visibly prefers the dark, low enough
+     * that a lamp between it and the player is an inconvenience rather than a wall — §5.2's
+     * whole threat is that it never stops.
+     *
+     * A first value, like §5's radii, and one the tuning pass should expect to move.
+     */
+    monsterLitCost: 4,
+  },
+
   spider: {
     /** Cat-sized (§5.1) — half a metre across, and a third of a metre tall. */
     radius: 0.25,

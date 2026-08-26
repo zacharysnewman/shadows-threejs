@@ -774,6 +774,39 @@ walks to it, and pauses 0.6–2.4 s before choosing another. An enemy that canno
 route — to a wander target or to the player — wanders rather than standing still or
 pressing into the wall between them.
 
+**Light is terrain.** Both enemies route around lit ground, not merely react to it once
+they are standing in it. Lit is lit by §4.1's query — the flashlight's cone and any powered
+environmental lamp, and *only* while they are actually emitting. An unpowered lamp, a lamp
+that has failed (§4.2), a torch switched off or run flat: none of them are terrain, because
+none of them are light.
+
+The two enemies pay for it differently, and the difference is the design rather than an
+inconsistency to tidy up:
+
+- **A spider will not enter light.** Lit ground is not walkable to it: a route that crosses
+  a pool is not a route, and a straight line at the player that crosses one is not a clear
+  line. The rule binds a spider that is *not currently lit*. One standing in light is
+  stunned or fleeing, and §5.1 owns it completely — the block would otherwise trap a spider
+  that a lamp came on over, since it could not cross its own pool to leave.
+- **The Shadow Monster only finds it expensive.** A lit tile costs it several times what a
+  dark one does, so it takes the dark way round when there is one and walks straight
+  through when the detour is long or there is no detour at all. It is never stopped by
+  light; §5.2's threat is that it never stops.
+
+**What the asymmetry buys, and why it must not be flattened.** A player standing under a
+working lamp cannot be reached by spiders at all. That is intended, and it is not safety:
+it is an invitation to the one thing that does not care. The monster walks into the pool,
+which freezes it (§5.2 step 1) and starts it degrading the lamp by standing there (§5.2
+step 3, §4.2) — so the lamp's flicker becomes the tell that the trade is being collected.
+When the lamp fails the spiders come back and the monster is standing next to the player,
+unfrozen. Giving both enemies the same rule removes the counter and makes a powered lamp a
+place to wait out the game.
+
+**A spider that cannot reach the player flees.** If the player is inside a light, they are
+not merely far away, they are unreachable — and a spider circling the edge of a pool it
+will not enter reads as a broken pathfinder. So an unlit spider whose target is lit
+abandons the hunt on §5.1's terms, taking a flee leg like any other.
+
 The radii and the wander numbers are first values, not tuned ones: they are exactly the
 kind of thing the tuning pass (§1, content) is expected to move once the game is playable.
 
@@ -791,12 +824,16 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - **Base Behavior:** wanders, or uses A\* pathfinding to approach the player.
 - **Light Reaction Lifecycle:**
   1. **Instant Stun:** the instant the flashlight beam hits the spider's bounding box, its
-     velocity drops to `0`.
+     velocity drops to `0`. It stops the spider *moving* and nothing else: one already
+     within §5.3's contact range still attacks, lit or not.
   2. **Deterrence Timer:** a timer `T_flee` randomized between 1.0 s and 4.0 s begins.
   3. **Flee Mode:** if illuminated for `T_flee`, the spider enters `Flee` state. It
      calculates a vector directly away from the player, raycasts along that vector for the
      furthest walkable point within 18 m, and sets that as its new target for 3 s, moving
-     at 1.5× speed. A spider with nowhere to run — the away vector blocked before the
+     at 1.5× speed. The furthest *dark* point, where the vector offers one: fleeing is what
+     ends the illumination, and a leg that stops inside the same pool has not deterred
+     anything. It may cross lit ground to get there — a spider already in light is exempt
+     from §5's rule against entering it, which is what lets it out of a pool at all. A spider with nowhere to run — the away vector blocked before the
      first step — cowers where it is for the 3 s instead. Light does not re-stun a fleeing
      spider: freezing it again would let a held beam pin it where it started, and the flee
      it just earned would never happen.
@@ -868,7 +905,9 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     player just was.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
-     Monster cannot move.
+     Monster cannot move. It can still kill: contact is fatal at any health (§5.3) and a
+     frozen monster is no safer to touch than a walking one. The freeze buys the player
+     ground, never immunity.
   2. **Light Interference / Flickering:**
      - Sustained flashlight focus causes the beam intensity `I` to fluctuate:
 
@@ -952,10 +991,21 @@ starts an attack, and the damage lands partway through it:
    not on the player, so other spiders are unaffected and can land their own hits in the
    same second.
 
-**Light cancels an attack outright.** A spider lit during its wind-up stops where it is
-(§5.1's stun is immediate and literal); the strike never happens and no cooldown starts.
-Cancelling a lunge with the beam is one of the few things the flashlight does *directly* to
-a spider rather than through the deterrence timer, and the battery is what it costs.
+**Light does not save a player who is already within reach.** §5.1's stun is immediate and
+literal and it stays that way — a lit spider does not *advance* — but at contact range it
+has nowhere left to advance to, and the beam no longer stops it striking. A lunge already
+committed lands whether or not the spider is lit, and a stunned spider standing inside 1.0 m
+still starts one.
+
+The same is true of the Shadow Monster, whose freeze is otherwise absolute (§5.2): a player
+who walks into a frozen one dies. Light stops it moving; it was never armour.
+
+So the beam is a tool for controlling ground, not a shield. What answers a lunge is
+distance: the wind-up is 0.35 s and §3.1 walks a metre in it, which is the whole of the
+telegraph's purpose. A player who backs off survives; a player who stands still with the
+torch on does not, however bright it is. The deterrence timer (§5.1) is unaffected and runs
+as it always did — the light still turns spiders around, it just does not do it fast enough
+to matter at arm's length.
 
 **The strike time belongs to the simulation, not to the animation.** Damage resolves at
 0.35 s into the attack whatever the art does; an attack animation whose contact frame lands

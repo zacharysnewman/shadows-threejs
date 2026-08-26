@@ -14,14 +14,17 @@
  *
  * **The attack is a commitment.** Reaching the player starts a lunge rather than landing a
  * hit, the lunge takes 0.35 s, and the range is re-tested at the end of it. That is the
- * only reason a spider is survivable: the damage is answerable, by walking, or by putting
- * the beam on it while it is committed. Every timer below is on the simulation clock (§7),
+ * only reason a spider is survivable, and the answer is *distance*: 0.35 s is a metre of
+ * walking (§3.1). The beam is not an answer to a lunge — §5.3 is explicit that light stops
+ * a spider advancing and never stops one already in reach from striking. Every timer below is on the simulation clock (§7),
  * including the strike — §5.3 is explicit that the animation is authored to the strike and
  * not the other way round.
  */
 
 import { ENEMY, HEALTH } from '../config';
 import type { Rng } from '../core/rng';
+import type { PathGrid } from '../nav/AStar';
+import { unlitOnly } from '../nav/LitGrid';
 import { Enemy, ENEMY_PROFILES, type EnemyContext } from './Enemy';
 
 const LIGHT = ENEMY.spider.light;
@@ -42,6 +45,16 @@ export class Spider extends Enemy {
   private windUp = 0;
   /** Seconds left of the post-strike cooldown, hit or miss (§5.3). */
   private cooldown = 0;
+  /**
+   * Whether light is on it *right now*, as of this tick's query (§5).
+   *
+   * Kept rather than re-asked because §5's rule against entering light is lifted for a
+   * spider already standing in it, and the two questions are asked at different moments: the
+   * light reaction reads it in `decide`, the pathfinder reads it again inside a search.
+   * Asking twice would be harmless and asking at different times would not — the answer has
+   * to be one tick's answer.
+   */
+  private litNow = false;
 
   constructor(key: string, spawnX: number, spawnZ: number, rng: Rng) {
     super(ENEMY_PROFILES.SpiderEnemy, key, spawnX, spawnZ, rng);
@@ -86,7 +99,11 @@ export class Spider extends Enemy {
    */
   override onPlayerContact(_distance: number, _context: EnemyContext): void {
     if (this.cooldown > 0) return;
-    if (this.state !== 'wander' && this.state !== 'pursue') return;
+    // `frozen` is in this list on purpose (§5.3). §5.1's stun stops a spider *advancing*,
+    // and at contact range there is nothing left to advance to — so the beam no longer
+    // stops it striking. Light is a tool for controlling ground, not armour; what answers a
+    // lunge is the 0.35 s telegraph and a metre of walking (§3.1).
+    if (this.state !== 'wander' && this.state !== 'pursue' && this.state !== 'frozen') return;
     this.windUp = ATTACK.windUpSeconds;
     this.setState('attack');
   }
@@ -94,6 +111,7 @@ export class Spider extends Enemy {
   protected override decide(dt: number, context: EnemyContext): void {
     this.cooldown = Math.max(0, this.cooldown - dt);
     const lit = context.illumination.sample(this.key, this.position.x, this.position.y).lit;
+    this.litNow = lit;
 
     // §5.1 step 3 — a flee leg runs to its end. Checked before the light, because light
     // does not re-stun a fleeing spider: it would otherwise be pinned a metre from where
@@ -107,6 +125,16 @@ export class Spider extends Enemy {
       this.setState('wander');
       this.litFor = 0;
       this.unlitFor = 0;
+    }
+
+    // §5.3 — checked before the light, exactly as the flee leg is. A lunge already
+    // committed lands whether or not the beam finds it: the spider is not moving during a
+    // wind-up anyway, so §5.1's stun has nothing left to take away, and cancelling here
+    // would make a torch held at arm's length a shield.
+    if (this.state === 'attack') {
+      this.windUp -= dt;
+      if (this.windUp <= 0) this.strike(context);
+      return;
     }
 
     if (lit) {
@@ -125,22 +153,52 @@ export class Spider extends Enemy {
       this.setState('pursue');
     }
 
-    if (this.state === 'attack') {
-      this.windUp -= dt;
-      if (this.windUp <= 0) this.strike(context);
-      return;
-    }
-
     super.decide(dt, context);
+  }
+
+  /**
+   * §5 — the player is standing in light, so there is no route to them.
+   *
+   * Circling the edge of a pool it will not enter is what a pathfinder looks like when it
+   * has broken, and standing still is worse. So the hunt ends the way §5.1 already ends
+   * hunts: a flee leg, away from the player, for the usual three seconds. It re-acquires
+   * afterwards like any other flee, which is what makes a player who steps out of the light
+   * interesting again rather than permanently forgotten.
+   */
+  protected override onPursuitBlocked(context: EnemyContext): void {
+    this.beginFlee(context);
+  }
+
+  /**
+   * §5 — a spider will not walk into light.
+   *
+   * Lit tiles leave the grid entirely, which is stronger than making them expensive and is
+   * meant to be: this is the enemy the light is *for*. Because everything downstream reads
+   * walkability, one narrowed grid also stops the line-of-sight test calling a line across
+   * a pool clear, and stops the string-pulling straightening a route back through the light
+   * the search just went round.
+   *
+   * **Lifted while it is lit.** §5 puts the rule on entering light rather than on being in
+   * it, and the alternative is a spider a lamp switched on over that can never leave: its
+   * own tile would be blocked, `findPath` refuses a search that starts on a blocked tile,
+   * and it would stand there for the rest of the run. One standing in light is stunned or
+   * fleeing anyway, and §5.1 owns both.
+   */
+  protected override navigationGrid(
+    context: EnemyContext,
+    fromGx: number,
+    fromGy: number,
+  ): PathGrid {
+    if (this.litNow) return context.grid;
+    return unlitOnly(context.grid, context.lightTiles, fromGx, fromGy);
   }
 
   /** §5.1 steps 1–3: the stun, the timer it starts, and what the timer buys. */
   private reactToLight(dt: number, context: EnemyContext): void {
     if (this.state !== 'frozen') {
-      // §5.1 step 1 — instant and unconditional, including out of a committed lunge:
-      // §5.3's cancellation is this line, and the strike that never happens starts no
-      // cooldown, so the beam is the answer to an attack rather than a way to buy one off.
-      this.windUp = 0;
+      // §5.1 step 1 — instant and unconditional as far as *movement* goes. A committed
+      // lunge never reaches here: `decide` resolves `attack` before it consults the light
+      // (§5.3), so the beam stops a spider crossing ground and not one already in reach.
       this.setState('frozen');
       // §5.1 step 2 — rolled per stun, from the run's seed, so a replay deters identically.
       this.fleeThreshold = this.rng.range(
@@ -173,6 +231,12 @@ export class Spider extends Enemy {
 
     let targetX = this.position.x;
     let targetZ = this.position.y;
+    // §5.1 — the furthest *dark* point the vector offers, and the furthest walkable one as
+    // the fallback. Fleeing is what ends the illumination, so a leg that runs out of map
+    // while still inside the same pool has deterred nothing: the spider would arrive, stand
+    // for three seconds in the light that moved it, and be stunned again on arrival.
+    let darkX: number | null = null;
+    let darkZ: number | null = null;
     for (let d = LIGHT.fleeSearchStep; d <= LIGHT.fleeSearchDistance; d += LIGHT.fleeSearchStep) {
       const x = this.position.x + ux * d;
       const z = this.position.y + uz * d;
@@ -180,6 +244,14 @@ export class Spider extends Enemy {
       if (!context.grid.isWalkable(gx, gy)) break;
       targetX = x;
       targetZ = z;
+      if (!context.lightTiles.isLit(gx, gy)) {
+        darkX = x;
+        darkZ = z;
+      }
+    }
+    if (darkX !== null && darkZ !== null) {
+      targetX = darkX;
+      targetZ = darkZ;
     }
 
     this.setState('flee');

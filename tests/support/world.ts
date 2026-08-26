@@ -11,6 +11,7 @@ import type {
   IlluminationSampler,
   PlayerActions,
 } from '../../src/enemies/Enemy';
+import { NOTHING_LIT, type LitTiles } from '../../src/nav/LitGrid';
 import { EntityRegistry } from '../../src/map/EntityRegistry';
 import { buildColliders } from '../../src/map/colliders';
 import { parseMap, parseTileset } from '../../src/map/validate';
@@ -116,6 +117,8 @@ export function contextFor(
     neighbours?: Enemy[];
     illumination?: IlluminationSampler;
     player?: PlayerActions;
+    /** §5 — which tiles are lit. Nothing is, unless a test says otherwise. */
+    lightTiles?: LitTiles;
   } = {},
 ): EnemyContext {
   return {
@@ -125,8 +128,29 @@ export function contextFor(
     colliders: built.colliders,
     neighbours: options.neighbours ?? [],
     illumination: options.illumination ?? fakeIllumination(),
+    lightTiles: options.lightTiles ?? NOTHING_LIT,
     player: options.player ?? fakePlayer(),
   };
+}
+
+/**
+ * §5 — a rectangle of lit tiles, in grid coordinates, for the light-as-terrain rules.
+ *
+ * A shape rather than a light: what §5's navigation rules consume is "is this tile lit",
+ * and the cone and pool arithmetic that decides it is `Illumination`'s and is tested there.
+ * Handing these tests a rectangle keeps them about the routing.
+ */
+export function litRect(gx0: number, gy0: number, gx1: number, gy1: number): LitTiles {
+  let searches = 0;
+  return {
+    isLit: (gx, gy) => gx >= gx0 && gx <= gx1 && gy >= gy0 && gy <= gy1,
+    begin: () => {
+      searches += 1;
+    },
+    get searches() {
+      return searches;
+    },
+  } as LitTiles & { readonly searches: number };
 }
 
 /** Advance an enemy for `seconds` of simulation against a fixed world. */

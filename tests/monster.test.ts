@@ -469,6 +469,24 @@ describe('Shadow Monster contact (§5.3)', () => {
   });
 });
 
+describe('Shadow Monster contact while frozen (§5.2, §5.3)', () => {
+  it('kills a player who touches it while a light is holding it still', () => {
+    // §5.2's freeze buys the player ground, never immunity: light stops this thing moving
+    // and was never armour. A player who walks into a frozen one dies exactly as they would
+    // walking into a walking one.
+    const built = world(OPEN);
+    const monster = monsterAt(8, 8);
+    const player = fakePlayer();
+    const context = contextFor(built, 8, 8, { illumination: beam(true), player });
+
+    monster.tick(TICK, context);
+    expect(monster.state).toBe('frozen');
+
+    monster.onPlayerContact(0.5, context);
+    expect(player.kills).toBe(1);
+  });
+});
+
 describe('Shadow Monsters in the manager', () => {
   const entities = [
     { type: 'PlayerSpawn', x: 0, y: 0, properties: {} },

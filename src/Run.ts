@@ -54,6 +54,7 @@ import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
 import { Flashlight } from './lighting/Flashlight';
 import { IlluminationService } from './lighting/Illumination';
+import { LitTileQuery } from './lighting/LitTiles';
 import { LampVoices } from './lighting/LampVoices';
 import { auditMap, type AuditResult } from './map/audit';
 import { loadMap, type LoadedMap } from './map/MapLoader';
@@ -186,6 +187,8 @@ export async function createRun(
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.
   const illumination = new IlluminationService(flashlight, environment, colliderIndex);
+  // §5 — the same light, asked about tiles instead of about entities, for the pathfinder.
+  const lightTiles = new LitTileQuery(loaded.grid, illumination);
 
   // §6 — the run's world state, the props that make it findable, and the swing that opens
   // a gate. Built before the HUD, because the HUD only ever reads them.
@@ -266,6 +269,7 @@ export async function createRun(
       playerX: player.position.x,
       playerZ: player.position.y,
       illumination,
+      lightTiles,
       player,
     });
 

@@ -280,6 +280,71 @@ export class IlluminationService {
     return best;
   }
 
+  /**
+   * §5 — is this *point on the ground* inside an active light volume? The navigation
+   * layer's question, which is not the same as `sample`'s.
+   *
+   * `sample` answers about a **subject**: it caches occlusion per entity and throttles the
+   * re-confirmation to §4.1's interval, which is exactly right for a handful of enemies
+   * asked about every tick and exactly wrong here. A path search asks about a few hundred
+   * *tiles*, once, and then never asks about most of them again — so a per-subject cache
+   * would be a map of junk that never gets a second hit, and the throttle would hand the
+   * search stale answers about ground it has never looked at.
+   *
+   * So this is the geometry and the occlusion with no cache in front of them, and callers
+   * do their own memoising over the tiles of one search (`LitTileQuery`). The occlusion
+   * test stays: a lamp on the far side of a wall does not light the corridor, and an enemy
+   * refusing to walk down it because of one would look broken in a way nobody could
+   * diagnose from the outside.
+   *
+   * Emitting is what counts, exactly as in `sample`: a lamp with no power, a lamp that has
+   * failed (§4.2), a torch switched off or run flat are all *not light*, and §5 is explicit
+   * that none of them are terrain either.
+   */
+  litAt(x: number, z: number): boolean {
+    const beam = this.flashlight.battery.intensityFraction * this.flashlight.intensityScale;
+    if (beam > 0) {
+      const light = this.flashlight.light;
+      const origin = light.position;
+      const target = this.flashlight.target.position;
+      const strength = coneStrength(
+        origin.x,
+        origin.z,
+        target.x - origin.x,
+        target.z - origin.z,
+        light.angle,
+        FLASHLIGHT.range,
+        x,
+        z,
+      );
+      if (
+        strength * beam >= ILLUMINATION.amountFloor &&
+        !segmentBlocked(this.colliders, origin.x, origin.z, x, z, this.scratch)
+      ) {
+        return true;
+      }
+    }
+
+    for (const lamp of this.environment.lamps) {
+      if (!lamp.light.visible) continue;
+      const strength = poolStrength(
+        lamp.entity.wx,
+        lamp.entity.wz,
+        lamp.entity.radius,
+        lamp.entity.intensity,
+        x,
+        z,
+      );
+      if (strength < ILLUMINATION.amountFloor) continue;
+      if (segmentBlocked(this.colliders, lamp.entity.wx, lamp.entity.wz, x, z, this.scratch)) {
+        continue;
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   private subjectFor(key: string): SubjectState {
     let state = this.subjects.get(key);
     if (!state) {

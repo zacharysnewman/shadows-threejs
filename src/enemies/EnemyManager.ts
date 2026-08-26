@@ -18,6 +18,7 @@ import type { CharacterLoader } from '../core/CharacterLoader';
 import type { Rng } from '../core/rng';
 import type { EntityRegistry } from '../map/EntityRegistry';
 import type { Character } from '../core/CharacterLoader';
+import { NOTHING_LIT, type LitTiles } from '../nav/LitGrid';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
 import type { ColliderIndex } from '../player/collision';
 import {
@@ -38,6 +39,12 @@ export type ContactListener = (enemy: Enemy, distance: number) => void;
 export interface EnemyWorld {
   playerX: number;
   playerZ: number;
+  /**
+   * §5 — light as terrain, per tile. Optional: a run with no lighting rig (a test, the
+   * editor's preview) is a run in which nothing is lit, which is the honest answer rather
+   * than a missing one.
+   */
+  lightTiles?: LitTiles;
   /** §4.1 — the shared light query. */
   illumination: IlluminationSampler;
   /** §5.3 — what contact resolves into. */
@@ -200,6 +207,7 @@ export class EnemyManager {
       colliders: this.colliders,
       neighbours: this.enemies,
       illumination: world.illumination,
+      lightTiles: world.lightTiles ?? NOTHING_LIT,
       player: world.player,
     };
 

@@ -41,9 +41,9 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 | `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
 | `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `audit` (is the level finishable) |
 | `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision`, `CameraRig`, `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
-| `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination`, `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
+| `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
 | `src/enemies/` | `Enemy` (shared state machine, speeds, A\*, avoidance), `Spider`, `ShadowMonster`, `EnemyManager` (spawning + the one contact test), `Gait`, `CharacterRig` |
-| `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled), `raycast` (segment vs boxes on X/Z) |
+| `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled; optional per-tile enter cost and a separate grid to straighten against), `raycast` (segment vs boxes on X/Z), `LitGrid` (§5's light-as-terrain views — pure, knows nothing about lights) |
 | `src/world/` | `Objectives` (the run's whole state), `Gates`, `Interaction`, `Notes`, `Props`, `RunOutcome` |
 | `src/audio/` | `AudioCore` (listener on the *player*, pooled sources), `SoundBank` (ZzFX-synthesised placeholders), `profiles`, `Footsteps` |
 | `src/ui/`, `src/editor/`, `src/debug/` | HUD and run overlays; the level editor (§9); the readout, overlays, tuner and frame stats |
@@ -69,6 +69,12 @@ Ownership rules worth knowing before editing:
   right one.
 - **The spec, the config, the tests and `project-map.jsonl` move together.** A behaviour
   change touching only one of them is incomplete; the map has a test that enforces its half.
+- **String-pulling can undo a route's whole reason for existing.** `findPath` straightens
+  its result by dropping every waypoint the previous one can see, so a path that went the
+  long way round something the *cost* disliked — §5's lit ground — is straightened back
+  through it unless the smoothing is judged against a grid where that ground is blocked
+  (`PathOptions.smoothGrid`). The route is correct and the enemy walks through the light
+  anyway, which looks like the cost not working.
 - **`TuningPanel` writes a group heading whenever the group changes as it walks `TUNABLES`,**
   so entries for one group must stay contiguous or the panel prints the heading twice.
 
@@ -179,6 +185,24 @@ it is deep — or shorten the beam through the tuner.
 Driving the tuner's sliders is the shipped path for anything marked `needsPush`: find the
 `input[type=range]` whose **`parentElement`** text contains the label (not `closest('div')` —
 that matches the whole panel), set `value` and dispatch an `input` event.
+
+**Anything about *light* has to be measured on real frames.** The beam is placed on the
+render side (see *A frame, in order*), so driving the simulation with `clock.advance()` in a
+loop advances the AI, the timers and the battery while leaving the torch pointing wherever
+the last rendered frame left it. Every light query then answers about a beam that is not
+where the player is aiming, and the run looks broken in a way that is entirely the harness's
+fault. Step the clock for arithmetic; let `requestAnimationFrame` run for anything lit.
+
+**To put something *in* the beam, move it onto the beam — not the beam onto it.** The aim is
+rebuilt from input every frame, so a value written from a `rAF` callback can be overwritten
+before `flashlight.update` reads it. Read the axis instead and place your subject on it:
+
+```js
+const o = shadows.flashlight.light.position;
+const t = shadows.flashlight.target.position;
+const len = Math.hypot(t.x - o.x, t.z - o.z);
+const spot = { x: player.position.x + ((t.x - o.x) / len) * 0.9, z: /* … */ };
+```
 
 **A model's size, triangles and clip names are in `docs/project-map.jsonl` already** —
 `npm run map` re-derives them from the files, so a question like "how tall is the spider as
