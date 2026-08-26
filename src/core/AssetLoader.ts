@@ -27,6 +27,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { PREFAB_FIT, PREFAB_FOOTING } from '../config';
+import { GENERATED_PREFABS } from './GeneratedPrefabs';
 
 export interface Prefab {
   name: string;
@@ -226,6 +227,15 @@ export class AssetLoader {
   }
 
   private async loadUncached(name: string, tileSize: number): Promise<Prefab> {
+    // §1 — a few prefabs are built rather than fetched, where what is wanted is not in any
+    // kit and is cheaper described than modelled (see `GeneratedPrefabs`). They are prefabs
+    // in every other respect, so this is the only place that has to know.
+    const generate = GENERATED_PREFABS[name];
+    if (generate) {
+      const built = generate();
+      return { name, ...built, placeholder: false };
+    }
+
     const url = `${this.baseUrl}${name}.glb`;
 
     // A HEAD probe keeps a missing asset out of GLTFLoader's error path, which is noisy

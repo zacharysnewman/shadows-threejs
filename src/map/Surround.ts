@@ -14,14 +14,8 @@
  * **The tree is generated, not a kit prefab, and that is what buys the density.** A forest
  * edge has to be *thick* — more than one tree per tile of ground, crowns overlapping — and
  * the kit's tree is 3,104 triangles, so a band of thousands would be millions of triangles
- * for scenery nobody can reach (§7). Built here it is about fifty: a tapered trunk and two
- * faceted crowns, merged into one geometry with vertex colours so the whole band is one
- * material and one draw call.
- *
- * It is also the only way to get a *small* tree out of this kit. `PREFAB_FIT.fitHeight`
- * scales the Y axis alone — right for a wall, and for a tree it means a short one keeps the
- * model's 11.84 m canopy and comes out a pancake. A generated tree is authored at unit
- * height and scaled uniformly per instance, so short means small.
+ * for scenery nobody can reach (§7). `GeneratedPrefabs` builds one for about fifty, and the
+ * band is the same tree the map plants inside its own boundary at a larger size.
  *
  * **It is scenery and nothing else.** Outside the map is outside the walkability grid, the
  * collider set, the audit and every light's reach, so nothing here has a footprint, blocks
@@ -35,8 +29,8 @@
  */
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SURROUND } from '../config';
+import { treeGeometry, treeMaterial } from '../core/GeneratedPrefabs';
 import type { Rng } from '../core/rng';
 import { groundFootprint } from '../player/CameraRig';
 
@@ -104,15 +98,7 @@ export function buildSurround(
     }
   }
 
-  const mesh = new THREE.InstancedMesh(
-    treeGeometry(),
-    new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: SURROUND.treeRoughness,
-      metalness: 0,
-    }),
-    points.length,
-  );
+  const mesh = new THREE.InstancedMesh(treeGeometry(), treeMaterial(), points.length);
   mesh.name = 'surround:trees';
   mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   // §2 — never lit, so never casting; and nothing out here receives either.
@@ -129,7 +115,13 @@ export function buildSurround(
     matrix.makeTranslation(point.x, 0, point.z);
     // A turn each, and a size each: one geometry repeated thousands of times reads as
     // wallpaper otherwise, and a forest is the one thing that must not.
-    matrix.multiply(rotation.makeRotationY(rng.float() * Math.PI * 2));
+    //
+    // The turn comes from *where the tree stands* rather than from the next number in the
+    // stream. A tree is a thing in a place, so its spin is a property of the place: it does
+    // not shift because the loop visited the band in a different order, or because something
+    // earlier drew one more number. The height still comes from the stream — it is a choice
+    // about the tree rather than about the ground under it.
+    matrix.multiply(rotation.makeRotationY(spinAt(point.x, point.z)));
     const height =
       SURROUND.treeHeightMetres *
       (1 + (rng.float() * 2 - 1) * SURROUND.heightVariation);
@@ -175,58 +167,17 @@ function groundPlane(mapWidth: number, mapHeight: number, depth: number): THREE.
 }
 
 /**
- * One tree, authored at **unit height** so an instance's scale is its size in metres.
+ * A tree's spin, in radians, from the ground it stands on (§2).
  *
- * A tapered trunk and two faceted crowns, merged into a single geometry carrying its colours
- * per vertex — so the band is one material, one draw call, and about fifty triangles a tree
- * instead of three thousand. At this size and this distance, under §4's night ambient and
- * §7's fog, the silhouette is the whole of what reads: crowns overlapping into a dark mass
- * with a suggestion of trunks under it.
+ * Position in, angle out, and nothing else: the same spot always grows the same tree,
+ * whatever order the band was walked in and whatever else has drawn from the run's `Rng`.
+ * That is worth more than it sounds — it makes a forest reproducible from its *layout*
+ * rather than from a sequence, so moving one tree cannot re-spin every tree after it.
  *
- * Open-ended trunk and `detail: 0` crowns are deliberate. Nobody can get out there to look
- * at a tree from below, and the caps and subdivisions would be triangles spent on it.
+ * The hash is a standard sine-fract scramble. It has to be well-mixed enough that
+ * neighbouring trees do not face the same way, and it has to be nothing else.
  */
-function treeGeometry(): THREE.BufferGeometry {
-  const trunkHeight = 0.45;
-  // Non-indexed throughout: `mergeGeometries` refuses a mix, and Three builds a cylinder
-  // indexed and an icosahedron not. Converting costs vertices, never triangles.
-  const trunk = new THREE.CylinderGeometry(0.05, 0.09, trunkHeight, 5, 1, true).toNonIndexed();
-  trunk.translate(0, trunkHeight / 2, 0);
-
-  const lower = new THREE.IcosahedronGeometry(0.34, 0).toNonIndexed();
-  lower.scale(1, 0.85, 1);
-  lower.translate(0, trunkHeight + 0.22, 0);
-
-  const upper = new THREE.IcosahedronGeometry(0.24, 0).toNonIndexed();
-  upper.scale(1, 0.9, 1);
-  upper.translate(0, trunkHeight + 0.52, 0);
-
-  paint(trunk, SURROUND.trunkColour);
-  paint(lower, SURROUND.canopyColour);
-  paint(upper, SURROUND.canopyColour);
-
-  const merged = mergeGeometries([trunk, lower, upper], false);
-  for (const part of [trunk, lower, upper]) part.dispose();
-  if (!merged) throw new Error('surround: tree parts would not merge');
-
-  // Normalised so "height 1" is true whatever the proportions above become: the instance
-  // matrix multiplies by a height in metres, and that only means metres if this does.
-  merged.computeBoundingBox();
-  const top = merged.boundingBox?.max.y ?? 1;
-  if (top > 0) merged.scale(1 / top, 1 / top, 1 / top);
-  merged.computeVertexNormals();
-  return merged;
-}
-
-/** Give every vertex of a part the same colour, so the merged tree needs one material. */
-function paint(geometry: THREE.BufferGeometry, colour: number): void {
-  const count = geometry.getAttribute('position').count;
-  const rgb = new THREE.Color(colour);
-  const colours = new Float32Array(count * 3);
-  for (let i = 0; i < count; i += 1) {
-    colours[i * 3] = rgb.r;
-    colours[i * 3 + 1] = rgb.g;
-    colours[i * 3 + 2] = rgb.b;
-  }
-  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+export function spinAt(x: number, z: number): number {
+  const mixed = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+  return (mixed - Math.floor(mixed)) * Math.PI * 2;
 }

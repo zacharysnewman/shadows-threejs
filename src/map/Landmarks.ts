@@ -34,7 +34,6 @@ import type { BoxCollider, GameMap, LandmarkEntity } from './types';
 
 export interface Landmark {
   entity: LandmarkEntity;
-  mesh: THREE.Mesh;
   collider: BoxCollider;
   /** Tile indices the footprint touches, for the walkability grid. */
   blocked: number[];
@@ -133,7 +132,16 @@ export async function buildLandmarks(
   const missing: string[] = [];
   const disposables: THREE.Mesh[] = [];
 
-  for (const entity of entities) {
+  /**
+   * §7 — one `InstancedMesh` per prefab, not one mesh per landmark.
+   *
+   * A landmark used to be a mesh of its own, which was fine while a map had nine of them and
+   * wrong the moment one had a forest: two hundred trees is two hundred draw calls, and §7's
+   * rule about 2,500 floor tiles is the same rule. Grouping first and placing second is the
+   * whole change — everything below still works per entity, because a collider and a blocked
+   * tile were never the mesh's business.
+   */
+  const drawn = entities.filter((entity) => {
     const prefab = loaded.get(entity.prefab);
     // §2 — a landmark whose prefab is missing is skipped rather than boxed. Everywhere else
     // a placeholder keeps a map legible while the art lands; here the whole job is being
@@ -141,17 +149,37 @@ export async function buildLandmarks(
     // distinctive — worse than nothing standing there.
     if (!prefab || prefab.placeholder) {
       if (!missing.includes(entity.prefab)) missing.push(entity.prefab);
-      continue;
+      return false;
     }
+    return true;
+  });
 
-    const mesh = new THREE.Mesh(prefab.geometry, prefab.material);
-    mesh.name = `Landmark:${entity.prefab}`;
-    mesh.position.set(entity.wx, 0, entity.wz);
-    mesh.rotation.y = THREE.MathUtils.degToRad(entity.rotation);
+  const batches = new Map<string, THREE.InstancedMesh>();
+  const placed = new Map<string, number>();
+  for (const name of new Set(drawn.map((entity) => entity.prefab))) {
+    const prefab = loaded.get(name)!;
+    const count = drawn.filter((entity) => entity.prefab === name).length;
+    const mesh = new THREE.InstancedMesh(prefab.geometry, prefab.material, count);
+    mesh.name = `Landmark:${name}`;
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
+    batches.set(name, mesh);
+    placed.set(name, 0);
     root.add(mesh);
     disposables.push(mesh);
+  }
+
+  const matrix = new THREE.Matrix4();
+  const rotation = new THREE.Matrix4();
+  for (const entity of drawn) {
+    const prefab = loaded.get(entity.prefab)!;
+    const batch = batches.get(entity.prefab)!;
+    const index = placed.get(entity.prefab)!;
+    placed.set(entity.prefab, index + 1);
+    matrix.makeTranslation(entity.wx, 0, entity.wz);
+    matrix.multiply(rotation.makeRotationY(THREE.MathUtils.degToRad(entity.rotation)));
+    batch.setMatrixAt(index, matrix);
 
     const local = prefabHalfExtents(prefab);
     const { hx, hz } = rotatedHalfExtents(local.hx, local.hz, entity.rotation);
@@ -169,7 +197,7 @@ export async function buildLandmarks(
       gy1: Math.min(map.height - 1, Math.floor((entity.wz + hz) / map.tileSize)),
     };
 
-    landmarks.push({ entity, mesh, collider, blocked });
+    landmarks.push({ entity, collider, blocked });
   }
 
   return {

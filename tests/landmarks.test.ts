@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { PREFAB_FOOTPRINT } from '../src/config';
 import type { Prefab } from '../src/core/AssetLoader';
-import { prefabHalfExtents, rotatedHalfExtents, tilesUnder } from '../src/map/Landmarks';
+import type { AssetLoader } from '../src/core/AssetLoader';
+import { buildLandmarks, prefabHalfExtents, rotatedHalfExtents, tilesUnder } from '../src/map/Landmarks';
 import type { GameMap } from '../src/map/types';
 
 /** A prefab with the bounds of one box, which is all the footprint maths reads. */
@@ -134,5 +135,79 @@ describe('the tiles a landmark blocks (§2)', () => {
     expect(Math.max(...tiles)).toBeLessThan(map.width * map.height);
     // A landmark hanging off the west edge still blocks the tiles it is actually on.
     expect(tiles).toContain(0);
+  });
+});
+
+describe('how landmarks are drawn (§7)', () => {
+  /** An `AssetLoader` that hands back one prefab, without a network or a `.glb`. */
+  function loaderOf(prefabs: Record<string, Prefab>): AssetLoader {
+    return { load: async (name: string) => prefabs[name] } as unknown as AssetLoader;
+  }
+
+  const entity = (prefab: string, x: number, y: number, rotation = 0) =>
+    ({ type: 'Landmark', prefab, gx: x, gy: y, wx: (x + 0.5) * 2, wz: (y + 0.5) * 2, rotation, key: `${prefab}#${x},${y}` }) as never;
+
+  it('batches one instanced mesh per prefab, not one mesh per landmark', async () => {
+    // §7's rule about not turning 2,500 tiles into 2,500 draw calls is the same rule here.
+    // It did not matter while a map had nine landmarks; a map whose interior is forest has
+    // two hundred, and one mesh each is two hundred draw calls.
+    const set = await buildLandmarks(
+      mapOf(40, 40),
+      [
+        entity('tree_small', 4, 4),
+        entity('tree_small', 8, 4),
+        entity('tree_small', 12, 4),
+        entity('prop_hoop', 20, 20),
+      ],
+      loaderOf({
+        tree_small: prefabOf('tree_small', 1, 1),
+        prop_hoop: prefabOf('prop_hoop', 1, 1),
+      }),
+    );
+
+    const meshes = set.root.children.filter((child) => child instanceof THREE.InstancedMesh);
+    expect(meshes).toHaveLength(2);
+    expect(set.root.children).toHaveLength(2);
+    const trees = set.root.getObjectByName('Landmark:tree_small') as THREE.InstancedMesh;
+    expect(trees.count).toBe(3);
+  });
+
+  it('still gives every landmark its own collider and blocked tiles', async () => {
+    // Batching is a rendering change and nothing else: what a landmark blocks was never
+    // the mesh's business, and this is the assertion that keeps it that way.
+    const set = await buildLandmarks(
+      mapOf(40, 40),
+      [entity('tree_small', 4, 4), entity('tree_small', 8, 4)],
+      loaderOf({ tree_small: prefabOf('tree_small', 1, 1) }),
+    );
+    expect(set.landmarks).toHaveLength(2);
+    expect(set.colliders).toHaveLength(2);
+    expect(set.blocked.length).toBeGreaterThan(0);
+  });
+
+  it('places each instance where its entity stands, turned as authored', async () => {
+    const set = await buildLandmarks(
+      mapOf(40, 40),
+      [entity('tree_small', 4, 4, 90)],
+      loaderOf({ tree_small: prefabOf('tree_small', 1, 1) }),
+    );
+    const trees = set.root.getObjectByName('Landmark:tree_small') as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    trees.getMatrixAt(0, matrix);
+    const position = new THREE.Vector3().setFromMatrixPosition(matrix);
+    expect(position.x).toBeCloseTo(9);
+    expect(position.z).toBeCloseTo(9);
+    const turn = new THREE.Euler().setFromRotationMatrix(matrix);
+    expect(turn.y).toBeCloseTo(Math.PI / 2, 5);
+  });
+
+  it('skips a landmark whose prefab is missing, and says which', async () => {
+    const set = await buildLandmarks(
+      mapOf(40, 40),
+      [entity('tree_small', 4, 4), entity('nope', 8, 4)],
+      loaderOf({ tree_small: prefabOf('tree_small', 1, 1) }),
+    );
+    expect(set.missing).toEqual(['nope']);
+    expect(set.landmarks).toHaveLength(1);
   });
 });

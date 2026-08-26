@@ -47,6 +47,43 @@ export const CAMERA = {
  * the edge whenever the player walks near one, and covering that ground is much cheaper
  * than moving the camera off the person the player is aiming with.
  */
+/**
+ * §2 — the trees the game builds rather than loads (`GeneratedPrefabs`).
+ *
+ * One shape at two sizes: `tree_small` is what a map plants inside its own boundary, and
+ * §2's surround plants shorter ones outside it. Shared here because they are the same tree,
+ * and a forest that changed colour at the fence would announce the fence.
+ */
+export const TREES = {
+  /**
+   * Trunk and canopy — the kit tree's palette, darkened.
+   *
+   * That tree is `#934625` and `#00e72a`, a near-neon green that works for a canopy the
+   * camera rarely sees and would be a wall of it across a whole map. These are the same two
+   * hues taken down, so the woods read as the same species at night.
+   */
+  trunkColour: 0x5c2f1c,
+  canopyColour: 0x1c7328,
+  /** The kit's roughness, so the moon catches these crowns as it catches everything else. */
+  roughness: 0.27,
+  /**
+   * Height of the `tree_small` prefab, in metres (§2).
+   *
+   * Tall enough to be a tree the player walks between and short enough to be *seen* as one:
+   * the camera eye is 13.31 m up, so a crown at this height is well inside the frame. The
+   * kit's landmark tree is 26 m for the opposite reason, and from this camera two hundred of
+   * those are not a wood but two hundred dark streaks (see `GeneratedPrefabs`).
+   */
+  smallHeightMetres: 4.0,
+  /**
+   * Half-width of what a tree blocks, in metres — the trunk, not the crown (§2).
+   *
+   * The same call `PREFAB_FOOTPRINT` makes for the kit's tree: a crown is something you walk
+   * under, and blocking the ground beneath it would fence off most of a forest.
+   */
+  trunkHalfWidth: 0.35,
+} as const;
+
 export const SURROUND = {
   /**
    * How tall a surround tree stands, in metres, and how much that varies.
@@ -98,18 +135,6 @@ export const SURROUND = {
    * the fog takes it into the distance on its own.
    */
   groundColour: 0x241f1a,
-  /**
-   * Trunk and canopy — the kit tree's own palette, darkened.
-   *
-   * The tree inside the map is `#934625` and `#00e72a`, which is a near-neon green that
-   * works as a few big canopies above the camera and would be a wall of it at the density
-   * out here. These are the same two hues taken down, so the band reads as the same forest
-   * seen at night rather than as different art.
-   */
-  trunkColour: 0x5c2f1c,
-  canopyColour: 0x1c7328,
-  /** The kit's roughness, so the moon catches the crowns the way it catches everything else. */
-  treeRoughness: 0.27,
 } as const;
 
 /** §7 — shadow budget. Shadows are a mechanic, so these are design constraints. */

@@ -99,27 +99,16 @@ for (let y = 0; y < HEIGHT; y += 1) {
   }
 }
 
-// A dirt yard through the middle of the map, and a sunken void the player cannot cross —
-// unwalkable through Layer 0 rather than through a collider, which exercises both halves
-// of the walkability rule in §2.
+// Clearings, and a sunken void the player cannot cross — unwalkable through Layer 0 rather
+// than through a collider, which exercises both halves of the walkability rule in §2.
 fill(floor, 18, 6, 32, 20, FLOOR_DIRT);
 fill(floor, 24, 30, 27, 34, EMPTY);
 
-// Interior structures: three buildings with doorways.
-outline(walls, 6, 6, 15, 15, WALL_BRICK);
-fill(walls, 10, 15, 10, 15, EMPTY); // doorway, south wall
-
-outline(walls, 34, 8, 44, 18, WALL_BRICK);
-fill(walls, 34, 13, 34, 13, EMPTY); // doorway, west wall
-
-outline(walls, 8, 28, 20, 41, WALL_BRICK);
-fill(walls, 14, 28, 14, 28, EMPTY); // doorway, north wall
-fill(walls, 20, 35, 20, 35, EMPTY); // doorway, east wall
-
-// Freestanding cover so the flashlight has something to throw shadows from (§7).
-fill(walls, 22, 22, 23, 23, WALL_BRICK);
-fill(walls, 40, 22, 41, 22, WALL_BRICK);
-fill(walls, 16, 20, 16, 24, WALL_BRICK);
+// **Nothing is built in here.** The fence above is the only wall on the map: inside it is
+// forest, and the trees below are the cover, the sight-line breaks and the shadow-casters
+// that three brick buildings used to be. A level made of rooms was scaffolding for the
+// systems — walls to path around, doorways to shut, corners to lose a spider behind — and
+// every one of those is something a wood does better and without announcing itself.
 
 const entities = [
   { type: 'PlayerSpawn', x: 5, y: 5, properties: { rotation: 90 } },
@@ -167,16 +156,31 @@ const entities = [
  * and why `npm test` runs the audit over this file.
  */
 const occupied = new Set(entities.map((e) => `${e.x},${e.y}`));
+const planted = new Set();
 const solidAt = (x, y) =>
   x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT ||
   walls[idx(x, y)] !== EMPTY ||
   floor[idx(x, y)] === EMPTY;
 
-/** Nothing solid, no entity, and nothing solid next door either — trees keep off routes. */
+/**
+ * Whether a tree can stand here.
+ *
+ * Three clearances, and they are different distances on purpose:
+ *
+ * - **Nothing solid within one tile.** Keeps trunks off the fence and out of the gateway.
+ * - **No interactable within two.** A note or a switch needs room to be seen, walked up to
+ *   and read; one behind a trunk is one the player never finds.
+ * - **No other tree in the eight tiles around this one.** A trunk fills most of its 2 m
+ *   tile, so trees on touching tiles are a wall — and a forest that walls itself off is one
+ *   the audit reports as stranded ground. One clear tile between trunks is as thick as a
+ *   *walkable* wood gets, and it is what the spacing above is aiming at rather than
+ *   something it happens to satisfy.
+ */
 function plantable(x, y) {
   for (let dy = -1; dy <= 1; dy += 1) {
     for (let dx = -1; dx <= 1; dx += 1) {
       if (solidAt(x + dx, y + dy)) return false;
+      if (planted.has(`${x + dx},${y + dy}`)) return false;
     }
   }
   for (let dy = -2; dy <= 2; dy += 1) {
@@ -189,20 +193,44 @@ function plantable(x, y) {
   return true;
 }
 
-const TREE_SPACING = 4;
+/**
+ * A tree's spin, in degrees, from the tile it stands on.
+ *
+ * The same idea the surround uses for its own trees (`spinAt` in `src/map/Surround.ts`), and
+ * deliberately the same *rule* rather than shared code: this is a build script running under
+ * bare node and that is runtime TypeScript, and one five-line hash copied is cheaper than a
+ * module that has to be importable from both.
+ *
+ * Position in, angle out. A tree is a thing in a place, so its spin belongs to the place: it
+ * does not change because the loop reached it in a different order, or because a tree
+ * somewhere else was added or moved.
+ */
+function spinAt(x, y) {
+  const mixed = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return Math.round((mixed - Math.floor(mixed)) * 360);
+}
+
+// `tree_small` rather than the kit's `prop_tree`: that one is 26 m, which from §3.2's camera
+// is a dark streak rather than a tree, and 3,104 triangles, which two hundred of is a budget
+// nobody has (§7). This is the generated one — seen whole, and about fifty triangles.
+//
+// Close enough that trunks are a constant presence and no sightline runs the width of the
+// map, open enough to walk and be chased through. The rejections below are what keep it a
+// wood rather than a thicket: nothing lands on a route, a switch, or the lane to the exit.
+const TREE_SPACING = 2;
 for (let y = 1; y < HEIGHT - 1; y += TREE_SPACING) {
   for (let x = 1; x < WIDTH - 1; x += TREE_SPACING) {
-    // Two in three, jittered off the lattice: a forest, not an orchard.
-    if (random() > 0.66) continue;
-    const tx = x + Math.floor(random() * TREE_SPACING) - 1;
-    const ty = y + Math.floor(random() * TREE_SPACING) - 1;
+    // Most points take a tree, jittered off the lattice: a forest, not an orchard.
+    if (random() > 0.86) continue;
+    const tx = x + Math.floor(random() * TREE_SPACING);
+    const ty = y + Math.floor(random() * TREE_SPACING);
     if (!plantable(tx, ty)) continue;
-    occupied.add(`${tx},${ty}`);
+    planted.add(`${tx},${ty}`);
     entities.push({
       type: 'Landmark',
       x: tx,
       y: ty,
-      properties: { prefab: 'prop_tree', rotation: Math.floor(random() * 360) },
+      properties: { prefab: 'tree_small', rotation: spinAt(tx, ty) },
     });
   }
 }

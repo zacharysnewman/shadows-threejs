@@ -256,6 +256,33 @@ back the camera rule the whole of aiming rests on.
   between a band of thousands and a band nobody can afford (§7). It also scales *uniformly*,
   where a prefab's `fitHeight` scales height alone — so a short surround tree is a small
   tree rather than a full-width canopy squashed flat.
+
+  The same tree is what a map plants *inside* its boundary, at a larger size. That is the
+  whole of the small-tree prefab: one shape, two sizes, one material.
+
+### Woods inside the map
+
+A level's ground cover is trees, and they answer to the camera before they answer to
+realism. §3.2 looks down at 72° from 14 m, and that view is unforgiving in both directions:
+
+- **A tall tree is not a tree from up there, it is a streak.** The kit's landmark tree is
+  26 m precisely so its canopy clears the camera (see *Landmarks*), which is right for one
+  tree you walk under and wrong for a wood — two hundred trunks that height are two hundred
+  dark bars radiating off the screen, and none of them reads as a tree.
+- **A wide crown roofs the ground.** Anything with a canopy below the camera hides the floor
+  behind it, and the floor is where the player, the enemies and every shadow are. A forest
+  the player cannot see through is a forest they cannot be chased through.
+
+So a wood is planted from *small* trees: a few metres tall, crowns a couple of metres across,
+spaced so the ground between them stays readable. Close enough that trunks are a constant
+presence and no sightline runs the width of the map; open enough to walk and be chased
+through. **One clear tile between trunks is the limit**, because a trunk fills most of its
+tile and trees on touching tiles are a wall — a wood that walls itself off strands ground,
+which the audit reports (§2).
+
+What a wood replaces is worth stating: it is the cover, the sight-line breaks and the
+shadow-casters that interior walls used to be. A level made of rooms is not more interesting
+than a level made of trees; it is only more obviously authored.
 - **Scenery and nothing else.** They are outside the map, so they are outside walkability,
   outside the collider set, outside the audit, and outside every light's reach. They cast
   no shadows: a shadow on the ground means a light is on something (§4), and nothing out
@@ -1216,7 +1243,10 @@ constraint and not a polish-phase concern.
   darkness the thing that hides the map (§4), and it applies to lit geometry too: a lamp
   pool on the far side of the view is a glow, not a readable place.
 - Static Layer 0/1 geometry is merged or instanced per prefab at load time — a 50×50 map is
-  2,500 floor tiles and must not be 2,500 draw calls.
+  2,500 floor tiles and must not be 2,500 draw calls. **Landmarks are instanced by the same
+  rule**, and for the same reason: they are entities rather than tiles, which made one mesh
+  each look reasonable while a map had nine of them, and a map whose interior is a wood (§2)
+  has hundreds.
 - Simulation runs on a fixed 60 Hz timestep decoupled from rendering, so AI timers (§4.1,
   §5) behave identically regardless of frame rate. A long frame is clamped rather than
   caught up on, so a backgrounded tab does not come back to a spiral of catch-up ticks.
