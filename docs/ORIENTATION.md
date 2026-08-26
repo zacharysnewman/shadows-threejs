@@ -83,6 +83,13 @@ Each of these looked like bad art or bad luck rather than a bug.
   assuming Y-up is right for most kits and silently wrong for one. A loader wraps a model in
   orientation and grounding nodes, so a vertex's coordinates, its mesh's and the character
   root's are three different frames — measure, place and bind in one.
+- **A skinned mesh is not where its vertices say it is.** glTF *ignores* the transform of
+  the node a skinned mesh hangs off; the joints carry it. `jointWorld · inverseBind` is the
+  identity only when the rest pose is the bind pose — on this kit's spider it is the
+  armature's 100× Z-up correction, so skinning a vertex and *then* placing it with the
+  node's matrix applies that correction twice and reports a 594 m spider on its side. Three
+  measures the bind-posed vertices, which is why `scripts/glb-facts.mjs` says 1.931 m where
+  the raw accessors say 1.949 m.
 - **Nothing in a `.glb` says where the feet are.** Characters are grounded *and* centred
   horizontally on load; without it a body stands beside the collider that represents it.
 - **A flat emissive is the same shade wherever it lands.** Applied per material it swamps a
@@ -100,11 +107,25 @@ Each of these looked like bad art or bad luck rather than a bug.
 
 ## Driving the game in a browser
 
-Tests are the floor; anything about how the game *looks* is measured here. Chromium and
-Playwright are installed but the browser Playwright expects may not be — launch with
-`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'` and
-`args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']`. Do not run
-`playwright install`.
+Tests are the floor; anything about how the game *looks* is measured here.
+
+**Chromium is installed; the `playwright` package is not.** It is deliberately not a
+dependency of this project — nothing the game ships uses it — so install it somewhere
+outside the tree and drive the dev server from there. The browser it would otherwise
+download is already on disk and must not be fetched again:
+
+```bash
+npm install playwright        # in a scratch directory, not this repo
+```
+
+```js
+const browser = await chromium.launch({
+  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+});
+```
+
+Do not run `playwright install`.
 
 The recipe that works:
 
@@ -115,6 +136,22 @@ await page.waitForFunction(() => window.shadows?.player);
 await page.keyboard.press('KeyH');                     // hide the readout, it covers a third
                                                        // of the screen
 ```
+
+**Every in-page path carries the base**, in dev exactly as in production (`vite.config.ts`
+sets it so a base-path mistake surfaces locally). A dynamic `import('/src/…')` or
+`import('/node_modules/…')` from inside `page.evaluate` 404s; `/shadows-threejs/src/…` and
+`/shadows-threejs/node_modules/…` resolve. Vite compiles the TypeScript on the way through,
+so the game's own modules can be imported and driven directly — which is usually better than
+reimplementing what they do:
+
+```js
+const { CharacterLoader } = await import('/shadows-threejs/src/core/CharacterLoader.ts');
+```
+
+Import `three` from `/shadows-threejs/node_modules/three/build/three.module.js` when a
+measurement needs it, and expect a "Multiple instances of Three.js" warning if the page has
+already loaded its own — harmless for measuring, and a reason not to compare object
+identities across the two.
 
 Then, from `window.shadows` (dev builds only, republished on every restart):
 
@@ -142,6 +179,12 @@ it is deep — or shorten the beam through the tuner.
 Driving the tuner's sliders is the shipped path for anything marked `needsPush`: find the
 `input[type=range]` whose **`parentElement`** text contains the label (not `closest('div')` —
 that matches the whole panel), set `value` and dispatch an `input` event.
+
+**A model's size, triangles and clip names are in `docs/project-map.jsonl` already** —
+`npm run map` re-derives them from the files, so a question like "how tall is the spider as
+authored" is a `grep`, not a browser session. What still needs the browser is anything about
+the model *in the scene*: how it reads at its game scale, what its shadow looks like, where
+the beam catches it.
 
 Screenshot differencing is how the look values were settled: capture with a value at 0 and at
 its default, difference per pixel, and report the max as well as the mean — a leak is local.

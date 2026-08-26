@@ -39,6 +39,8 @@ and `?seed=` below. `?edit` opens the level editor and needs no `?debug`.
 - `/?map=phase7-test` — a map for the spider: a long walled lane to be deterred up, a
   spider with a wall four metres behind it, a dead-end pocket with nowhere to run, open
   yard for the attack, and a lamp that deters without anyone aiming
+- `/?map=poi-test` — a map for the landmarks: one of every fitted prefab, to check each is
+  centred on the ground it stands on rather than on its silhouette
 - `/?map=phase8-test` — a map for the Shadow Monster: a long open yard to sweep a beam
   across, a pit that light crosses and walking does not, two lamps in two groups so one
   can be sabotaged while the other stays as a control, and two spiders for the comparison
@@ -90,12 +92,14 @@ laptop's are different levels. `Copy` is how one moves between them.
 
 ## Credits
 
-The 3D prefabs in `public/prefabs/` are **KayKit — Dungeon Remastered 1.0** by
-[Kay Lousberg](https://kaylousberg.com), released under
-[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Attribution is not required;
-this credit is voluntary. The licence text ships beside the files as
+Every art kit, its author and its licence is recorded in `PREFAB_KITS` in `src/config.ts`,
+and the game's credits screen (§8.2) is generated from that list rather than typed out — a
+credits screen maintained by hand is one that stops being true the first time an asset
+changes, and so is a README section. That is the list to read, and the one to add to.
+
+The vendored kit ships its licence beside the files as
 `public/prefabs/LICENSE-kaykit.txt`, and `public/prefabs/README.md` records which kit file
-each of our prefab names maps to and the commit they were pulled from.
+each prefab name maps to and the commit they were pulled from.
 
 Sound effects are synthesised at runtime with [ZzFX](https://github.com/KilledByAPixel/ZzFX)
 by Frank Force (MIT).
@@ -169,9 +173,10 @@ floating aim stick, with an on-screen action button; pushing the movement stick 
 sprints. The touch chrome only appears once a touch is seen, so a desktop session never
 renders it.
 
-**Development builds** additionally expose `window.shadows` — the clock, player, camera
-rig, flashlight, lights, audio core and map, reachable from the console. Some behaviour can
-only be checked through it: "a moving off-screen emitter is locatable by ear" (§4.3) is not
+**Development builds** additionally expose `window.shadows`, reachable from the console —
+the clock, input, player, camera rig, flashlight, lights, audio, enemies, objectives and the
+rest; `docs/ORIENTATION.md` lists what is on it, what is deliberately not, and how to drive
+it. Some behaviour can only be checked through it: "a moving off-screen emitter is locatable by ear" (§4.3) is not
 something a test runner can assert, but the live audio graph can be tapped from the handle
 and measured. It is compiled out of production builds, so anything driving it — a console
 session, a Playwright check — has to run against `npm run dev` rather than `npm run
@@ -204,12 +209,18 @@ at full size and each `phaseN-test` exercises one phase's mechanics. **None of t
 level.** Author it in `?edit` (see *Authoring a level* above), and let the audit tell you
 whether it can be finished before a playthrough does.
 
-**The art.** The map prefabs are real — a CC0 kit, vendored with its licence — but the two
-enemies are still procedural meshes, and the spider has no clips. `Gait` already computes
-what a clip would be driven by: the cycle advances with ground covered, and the attack's
-contact frame is placed where `strike` reaches 1, so re-exporting art cannot move when
-damage lands. Dropping a `.glb` into `public/prefabs/` is the whole of the change; a prefab
-with no file falls back to a placeholder box.
+**The art.** The prefabs and both enemies are real models now, each kit recorded in
+`PREFAB_KITS` with its licence. The spider is skinned and its walk cycle is driven by ground
+speed rather than by a clock, so a wandering, pursuing and fleeing spider all place their
+legs on the ground; its attack clip is stretched to §5.3's wind-up so re-exporting the art
+cannot move when damage lands. The Shadow Monster has a model and deliberately no animation
+— §5.2 never draws it, and what the model buys is the outline of its shadow.
+
+Swapping any of it is dropping a `.glb` in: `public/prefabs/` for a static prop, and
+`public/characters/` for anything skinned, which cannot be a prefab because merging a model
+into one geometry destroys the skeleton. Either with no file falls back to a placeholder.
+`docs/project-map.jsonl` carries each model's size, triangle count and clip names, so what
+is actually in the tree is a `grep` rather than a browser session.
 
 A caveat worth knowing: the kit is medieval stone while the prefab names say concrete and
 chain-link, so the game currently looks like a dungeon. That is a `tileset.json` decision,
@@ -235,15 +246,24 @@ Two design questions are open rather than outstanding:
 
 ```
 src/config.ts     constants mirroring the spec — tuning happens here, not in systems
-src/core/         sim clock, viewport, asset loader, input, occluder fade
-src/map/          validation, geometry, colliders, walkability, entity registry
-src/player/       movement, collision, camera rig, health
-src/lighting/     flashlight, battery, environmental lights, night ambient, illumination query
+src/core/         sim clock, viewport, asset loader, character loader, input,
+                  occluder fade, rng, url options
+src/map/          validation, geometry, colliders, walkability, entity registry, audit
+src/player/       movement, collision, camera rig, health, derived rig, arm IK
+src/lighting/     flashlight, battery, environmental lights, night ambient,
+                  the illumination query, volumetric shafts, the torch body
 src/audio/        listener, source pool, distance profiles, sound bank
-src/nav/          grid A*, line of sight, segment occlusion
-src/enemies/      shared enemy, state machine, spawning, contact check
-src/debug/        overlay and debug visualisations
+src/nav/          grid A*, line of sight
+src/enemies/      shared enemy, state machine, spawning, contact check, gait, rigs
+src/world/        gates, interaction, notes, objectives, props, run outcome
+src/ui/           HUD, run overlays, title and credits (§8)
+src/editor/       the level editor (§9)
+src/debug/        overlays, tuning panel and frame stats
 public/maps/      map data, one directory per map
-scripts/          map generators for the checked-in maps
+public/prefabs/   static props; public/characters/ holds the skinned ones
+scripts/          map generators, the prefab converter, the project-map generator
 tests/            unit tests, including fixture tests over the checked-in maps
 ```
+
+A file-by-file index — every file's summary, exports and the `§` sections it cites, plus
+each model's size and clips — is `docs/project-map.jsonl`, regenerated with `npm run map`.
