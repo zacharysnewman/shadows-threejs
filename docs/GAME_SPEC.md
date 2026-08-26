@@ -183,6 +183,12 @@ legible, which is a level-design property rather than a mechanic.
   around to identify is not doing the job — the player is meant to sweep past it and know.
 - **Distinct from each other.** Two landmarks of the same prefab in one region tell the
   player nothing they did not already know; the second one is decoration.
+
+  Decoration is allowed, and a `Landmark` entity is how a map says "a model here" whether or
+  not the model is doing this job. A stand of trees scattered across a yard is scenery: it
+  blocks like anything else, it is worth placing, and no one of them answers "where am I".
+  What the rules in this section govern is the claim that something is a *landmark* — which
+  is a level-design property of how a model is placed, not a property of the entity type.
 - **Placed off routes, not on them.** A landmark is a thing to *see*, and one standing in a
   corridor is a thing to walk around. Its footprint blocks the player like any other solid
   geometry (below), so this is a real cost and not a preference.
@@ -215,6 +221,46 @@ is like from below, and it costs nothing to draw. Scaling for this is a vertical
 A 4 m hoop and a 1 m bench block the same way, and both fade when they come between the
 camera and the player (§3.2's occluder rule) — which a tall landmark will exercise harder
 than anything else on the map, since it is the tallest geometry the game places.
+
+### Beyond the boundary
+
+**Every map is surrounded by trees it is not made of.** The playable area ends at the map
+rectangle; the *world* does not, and a band of small trees fills the ground outside it in
+every direction.
+
+This exists so the camera can be locked to the player (§3.2). A camera that always centres
+the player will frame ground beyond the boundary whenever they walk near one, and the
+alternative to filling that ground is sliding the camera off the player — which changes
+what a cursor position means exactly where a cornered player can least afford it. Scenery
+outside the map is the cheaper answer by a long way: it costs one instanced draw and buys
+back the camera rule the whole of aiming rests on.
+
+- **Ground first, trees second.** There is ground out there, and it is what actually covers
+  the void; the trees stand on it for depth and to stop the eye. Foliage alone would have to
+  be *opaque* to hide anything, which is a great many instances of a detailed model for a
+  part of the world nobody can reach (§7). It is lit by §4's night ambient exactly as the
+  map's own floor is — painting it the fog's colour would make it the colour of the void it
+  is covering, since §7 colours the fog to the sky and draws the background in it too.
+- **Small trees, not the ones inside.** A landmark tree is tall enough that its canopy is
+  above the camera and never drawn (§2, Landmarks) — which is right for something you walk
+  under and useless for something whose only job is to cover ground. The surround's trees
+  are short enough to be fully in frame, so what the player sees past the boundary is
+  canopy rather than a row of trunks standing in void.
+- **Scenery and nothing else.** They are outside the map, so they are outside walkability,
+  outside the collider set, outside the audit, and outside every light's reach. They cast
+  no shadows: a shadow on the ground means a light is on something (§4), and nothing out
+  there is ever lit.
+- **As deep as the camera can see, and no deeper.** The band extends past the boundary by
+  the reach of §3.2's ground footprint plus a margin, because that is exactly the ground a
+  player standing on the edge tile can see. Making it deeper renders trees no camera can
+  frame; making it shallower puts the void back.
+- **Scattered, not planted in rows.** Positions are jittered off a grid, from the run's
+  seed (Cross-Cutting: determinism), so a replay grows the same forest. A visible lattice
+  at the edge of every map would read as the boundary it is meant to disguise.
+
+The surround is generated rather than authored. It is not in the map file, the editor does
+not place it, and a map that says nothing about it still gets one — it is a property of
+*being a map*, not a decision a level makes.
 
 ### Entity Type Reference
 
@@ -375,15 +421,17 @@ they belong on the stick the thumb is already on.
   the player along the pitch vector.
 - Follows the player with critically damped smoothing (≈0.15 s time constant); no rotation
   — the map's north stays screen-up so learned routes stay legible in the dark.
-- The rig clamps to map bounds so the camera never frames off-map void. What is clamped is
-  the frustum's ground footprint, not the camera position: under a pitched camera that
-  footprint is a trapezoid, wider at its far edge than it is where the player stands.
-- Framing the player outranks hiding void. The clamp never pushes the player within 2 m of
-  the edge of the view, and on an axis where the map is too small to satisfy both rules the
-  camera centres that axis rather than pinning the player to one side. Close to a boundary
-  the far corners of the footprint will show void; that is the accepted cost, because a
-  camera that hides the void by losing the player has failed at the more important half of
-  its job.
+- **The rig is locked to the player.** It looks at where they are and nothing pulls it off
+  them — not a map edge, not a corner. The player therefore sits at the same point on the
+  screen everywhere on the map, which is the whole reason: with mouse aim, the vector from
+  the player to the cursor *is* the vector from the player to their aim, and a camera that
+  slides off-centre near a boundary silently changes what a given cursor position means, in
+  exactly the places a player is most likely to be cornered.
+- **Nothing frames off-map void, because there is none to frame.** The map is surrounded
+  beyond its boundary by scenery the player cannot reach (§2), sized against the frustum's
+  ground footprint — which under a pitched camera is a trapezoid, wider at its far edge than
+  it is where the player stands. Answering the void outside the map rather than by moving
+  the camera is what lets the camera do only the half of the job it was ever good at.
 - Static geometry between the camera and the player must not hide the player. At a 70°–75°
   pitch a full-height wall on the camera side of the player does exactly that, and once the
   map is dark (§4) the occluder does not even read as a wall — it is a black rectangle
@@ -1095,6 +1143,15 @@ lands slightly before the meshes visibly touch, which reads as being grabbed.
    power, and the gate opens where it stands, wherever the player is. Distinct is by
    switch, not by press — a `latch` that has already fired contributes nothing further,
    which is what `latch` being one-way is for.
+
+   **The exit is a gate, and stands on a gate tile.** Like any other gate it is solid until
+   it swings (item 4), so the ground it occupies cannot be walked on before the power
+   routes — which is also what makes "standing where it stood" a sound way to end the run.
+   A map that places the entity on open floor has authored an exit that is not a gate at
+   all: it is walkable from the first second, and the run is won by walking onto it. The
+   escape therefore checks that the exit is *unlocked* as well as that the player is on it.
+   Both, deliberately: the tile is the design and the check is what stops a level's
+   authoring mistake being handed to the player as a victory.
 ### Run Structure
 
 A run is a single life over the whole map (§2), with no checkpoints, no saves, and no

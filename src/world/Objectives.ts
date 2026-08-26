@@ -102,6 +102,26 @@ export class Objectives {
    * number it needs. This is the HUD counter, and the reason §6 has one at all: without
    * it the last switch is an unmarked hunt across the map.
    */
+  /**
+   * §6.5 — does standing on this tile end the run?
+   *
+   * Two conditions, and the second one is the point. Being *on the exit's tile* is the
+   * obvious half. The other is that the exit is actually unlocked, which the tile is
+   * supposed to answer on its own — an exit is a gate, solid until the power routes and it
+   * swings (§6.4), so a player standing there has already passed the test.
+   *
+   * Supposed to. That invariant lives in the *map file*, one `gate` tile under one entity,
+   * and this project's own example map went several phases without it: the exit stood on
+   * plain floor, and the run was won by walking onto it with nothing routed. An authoring
+   * slip should cost a level a locked exit, never a free victory, so the state is asked
+   * here rather than inferred from the geometry.
+   */
+  escapedAt(gx: number, gy: number): boolean {
+    const exit = this.entities.byType('ExitGate')[0];
+    if (!exit || exit.gx !== gx || exit.gy !== gy) return false;
+    return this.exitProgress().unlocked;
+  }
+
   exitProgress(): { fired: number; required: number; unlocked: boolean } {
     const exit = this.entities.byType('ExitGate')[0];
     if (!exit) return { fired: 0, required: 0, unlocked: false };

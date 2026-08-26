@@ -39,8 +39,8 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 | Directory | Owns |
 | --- | --- |
 | `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
-| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `audit` (is the level finishable) |
-| `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision`, `CameraRig`, `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
+| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
+| `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision` (the only thing holding the player on the map now), `CameraRig` (locked to the player; `groundFootprint` is what sizes §2's surround), `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
 | `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
 | `src/enemies/` | `Enemy` (shared state machine, speeds, A\*, avoidance), `Spider`, `ShadowMonster`, `EnemyManager` (spawning + the one contact test), `Gait`, `CharacterRig` |
 | `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled; optional per-tile enter cost and a separate grid to straighten against), `raycast` (segment vs boxes on X/Z), `LitGrid` (§5's light-as-terrain views — pure, knows nothing about lights) |
@@ -82,6 +82,15 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **Ground painted the fog's colour is invisible.** §7 colours the fog to the sky *and* uses
+  it as the scene background, so a surface tinted to `FOG.color` is exactly the colour of the
+  void behind it. §2's surround ground reads as ground because it is a lit material taking
+  §4's ambient like the map's own floor, not because it was given the right hex.
+- **An `ExitGate` on a floor tile is a free win.** The run ends by standing where the exit
+  stood, and what stops that happening early is the tile being *solid* until the power routes
+  (§6.5). This project's own example map had the entity on plain floor for several phases:
+  walking onto it won the run with nothing routed. `Objectives.escapedAt` now checks the
+  state as well, so the next authoring slip costs a locked exit instead.
 - **A `SkinnedMesh`'s bind matrix is its *world* matrix.** Three renders a skinned vertex as
   `boneWorldNow · boneInverseAtBind · bindMatrix · v`, so an identity there renders the model
   in raw authored coordinates — for a Z-up kit, flat on its back, metres away.
@@ -177,10 +186,14 @@ The handle carries: `clock, input, loaded, player, rig, flashlight, environment,
 testEmitter, occluders, enemies, objectives, props, gates, hud, notes, voices, monsterSteps,
 lampVoices, rng, illumination, night, audit, frameStats`.
 
-**The rig camera clamps to keep the player framed** (§3.2), so the far end of a 12 m beam is
-usually at or past the edge of the view. If a measurement needs geometry both near and far,
-put it left-to-right across the screen rather than up-screen — the frame is much wider than
-it is deep — or shorten the beam through the tuner.
+**The rig camera is locked to the player** (§3.2) — it centres them everywhere, including
+hard into a corner, so a screen position means the same thing wherever the player is
+standing. It used to clamp to the map's bounds and no longer does; §2's surround covers the
+ground outside instead.
+
+The frame is much wider than it is deep, and the far end of a 12 m beam is usually at or
+past the top of it. If a measurement needs geometry both near and far, put it left-to-right
+across the screen rather than up-screen, or shorten the beam through the tuner.
 
 Driving the tuner's sliders is the shipped path for anything marked `needsPush`: find the
 `input[type=range]` whose **`parentElement`** text contains the label (not `closest('div')` —

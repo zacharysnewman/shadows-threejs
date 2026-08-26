@@ -203,6 +203,37 @@ describe('switch modes (§6.3)', () => {
   });
 });
 
+describe('escaping (§6.5)', () => {
+  it('does not end the run on a locked exit, however you got there', () => {
+    // The bug this exists for shipped in this project's own example map: the exit stood on
+    // a plain floor tile instead of a gate tile, so it was walkable from the start and the
+    // run was won by walking onto it with nothing routed. The tile is the first line of
+    // defence and the state is the second, because the first one lives in a map file.
+    const { objectives, entities } = world();
+    const exit = entities.byType('ExitGate')[0]!;
+    expect(objectives.exitProgress().unlocked).toBe(false);
+    expect(objectives.escapedAt(exit.gx, exit.gy)).toBe(false);
+  });
+
+  it('ends the run once the power is routed', () => {
+    const { objectives, entities } = world();
+    const exit = entities.byType('ExitGate')[0]!;
+    for (const latch of switchesFor(entities, 'MainExit')) objectives.use(latch);
+
+    expect(objectives.exitProgress().unlocked).toBe(true);
+    expect(objectives.escapedAt(exit.gx, exit.gy)).toBe(true);
+  });
+
+  it('ends it only on the exit\'s own tile', () => {
+    const { objectives, entities } = world();
+    const exit = entities.byType('ExitGate')[0]!;
+    for (const latch of switchesFor(entities, 'MainExit')) objectives.use(latch);
+
+    expect(objectives.escapedAt(exit.gx + 1, exit.gy)).toBe(false);
+    expect(objectives.escapedAt(exit.gx, exit.gy + 1)).toBe(false);
+  });
+});
+
 describe('the exit counter (§6.5)', () => {
   it('counts distinct latch switches, and opens on the last one', () => {
     const { objectives, entities } = world();

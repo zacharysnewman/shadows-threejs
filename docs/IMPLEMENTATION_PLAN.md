@@ -965,6 +965,55 @@ exactly, which is what made deleting the `.glb` and forgetting the credit imposs
 | Shade's rig | 0 clips, nothing playing, after a rendered frame |
 | Spider's rig, same mesh | 5 clips, `walk` playing |
 
+*The camera stopped letting go of the player, and the world grew an outside.* §3.2 clamped
+the rig to the map's bounds so the view never framed off-map void, and the spec was candid
+that the two rules fought: near an edge a pitched frustum's far corners overhang the
+boundary long before the player does, so the clamp slid the player off-centre exactly where
+aiming matters most. With mouse aim that is not a cosmetic problem — the vector from the
+player to the cursor *is* their aim, and a camera that drifts changes what a cursor position
+means in the corners a player is most likely to be cornered in.
+
+The clamp is gone and the rig is locked to the player. What answers the void is §2's
+surround: ground and a scatter of small trees outside every map, in every direction, deep
+enough to cover what a player standing on the edge tile can see — derived from
+`groundFootprint` rather than typed out, so it cannot drift out of step with §3.2's pitch
+and distance. It is scenery only: outside walkability, outside the colliders, outside the
+audit, casting nothing, because nothing out there is ever lit.
+
+Two things about it were wrong first and are worth keeping written down. The trees alone
+left gaps, and the obvious fix — more trees — is 3,104 triangles each for ground nobody can
+walk on; a ground plane covers it in two, and the band went from 250 instances to 156 with a
+better result. And that plane, painted `FOG.color` on the reasoning that the fog is what
+everything fades into, was *invisible*: §7 draws the background in the same colour, so
+fog-coloured ground is the exact colour of the void. It is a lit material now, taking §4's
+ambient like the map's own floor.
+
+*The example map is a level again rather than a test rig.* The fence is the level's edge
+instead of an interior compound, the gate is set into that perimeter, and the exit is on the
+ground the gate opens onto. Trees are scattered through the interior. The old brick wall
+around the whole map is gone — the map's own edge holds the player now (`clampInside`), and
+what is past it is forest.
+
+*A win the player never earned.* Standing on the exit's tile ends the run, and what stops
+that happening early is the exit being a *gate*: solid until the power routes and it swings
+(§6.4). The entity had been sitting on a plain floor tile since the map was written, so the
+exit was walkable from the first second and the run could be won by strolling onto it with
+`0/3` routed. Found by teleporting a test player near the exit and watching the victory
+screen appear. The tile is authored correctly now, and `Objectives.escapedAt` checks the
+exit is unlocked as well — the tile is the design, the check is what stops the next
+authoring slip being handed to a player as a victory. §6.5 says both.
+
+*Verified in a browser* (`?debug&map=example&seed=7`):
+
+| Case | Measured |
+| --- | --- |
+| Player hard into the map's corner | camera target `(1.50, 1.50)` against a player at `(1.50, 1.50)` — dead centre, where the clamp used to pull it away |
+| The ground beyond the boundary | covered: forest floor and canopy, no void, from the corner and from all four edges |
+| Surround cost | 156 instances in one draw; **688k triangles** total for the scene, down from 980k before the ground plane let the band thin out |
+| Audit of the reworked map | **0 findings** |
+| The objective chain | `0/3` routed → exit locked and standing on it does nothing; three latches → `3/3`, unlocked, and the exit ends the run |
+| Gate and exit | gate at tile `(25, 46)` in the fence, exit at `(25, 48)` beyond it, on a gate tile flanked by fence stubs |
+
 *Light became terrain.* §5 had both enemies react to light standing in it and ignore it
 completely when choosing where to walk, so a spider would path through a lamp's pool to
 reach the player and be stunned by the light it had just chosen to enter. They route around

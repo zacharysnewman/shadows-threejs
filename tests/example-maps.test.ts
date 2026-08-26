@@ -58,14 +58,51 @@ describe('maps/example', () => {
     }
   });
 
-  it('is sealed by its boundary wall', () => {
-    for (let x = 0; x < map.width; x += 1) {
-      expect(grid.isWalkable(x, 0)).toBe(false);
-      expect(grid.isWalkable(x, map.height - 1)).toBe(false);
-    }
-    for (let y = 0; y < map.height; y += 1) {
-      expect(grid.isWalkable(0, y)).toBe(false);
-      expect(grid.isWalkable(map.width - 1, y)).toBe(false);
+  it('is sealed by its perimeter fence, not by a wall at the map edge', () => {
+    // The map used to be walled all the way round. It is not any more: the fence stands a
+    // few tiles in, the ground beyond it is walkable, and the map's own edge is what holds
+    // the player (§2, §3.2) — with the forest outside it doing the looking (§2's surround).
+    const solid = (gx: number, gy: number) => !grid.isWalkable(gx, gy);
+
+    // A continuous fence line, save for the one gate set into it.
+    const fenceRow = Array.from({ length: map.width }, (_, x) => x).filter((x) => solid(x, 3));
+    expect(fenceRow.length).toBeGreaterThan(map.width - 8);
+
+    // And ground on the far side of it, which is where the exit is.
+    const exit = entities.byType('ExitGate')[0]!;
+    expect(exit.gy).toBeGreaterThan(map.height - 4);
+    // The exit stands on a gate tile, so it is solid until the power routes (§6.5) — while
+    // the ground it opens onto is walkable, which is how the player gets to stand there.
+    expect(grid.isWalkable(exit.gx, exit.gy)).toBe(false);
+    expect(grid.isWalkable(exit.gx, exit.gy - 1)).toBe(true);
+  });
+
+  it('stands the exit on a gate tile rather than on open floor (§6.5)', () => {
+    // The bug this catches shipped here for several phases: the entity sat on plain floor,
+    // so the exit was walkable from the first second and the run could be won by strolling
+    // onto it with nothing routed.
+    const exit = entities.byType('ExitGate')[0]!;
+    const tileId = map.layers[1]!.data[exit.gy * map.width + exit.gx]!;
+    expect(tileset.get(tileId)?.solid).toBe(true);
+  });
+
+  it('puts the only way through the fence where the exit is (§6)', () => {
+    // The gate is in the fence line and the exit is straight out through it: opening the
+    // one is what reaches the other, which is what the run's last objective is.
+    const gate = entities.byType('Gate')[0]!;
+    const exit = entities.byType('ExitGate')[0]!;
+    expect(gate.gx).toBe(exit.gx);
+    expect(gate.gy).toBeLessThan(exit.gy);
+  });
+
+  it('scatters a forest without standing a tree on anything (§2)', () => {
+    const trees = entities.byType('Landmark');
+    expect(trees.length).toBeGreaterThan(20);
+    // Every tree on ground that was walkable before the trees themselves were placed: a
+    // tree in a doorway or on a switch is a soft-locked level, and the audit that would
+    // catch it runs over this map in `mapAudit.test.ts`.
+    for (const tree of trees) {
+      expect(map.layers[1]!.data[tree.gy * map.width + tree.gx]).toBe(0);
     }
   });
 

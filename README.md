@@ -25,7 +25,10 @@ and `?seed=` below. `?edit` opens the level editor and needs no `?debug`.
 
 `?debug&map=<name>` selects a map from `public/maps/`:
 
-- `/` — the 50×50 example map (default)
+- `/` — the 50×50 example map (default): a chain-link perimeter with a gate set into it,
+  the exit on the ground beyond that gate, three buildings, a dirt yard and a scatter of
+  trees. Like every map it is surrounded past its boundary by a forest the player cannot
+  reach (§2), which is what lets the camera stay locked to the player (§3.2)
 - `/?map=phase1-test` — a small map that deliberately contains authoring errors, to
   exercise the loader's skip-and-warn paths
 - `/?map=phase2-test` — a small map built to catch the player capsule out: a diagonal
