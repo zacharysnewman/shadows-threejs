@@ -73,6 +73,34 @@ differs from what is checked in. A rule nothing checks is a rule that is wrong w
 week, and an index that is quietly wrong is worse than no index — it sends the next reader
 to a file that no longer exists.
 
+## Orientation notes
+
+`docs/ORIENTATION.md` is what a cold start would otherwise cost: the order a frame runs in
+and which delta each part of it uses, who owns what, the invariants that break silently, the
+traps that have already been paid for once, and the recipe for driving the game in a browser
+— the debug handle's contents, what is *not* on it, which map exercises which mechanic, and
+the measuring techniques that worked.
+
+Read it before opening source files to work out how something fits together. It is the layer
+above `docs/project-map.jsonl`: the map says where a file is, this says why it is there.
+
+**It is not a second spec, and must never become one.** No design values live in it — a
+number copied out of `docs/GAME_SPEC.md` goes stale the moment the original moves, and a
+stale copy is worse than no copy because it gets believed. Where the two disagree the spec is right
+and the orientation notes are the bug.
+
+**Update it in the same change that invalidates it.** Specifically:
+
+- A system moves, is added, or changes hands — the ownership table.
+- Anything is added to or removed from `Run.frame`, or moves between the simulation clock and
+  the render delta — the frame order.
+- The debug handle, the debug keys or the tuner's shipped path change — the browser recipe.
+- A bug is fixed that was silently wrong and looked like something else — that is a trap, and
+  the next person deserves it written down. This is the section that earns the file.
+
+Correcting it is not optional bookkeeping: notes that are wrong send the next reader
+somewhere that no longer exists, which is worse than sending them nowhere.
+
 ## Constants
 
 `src/config.ts` mirrors the spec's values, each citing the section it comes from. Nothing in
@@ -139,8 +167,9 @@ the shape of it.
 src/config.ts     constants mirroring the spec
 src/core/         sim clock, viewport, asset loader, input, occluder fade, rng, url options
 src/map/          validation, geometry, colliders, walkability, entity registry
-src/player/       movement, collision, camera rig, health
-src/lighting/     flashlight, battery, environmental lights, night ambient
+src/player/       movement, collision, camera rig, health, derived rig, arm IK
+src/lighting/     flashlight, battery, environmental lights, night ambient,
+                  the illumination query, volumetric shafts, the torch body
 src/audio/        listener, source pool, distance profiles, sound bank
 src/nav/          grid A*, line of sight
 src/enemies/      shared enemy, state machine, spawning, contact check
