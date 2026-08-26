@@ -27,7 +27,6 @@ import {
   PLAYER,
   PREFAB_KITS,
   SIM,
-  SURROUND,
 } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
@@ -154,7 +153,6 @@ export async function createRun(
   // player. Built here rather than in the loader because it is seeded from the run: a
   // replayed seed has to grow the same trees (Cross-Cutting: determinism).
   const surround = buildSurround(
-    await assets.load(SURROUND.prefab, loaded.data.tileSize),
     loaded.data.width,
     loaded.data.height,
     loaded.data.tileSize,

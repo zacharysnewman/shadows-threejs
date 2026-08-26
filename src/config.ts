@@ -47,23 +47,70 @@ export const CAMERA = {
  * the edge whenever the player walks near one, and covering that ground is much cheaper
  * than moving the camera off the person the player is aiming with.
  */
-export const SURROUND = {
-  /** The prefab planted out there — §2's small tree, not the landmark one. */
-  prefab: 'prop_tree_small',
+/**
+ * §2 — the trees the game builds rather than loads (`GeneratedPrefabs`).
+ *
+ * One shape at two sizes: `tree_small` is what a map plants inside its own boundary, and
+ * §2's surround plants shorter ones outside it. Shared here because they are the same tree,
+ * and a forest that changed colour at the fence would announce the fence.
+ */
+export const TREES = {
   /**
-   * Grid pitch before jitter, in metres.
+   * Trunk and canopy — the kit tree's palette, darkened.
    *
-   * Wider than it looks: `PREFAB_FIT` scales the tree's *height* only, so the surround's
-   * 9 m tree keeps the model's 11.84 m canopy and the band closes over at this spacing with
-   * room to spare. Tightening it buys nothing but triangles (§7).
+   * That tree is `#934625` and `#00e72a`, a near-neon green that works for a canopy the
+   * camera rarely sees and would be a wall of it across a whole map. These are the same two
+   * hues taken down, so the woods read as the same species at night.
    */
-  spacingMetres: 10,
+  trunkColour: 0x5c2f1c,
+  canopyColour: 0x1c7328,
+  /** The kit's roughness, so the moon catches these crowns as it catches everything else. */
+  roughness: 0.27,
+  /**
+   * Height of the `tree_small` prefab, in metres (§2).
+   *
+   * Tall enough to be a tree the player walks between and short enough to be *seen* as one:
+   * the camera eye is 13.31 m up, so a crown at this height is well inside the frame. The
+   * kit's landmark tree is 26 m for the opposite reason, and from this camera two hundred of
+   * those are not a wood but two hundred dark streaks (see `GeneratedPrefabs`).
+   */
+  smallHeightMetres: 4.0,
+  /**
+   * Half-width of what a tree blocks, in metres — the trunk, not the crown (§2).
+   *
+   * The same call `PREFAB_FOOTPRINT` makes for the kit's tree: a crown is something you walk
+   * under, and blocking the ground beneath it would fence off most of a forest.
+   */
+  trunkHalfWidth: 0.35,
+} as const;
+
+export const SURROUND = {
+  /**
+   * How tall a surround tree stands, in metres, and how much that varies.
+   *
+   * Short enough to be seen *whole* — the camera eye is 13.31 m up, so at this height the
+   * crown is well inside the frame and what fills the edge of the screen is a canopy rather
+   * than a row of trunks disappearing off the top. That is the difference from §2's
+   * landmark tree, which is tall precisely so its canopy is never drawn.
+   */
+  treeHeightMetres: 3.5,
+  /** Fraction either side of that height, so a stand of them is not one tree repeated. */
+  heightVariation: 0.35,
+  /**
+   * Grid pitch before jitter, in metres — closer than a tile, so a tile of ground beyond
+   * the boundary holds more than one tree.
+   *
+   * Density is the whole job out here: a forest edge is opaque, and gaps between crowns are
+   * the void the surround exists to cover. It is affordable only because the tree is
+   * *generated* rather than a kit prefab (see `Surround`) — at this spacing a 50-triangle
+   * tree fills the band for a fraction of what one 3,104-triangle model would cost (§7).
+   */
+  spacingMetres: 1.5,
   /**
    * How far a tree may sit from its grid point, in metres. Enough to break the lattice —
-   * a visible grid at the edge of the map advertises the boundary it exists to disguise —
-   * and not so much that the band grows holes.
+   * a visible grid at the edge of the map advertises the boundary it exists to disguise.
    */
-  jitterMetres: 2.0,
+  jitterMetres: 0.6,
   /**
    * Extra depth past what the camera can actually see, in metres.
    *
@@ -926,22 +973,6 @@ export const CHARACTER_FIT: Readonly<
   // loaded model, never a parsed one.
 };
 
-/**
- * §1 — prefabs that are a second use of another prefab's model, rather than art of their own.
- *
- * The loader fetches `<name>.glb`, so two sizes of the same tree would otherwise mean two
- * copies of a 240 KB binary that have to be kept identical by hand. A prefab with no entry
- * here loads its own name, which is every prefab that has a file.
- *
- * This is deliberately *not* a general aliasing feature. It exists for the case where one
- * model is used at two `PREFAB_FIT` sizes for two different reasons, and each entry should
- * be able to say what those reasons are.
- */
-export const PREFAB_FILE: Readonly<Record<string, string>> = {
-  /** §2's surround, from the landmark tree's model at a fraction of its height. */
-  prop_tree_small: 'prop_tree',
-};
-
 export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
   /** Pole and base only; the backboard and rim are overhead (§2). */
   prop_hoop: { hx: 0.3, hz: 0.3 },
@@ -1007,19 +1038,6 @@ export const PREFAB_FIT: Readonly<
    * else. 0.045 is the ring the trunk actually meets the ground on, 1.44 m across.
    */
   prop_tree: { fitHeight: 26, contact: 0.045 },
-  /**
-   * §2's surround — the same model, kept low enough to be seen whole.
-   *
-   * The landmark tree above is tall *so that* its canopy is above the camera and never
-   * drawn. Out beyond the boundary that is precisely the wrong shape: the job is to cover
-   * ground, and a 26 m tree covers it with a trunk. At 9 m the whole tree is well under the
-   * 13.31 m camera eye, so what fills the edge of the frame is canopy.
-   *
-   * `fitHeight` scales the Y axis only, which is what makes one model do both jobs: the
-   * canopy stays 11.84 m across at any height, so a short tree is a *wide* tree and the band
-   * closes up with far fewer of them than its spacing suggests.
-   */
-  prop_tree_small: { fitHeight: 9, contact: 0.045 },
   /**
    * §1 — the dirt tile's *surface*, not its highest pebble.
    *

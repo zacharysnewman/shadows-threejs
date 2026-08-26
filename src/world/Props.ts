@@ -7,9 +7,16 @@
  * completable in any sense worth testing.
  *
  * So: one crude shape per type, distinguishable at a glance under a torch beam — the
- * flashlight a small bright cylinder, a note a pale flat card, a switch a box on a post
- * that changes colour once it is thrown. They cast and receive like everything else, so
- * they read the same way the map does.
+ * flashlight a small bright cylinder on the ground, a note a pale card on a post, a switch a
+ * box on a post that changes colour once it is thrown. They cast and receive like everything
+ * else, so they read the same way the map does.
+ *
+ * **The posts are not decoration.** A card at chest height with nothing under it is a card
+ * floating in mid-air, and every note and switch in this game looked like that: §9.2 has the
+ * *editor* mount them against a solid neighbour, which is a placement rule and not a thing
+ * the renderer can rely on — a map may put one anywhere, and now that a level's interior can
+ * be open forest (§2) there is frequently no neighbour to mount against at all. So each one
+ * carries its own stand and needs nothing from the map.
  *
  * Presentation only. Nothing here decides anything; `Objectives` owns the state and this
  * reads it back.
@@ -20,6 +27,8 @@ import type { Interactable } from './Interaction';
 import type { Objectives } from './Objectives';
 
 const COLOURS = {
+  /** The stand under a note or a switch — dark, so the thing on top of it is what reads. */
+  post: 0x3a3128,
   flashlight: 0xf2e2b0,
   note: 0xd8d2c0,
   switchOff: 0x6a4f3a,
@@ -166,5 +175,33 @@ function build(entity: Interactable): Prop | null {
   object.add(mesh);
   if (entity.type === 'Note') object.rotation.y = Math.PI / 8;
 
+  // Anything held at chest height needs something holding it up. The flashlight is a
+  // pick-up lying on the floor and the exit's marker already reaches the ground, so those
+  // two are the exceptions rather than the rule.
+  if (entity.type === 'Note' || entity.type === 'PowerSwitch') {
+    const bottom = y - boxHeight(geometry) / 2;
+    object.add(post(bottom));
+  }
+
   return { entity, object, material, anchorY: y + 0.5 };
+}
+
+/** How tall a box geometry is, so a prop's stand can reach exactly its underside. */
+function boxHeight(geometry: THREE.BufferGeometry): number {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  return box ? box.max.y - box.min.y : 0;
+}
+
+/** A stand from the floor to `top`, so what sits on it is not floating in the dark. */
+function post(top: number): THREE.Mesh {
+  const height = Math.max(0.05, top);
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.07, height, 6),
+    new THREE.MeshStandardMaterial({ color: COLOURS.post, roughness: 0.9, metalness: 0 }),
+  );
+  mesh.position.y = height / 2;
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  return mesh;
 }

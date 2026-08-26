@@ -965,6 +965,57 @@ exactly, which is what made deleting the `.glb` and forgetting the credit imposs
 | Shade's rig | 0 clips, nothing playing, after a rendered frame |
 | Spider's rig, same mesh | 5 clips, `walk` playing |
 
+*The interior stopped being architecture.* The example map's three brick buildings and its
+freestanding cover blocks are gone; the fence is the only wall on the level, and inside it is
+a wood of two hundred trees. What the buildings were for — routes to path around, corners to
+lose a spider behind, geometry for the beam to throw shadows off — a forest does without
+announcing itself as level design.
+
+Getting there turned up two things about this camera, both now in §2 and the orientation
+notes. **A tall tree is not a tree from up here**: at 72° a 26 m trunk projects as a long
+dark bar radiating off the screen, and raising it to 40 m only lengthened the bar. **A wide
+crown roofs the ground**: the first attempt at short trees put 3.7 m canopies four metres
+apart, and the floor — where the player, the enemies and every shadow are — disappeared under
+them. What works is small trees, a few metres tall with crowns a couple of metres across,
+one clear tile between trunks so the wood stays walkable and the audit stays clean.
+
+So `tree_small` is a *generated* prefab now — the same tree §2's surround plants outside the
+boundary, at a larger size. `GeneratedPrefabs` is the new idea and a small one: the loader
+builds a prefab where it would otherwise fetch a `.glb`, and everything downstream — maps,
+landmarks, colliders, walkability — treats it as any other prefab.
+
+*Landmarks are instanced now (§7).* One mesh each was fine at nine landmarks and wrong at two
+hundred: the map went to 97 draw calls before this and 18 after, with the triangles down from
+581k to 467k at the same time. §7's rule about 2,500 floor tiles was always the same rule;
+landmarks being entities rather than tiles is what hid that.
+
+*And the notes and switches stopped floating.* They had been cards and boxes hanging at chest
+height with nothing under them for every phase since §6 — the class comment even described "a
+box on a post" that was never built. §9.2 has the *editor* mount them against a solid
+neighbour, which is a placement rule the renderer cannot lean on, and a level whose interior
+is open wood has no neighbour to mount against at all. Each carries its own stand now.
+
+*Shadow-only spiders, and why.* Dressing §5.2's monster in §5.1's spider (below) made every
+spider in the run invisible — models gone, shadows left. `CharacterLoader` shares materials
+between instances deliberately, so the monster turning colour and depth writes off on *its*
+body turned them off on the material the spiders draw with. Nothing about the symptom points
+at the monster. `Enemy.attachCharacter` gives the monster materials of its own before hiding
+it, the sharing that makes ten spiders one upload is untouched, and
+`tests/monster.test.ts` fails on the shared material if the isolation is removed.
+
+*A forest edge, not a scatter.* The surround's trees were the kit's tree scaled down, which
+brought two problems: `fitHeight` scales Y alone, so a short one is a full-width canopy
+squashed flat, and at 3,104 triangles a *dense* band is millions of triangles for scenery
+nobody can reach. The surround builds its own tree now — a trunk and two faceted crowns
+merged with vertex colours, about fifty triangles, one material, one draw — in the kit's own
+palette taken down from its near-neon `#00e72a`, which reads as a few big canopies and would
+be a wall of neon at this density. Authored at unit height so an instance's scale is its size
+in metres, and scaled uniformly: short means small.
+
+That buys the density the boundary actually needs: **5,989 trees** at 1.5 m spacing, more
+than one per tile of ground, crowns overlapping — and the scene got *cheaper*, 504k triangles
+against 688k for the 156 sparse kit trees it replaced.
+
 *The camera stopped letting go of the player, and the world grew an outside.* §3.2 clamped
 the rig to the map's bounds so the view never framed off-map void, and the spec was candid
 that the two rules fought: near an edge a pitched frustum's far corners overhang the

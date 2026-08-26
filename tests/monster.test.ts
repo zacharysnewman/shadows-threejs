@@ -26,6 +26,31 @@ const OPEN = Array.from({ length: 16 }, () => ' '.repeat(16));
  * The suite is pure (§7's note in CLAUDE.md), and what is under test here is not the
  * loading — it is what `EnemyManager` does with what it loaded.
  */
+/**
+ * A character whose meshes share one material between every instance, exactly as
+ * `CharacterLoader` hands them out.
+ *
+ * The sharing is the point of the fixture: it is what made hiding the monster's body hide
+ * every spider's too, once both enemies started wearing the same character.
+ */
+function sharedMaterialLoader(): { loader: CharacterLoader; material: THREE.Material } {
+  const material = new THREE.MeshStandardMaterial();
+  const loader = {
+    load: async () => {
+      const scene = new THREE.Group();
+      scene.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material));
+      return {
+        name: 'spider',
+        scene,
+        clips: new Map(),
+        authoredHeight: 1.931,
+        missing: false,
+      };
+    },
+  } as unknown as CharacterLoader;
+  return { loader, material };
+}
+
 function characterLoaderWithClips(): CharacterLoader {
   const clip = (name: string) =>
     new THREE.AnimationClip(name, 1, [
@@ -466,6 +491,48 @@ describe('Shadow Monster contact (§5.3)', () => {
     expect(player.kills).toBe(1);
     // Not a large deduction — its own thing, so no amount of health survives it.
     expect(player.damaged).toHaveLength(0);
+  });
+});
+
+describe('hiding the monster without hiding the spiders (§5.1, §5.2)', () => {
+  it('leaves the shared material alone, so spiders stay visible', async () => {
+    // The regression: §5.2 hides the monster by turning colour and depth writes off, which
+    // is a change to a *material*, and `CharacterLoader` shares materials between every
+    // clone of a character. Once the monster wore §5.1's spider, hiding it hid every spider
+    // in the run — shadow-only spiders, with nothing about the symptom pointing at the
+    // monster.
+    const built = world(OPEN, [
+      { type: 'PlayerSpawn', x: 0, y: 0, properties: {} },
+      { type: 'ShadowMonster', x: 8, y: 8, properties: {} },
+      { type: 'SpiderEnemy', x: 4, y: 4, properties: {} },
+    ]);
+    const manager = new EnemyManager(built.registry, built.grid, built.colliders, new Rng(1));
+    const { loader, material } = sharedMaterialLoader();
+    await manager.attachCharacters(loader);
+
+    // The material the loader handed out is still drawn: it is the spiders' material too.
+    expect(material.colorWrite).toBe(true);
+    expect(material.depthWrite).toBe(true);
+  });
+
+  it('still hides the monster itself', async () => {
+    const built = world(OPEN, [
+      { type: 'PlayerSpawn', x: 0, y: 0, properties: {} },
+      { type: 'ShadowMonster', x: 8, y: 8, properties: {} },
+    ]);
+    const manager = new EnemyManager(built.registry, built.grid, built.colliders, new Rng(1));
+    await manager.attachCharacters(sharedMaterialLoader().loader);
+
+    // §5.2 — never drawn, and still casting: the shadow is the creature.
+    const drawn: boolean[] = [];
+    const casts: boolean[] = [];
+    manager.monsters[0]!.object.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      for (const material of [node.material].flat()) drawn.push(material.colorWrite);
+      casts.push(node.castShadow);
+    });
+    expect(drawn.length).toBeGreaterThan(0);
+    expect(drawn.every((on) => on === false)).toBe(true);
   });
 });
 

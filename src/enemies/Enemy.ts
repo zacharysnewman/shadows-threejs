@@ -270,9 +270,10 @@ export class Enemy {
     if (this.profile.kind !== 'ShadowMonster') return;
     this.object.traverse((node) => {
       if (!(node instanceof THREE.Mesh)) return;
-      const material = node.material as THREE.Material;
-      material.colorWrite = revealed;
-      material.depthWrite = revealed;
+      for (const material of [node.material].flat()) {
+        material.colorWrite = revealed;
+        material.depthWrite = revealed;
+      }
     });
   }
 
@@ -704,7 +705,18 @@ export class Enemy {
     // than `visible = false`, because an invisible object is skipped by the shadow pass and
     // the shadow is the entire creature. What the art buys is the *outline*, which is all
     // the player ever sees of it.
-    if (this.profile.kind === 'ShadowMonster') this.setBodyRevealed(false);
+    if (this.profile.kind === 'ShadowMonster') {
+      // §5.2's body is hidden by turning colour and depth writes off — which is a change to
+      // a *material*, and `CharacterLoader` deliberately shares materials between every
+      // clone of a character because that is where the memory is.
+      //
+      // Both enemies wear the same character now (§5.2), so hiding the monster's body used
+      // to hide every spider's with it: the run filled up with shadow-only spiders, and
+      // nothing about the symptom pointed at the monster. Its materials are its own from
+      // here, and nothing it does to them can reach anything else.
+      isolateMaterials(rig.character.scene);
+      this.setBodyRevealed(false);
+    }
   }
 
   /** Whether this enemy is running on real art rather than on the placeholder. */
@@ -855,4 +867,25 @@ function buildPlaceholderMesh(profile: EnemyProfile): PlaceholderBody {
   }
 
   return { parts: [mesh, ...limbs], body: mesh, limbs };
+}
+
+/**
+ * Give one character instance materials of its own.
+ *
+ * `CharacterLoader` clones the node tree per instance and shares the geometry and materials
+ * underneath, which is right: ten spiders should be one upload, not ten. The cost is that a
+ * material is *shared state*, so anything setting a flag on one sets it for every instance
+ * of that character — and since §5.2's monster wears §5.1's spider, that is every spider in
+ * the run.
+ *
+ * Cloning is per enemy that needs to differ, not per enemy: only the monster calls this, so
+ * the sharing that makes the spiders cheap is untouched.
+ */
+function isolateMaterials(root: THREE.Object3D): void {
+  root.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    node.material = Array.isArray(node.material)
+      ? node.material.map((material) => material.clone())
+      : node.material.clone();
+  });
 }

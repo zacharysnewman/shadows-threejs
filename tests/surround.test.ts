@@ -11,7 +11,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { CAMERA, SURROUND } from '../src/config';
-import type { Prefab } from '../src/core/AssetLoader';
 import { Rng } from '../src/core/rng';
 import { buildSurround, surroundDepth } from '../src/map/Surround';
 import { groundFootprint } from '../src/player/CameraRig';
@@ -20,20 +19,8 @@ const TILE = 2;
 const WIDTH = 20;
 const HEIGHT = 16;
 
-/** A prefab in the shape the loader returns, with geometry cheap enough to make per test. */
-function fakePrefab(): Prefab {
-  return {
-    name: SURROUND.prefab,
-    geometry: new THREE.BoxGeometry(1, 1, 1),
-    material: new THREE.MeshBasicMaterial(),
-    height: 9,
-    footprint: { x: 1, z: 1 },
-    placeholder: false,
-  };
-}
-
 function planted(rng = new Rng(1)) {
-  const result = buildSurround(fakePrefab(), WIDTH, HEIGHT, TILE, rng);
+  const result = buildSurround(WIDTH, HEIGHT, TILE, rng);
   const mesh = result.object.getObjectByName('surround:trees') as THREE.InstancedMesh;
   const matrix = new THREE.Matrix4();
   const at: { x: number; z: number }[] = [];
@@ -98,13 +85,68 @@ describe('where the surround puts its trees (§2)', () => {
     expect(result.count).toBeGreaterThan(0);
   });
 
-  it('still lays the ground when the art is missing', () => {
-    // No trees is survivable; no ground is not. A gap between canopies shows whatever is
-    // under it, and with no plane under it that is the void the surround exists to cover.
-    const result = buildSurround(undefined, WIDTH, HEIGHT, TILE, new Rng(1));
-    expect(result.count).toBe(0);
+  it('lays ground under them, which is what actually covers the void', () => {
+    const { result } = planted();
     expect(result.object.getObjectByName('surround:ground')).toBeDefined();
-    expect(result.object.getObjectByName('surround:trees')).toBeUndefined();
+  });
+
+  it('plants more than one tree per tile of ground', () => {
+    // Density is the job: a forest edge is opaque, and a gap between crowns is the void
+    // again. Derived from the spacing rather than typed out, so tuning moves it here too.
+    expect(SURROUND.spacingMetres).toBeLessThan(TILE);
+    const { at } = planted();
+    const band = (WIDTH * TILE + 2 * surroundDepth()) * (HEIGHT * TILE + 2 * surroundDepth())
+      - WIDTH * TILE * HEIGHT * TILE;
+    const perTile = (at.length / band) * TILE * TILE;
+    expect(perTile).toBeGreaterThan(1);
+  });
+
+  it('builds a tree cheap enough to plant thousands of (§7)', () => {
+    // The reason the tree is generated instead of the kit's: at this density the kit's
+    // 3,104-triangle tree would be millions of triangles for scenery nobody can reach.
+    const { result } = planted();
+    const trees = result.object.getObjectByName('surround:trees') as THREE.InstancedMesh;
+    const index = trees.geometry.getIndex();
+    const perTree = (index ? index.count : trees.geometry.getAttribute('position').count) / 3;
+    expect(perTree).toBeLessThan(120);
+  });
+
+  it('varies their height, so a stand is not one tree repeated', () => {
+    const { result } = planted();
+    const trees = result.object.getObjectByName('surround:trees') as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    const heights = new Set<number>();
+    for (let i = 0; i < Math.min(result.count, 40); i += 1) {
+      trees.getMatrixAt(i, matrix);
+      heights.add(+new THREE.Vector3().setFromMatrixScale(matrix).y.toFixed(4));
+    }
+    expect(heights.size).toBeGreaterThan(20);
+  });
+
+  it('scales uniformly, so a short tree is a small tree', () => {
+    // `fitHeight` on a kit prefab scales Y alone, which is right for a wall and makes a
+    // short tree a pancake with an 11.84 m canopy. This one is authored at unit height.
+    const { result } = planted();
+    const trees = result.object.getObjectByName('surround:trees') as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    trees.getMatrixAt(0, matrix);
+    const scale = new THREE.Vector3().setFromMatrixScale(matrix);
+    expect(scale.x).toBeCloseTo(scale.y, 5);
+    expect(scale.z).toBeCloseTo(scale.y, 5);
+  });
+
+  it('stands them at the height §2 asks for, within its variation', () => {
+    const { result } = planted();
+    const trees = result.object.getObjectByName('surround:trees') as THREE.InstancedMesh;
+    const matrix = new THREE.Matrix4();
+    const low = SURROUND.treeHeightMetres * (1 - SURROUND.heightVariation);
+    const high = SURROUND.treeHeightMetres * (1 + SURROUND.heightVariation);
+    for (let i = 0; i < Math.min(result.count, 50); i += 1) {
+      trees.getMatrixAt(i, matrix);
+      const height = new THREE.Vector3().setFromMatrixScale(matrix).y;
+      expect(height).toBeGreaterThanOrEqual(low - 1e-6);
+      expect(height).toBeLessThanOrEqual(high + 1e-6);
+    }
   });
 
   it('lays ground wider than the band of trees, so no gap shows through', () => {

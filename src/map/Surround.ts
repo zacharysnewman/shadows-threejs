@@ -8,10 +8,14 @@
  * the player near an edge — costs the meaning of the cursor's position in exactly the
  * corners where a player can least afford it.
  *
- * **The ground comes first, the trees second.** Foliage alone only covers the void if it is
- * opaque, and opaque foliage is a great many instances of a 3,104-triangle model (§7). A
- * ground plane coloured to the fog covers it in two triangles; the trees are then there for
- * depth and for something to stop the eye, and the band can be as sparse as it looks good.
+ * **The ground comes first, the trees second.** Ground covers the void in two triangles; the
+ * trees are what make it read as a forest edge rather than a floor.
+ *
+ * **The tree is generated, not a kit prefab, and that is what buys the density.** A forest
+ * edge has to be *thick* — more than one tree per tile of ground, crowns overlapping — and
+ * the kit's tree is 3,104 triangles, so a band of thousands would be millions of triangles
+ * for scenery nobody can reach (§7). `GeneratedPrefabs` builds one for about fifty, and the
+ * band is the same tree the map plants inside its own boundary at a larger size.
  *
  * **It is scenery and nothing else.** Outside the map is outside the walkability grid, the
  * collider set, the audit and every light's reach, so nothing here has a footprint, blocks
@@ -26,7 +30,7 @@
 
 import * as THREE from 'three';
 import { SURROUND } from '../config';
-import type { Prefab } from '../core/AssetLoader';
+import { treeGeometry, treeMaterial } from '../core/GeneratedPrefabs';
 import type { Rng } from '../core/rng';
 import { groundFootprint } from '../player/CameraRig';
 
@@ -65,7 +69,6 @@ export function surroundDepth(
  * one run and not the next.
  */
 export function buildSurround(
-  prefab: Prefab | undefined,
   width: number,
   height: number,
   tileSize: number,
@@ -79,10 +82,6 @@ export function buildSurround(
   const root = new THREE.Group();
   root.name = 'surround';
   root.add(groundPlane(mapWidth, mapHeight, depth));
-
-  // No art is not no surround: the ground still has to be there, or the gaps between trees
-  // that never loaded are the void this exists to cover.
-  if (!prefab) return { object: root, count: 0, depthMetres: depth };
 
   // Grid points across the whole outer rectangle, keeping the ones outside the map. Walking
   // the full rectangle and discarding the middle is what makes the corners come out right;
@@ -99,7 +98,7 @@ export function buildSurround(
     }
   }
 
-  const mesh = new THREE.InstancedMesh(prefab.geometry, prefab.material, points.length);
+  const mesh = new THREE.InstancedMesh(treeGeometry(), treeMaterial(), points.length);
   mesh.name = 'surround:trees';
   mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   // §2 — never lit, so never casting; and nothing out here receives either.
@@ -111,10 +110,24 @@ export function buildSurround(
 
   const matrix = new THREE.Matrix4();
   const rotation = new THREE.Matrix4();
+  const scale = new THREE.Matrix4();
   points.forEach((point, index) => {
     matrix.makeTranslation(point.x, 0, point.z);
-    // A turn each, so the same model does not read as the same tree repeated.
-    matrix.multiply(rotation.makeRotationY(rng.float() * Math.PI * 2));
+    // A turn each, and a size each: one geometry repeated thousands of times reads as
+    // wallpaper otherwise, and a forest is the one thing that must not.
+    //
+    // The turn comes from *where the tree stands* rather than from the next number in the
+    // stream. A tree is a thing in a place, so its spin is a property of the place: it does
+    // not shift because the loop visited the band in a different order, or because something
+    // earlier drew one more number. The height still comes from the stream — it is a choice
+    // about the tree rather than about the ground under it.
+    matrix.multiply(rotation.makeRotationY(spinAt(point.x, point.z)));
+    const height =
+      SURROUND.treeHeightMetres *
+      (1 + (rng.float() * 2 - 1) * SURROUND.heightVariation);
+    // Uniform: the geometry is authored at unit height, so this is the tree's real size and
+    // its crown stays in proportion to it.
+    matrix.multiply(scale.makeScale(height, height, height));
     mesh.setMatrixAt(index, matrix);
   });
   mesh.instanceMatrix.needsUpdate = true;
@@ -151,4 +164,20 @@ function groundPlane(mapWidth: number, mapHeight: number, depth: number): THREE.
   plane.castShadow = false;
   plane.receiveShadow = false;
   return plane;
+}
+
+/**
+ * A tree's spin, in radians, from the ground it stands on (§2).
+ *
+ * Position in, angle out, and nothing else: the same spot always grows the same tree,
+ * whatever order the band was walked in and whatever else has drawn from the run's `Rng`.
+ * That is worth more than it sounds — it makes a forest reproducible from its *layout*
+ * rather than from a sequence, so moving one tree cannot re-spin every tree after it.
+ *
+ * The hash is a standard sine-fract scramble. It has to be well-mixed enough that
+ * neighbouring trees do not face the same way, and it has to be nothing else.
+ */
+export function spinAt(x: number, z: number): number {
+  const mixed = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
+  return (mixed - Math.floor(mixed)) * Math.PI * 2;
 }

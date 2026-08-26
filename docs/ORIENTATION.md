@@ -38,8 +38,8 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 
 | Directory | Owns |
 | --- | --- |
-| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
-| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
+| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `GeneratedPrefabs` (art built rather than loaded — §2's small tree), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
+| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks` (instanced per prefab — §7), `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
 | `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision` (the only thing holding the player on the map now), `CameraRig` (locked to the player; `groundFootprint` is what sizes §2's surround), `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
 | `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
 | `src/enemies/` | `Enemy` (shared state machine, speeds, A\*, avoidance), `Spider`, `ShadowMonster`, `EnemyManager` (spawning + the one contact test), `Gait`, `CharacterRig` |
@@ -82,6 +82,18 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **Tall geometry is a streak, not a shape, from this camera.** At §3.2's 72° pitch a 26 m
+  trunk projects as a long dark bar radiating away from the screen centre, and making it
+  taller only makes the bar longer. It reads as a tree only where the camera is far enough
+  away for perspective to foreshorten it — which is why §2's landmark tree works as one
+  landmark and not as two hundred, and why a wood is planted from small trees instead.
+- **A character's materials are shared between every instance of it.** `CharacterLoader`
+  clones the node tree per instance and shares geometry *and materials* underneath, which is
+  where the memory saving is. So a flag set on one instance's material is set for all of
+  them — and since §5.2's monster wears §5.1's spider, hiding the monster's body (colour and
+  depth writes off) turned every spider in the run into a shadow. The symptom points nowhere
+  near the cause. `Enemy.attachCharacter` clones the monster's materials first; anything else
+  that needs to differ per instance has to do the same.
 - **Ground painted the fog's colour is invisible.** §7 colours the fog to the sky *and* uses
   it as the scene background, so a surface tinted to `FOG.color` is exactly the colour of the
   void behind it. §2's surround ground reads as ground because it is a lit material taking
