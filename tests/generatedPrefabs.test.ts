@@ -32,9 +32,10 @@ describe('the generated tree (§2)', () => {
     expect(treeGeometry().getAttribute('color')).toBeDefined();
   });
 
-  it('costs a fraction of the kit tree it replaces (§7)', () => {
-    // `docs/project-map.jsonl` records `prop_tree` at 3,104 triangles. Two hundred of those
-    // is a budget nobody has, which is why this exists.
+  it('costs a fraction of the kit tree it stands in for (§7)', () => {
+    // `docs/project-map.jsonl` records `prop_tree` at 3,104 triangles. §2's band plants
+    // trees in five figures, which at that cost is a budget nobody has — that, and showing
+    // a crown to the camera at all, is the whole reason this exists.
     expect(triangles(treeGeometry())).toBeLessThan(120);
   });
 
@@ -70,9 +71,9 @@ describe('`tree_small` as a prefab (§1, §2)', () => {
   });
 
   it('is short enough to be seen whole from the §3.2 camera', () => {
-    // The camera eye sits 13.31 m up. A tree taller than that is a trunk running off the
-    // top of the frame — which is what the kit's 26 m landmark tree is for, and exactly
-    // what two hundred of them must not be.
+    // The camera eye sits 13.31 m up. A tree taller than that shows the frame a trunk and
+    // keeps its canopy above the eye — which is exactly what the kit's 26 m landmark tree is
+    // for inside a map (§2), and exactly what a band meant to *cover* ground must not do.
     expect(TREES.smallHeightMetres).toBeLessThan(13.31);
   });
 });

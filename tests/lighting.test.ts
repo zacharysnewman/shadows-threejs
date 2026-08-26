@@ -13,7 +13,11 @@ import {
   PLAYER,
   RENDER,
 } from '../src/config';
-import { EnvironmentLights, selectShadowCasters } from '../src/lighting/EnvironmentLights';
+import {
+  EnvironmentLights,
+  reachableLitCounts,
+  selectShadowCasters,
+} from '../src/lighting/EnvironmentLights';
 import { Flashlight } from '../src/lighting/Flashlight';
 import { LightShaft } from '../src/lighting/LightShaft';
 import type { EnvironmentLightEntity } from '../src/map/types';
@@ -691,5 +695,116 @@ describe('a lamp handing its shadow slot on (§4.2, §7)', () => {
     lights.setGroupPowered('grid', false);
     lights.update(camera(0), 0);
     expect(lights.lamps[0]!.shaft.mesh.visible).toBe(false);
+  });
+});
+
+describe('warming the lamp shaders before a switch is thrown (§7)', () => {
+  /**
+   * The bug this exists for: a shader program is keyed on how many spot lights are visible
+   * and how many of them cast, so the first time a `PowerSwitch` routed power, every
+   * material in the scene was recompiled inside that one frame — and no toggle afterwards
+   * ever was again. One stall, at the moment the player did the thing the level is about.
+   *
+   * Nothing here needs a GPU. The claim under test is about *which light configurations the
+   * warm-up poses*, and that is arithmetic: miss one and it is compiled during play.
+   */
+  describe('reachableLitCounts', () => {
+    it('is the subset sums of the groups, because a switch acts on a whole group', () => {
+      // Three and two can be lit 0, 2, 3 or 5 at a time. Never 1, and never 4.
+      expect(reachableLitCounts([3, 2])).toEqual([0, 2, 3, 5]);
+    });
+
+    it('counts a repeated size once, since these are counts and not subsets', () => {
+      expect(reachableLitCounts([2, 2, 2])).toEqual([0, 2, 4, 6]);
+    });
+
+    it('is just "off" for a map with no lamps at all', () => {
+      expect(reachableLitCounts([])).toEqual([0]);
+    });
+  });
+
+  /** Every pose a `compile` callback was handed, as `spots:shadows`. */
+  function poses(lights: EnvironmentLights, torch?: THREE.SpotLight): Set<string> {
+    const seen = new Set<string>();
+    lights.precompile(() => {
+      const spots =
+        lights.lamps.filter((l) => l.light.visible).length + (torch?.visible ? 1 : 0);
+      const shadows =
+        lights.lamps.filter((l) => l.light.visible && l.light.castShadow).length +
+        (torch?.visible && torch.castShadow ? 1 : 0);
+      seen.add(`${spots}:${shadows}`);
+    }, torch);
+    return seen;
+  }
+
+  it('poses every light count a run can reach, shadow slots included', () => {
+    const lights = new EnvironmentLights([
+      lamp(1, 1, 'Yard'),
+      lamp(5, 1, 'Yard'),
+      lamp(9, 1, 'Yard'),
+      lamp(1, 9, 'Gate'),
+      lamp(5, 9, 'Gate'),
+    ]);
+    const seen = poses(lights);
+
+    // Derived here rather than copied from the implementation: a lamp only holds a slot
+    // while it is on screen (§7), so any number of the lit lamps from none up to the budget
+    // may be casting, and every one of those is a different program.
+    const wanted = new Set<string>();
+    for (const count of [0, 2, 3, 5]) {
+      const slots = Math.min(count, RENDER.maxShadowCastingEnvironmentLights);
+      for (let casting = 0; casting <= slots; casting += 1) wanted.add(`${count}:${casting}`);
+    }
+    for (const pose of wanted) expect(seen, pose).toContain(pose);
+    lights.dispose();
+  });
+
+  it('poses each of those twice when the torch is in play, lit and dark', () => {
+    // §4.1's flashlight is a visible spot light of its own and goes out with the battery,
+    // so it shifts every count above by one — a different key, not the same one.
+    const lights = new EnvironmentLights([lamp(1, 1, 'Yard'), lamp(5, 1, 'Yard')]);
+    const torch = new THREE.SpotLight(0xffffff);
+    torch.castShadow = true;
+    torch.visible = false;
+    const seen = poses(lights, torch);
+
+    expect(seen).toContain('2:2');
+    expect(seen).toContain('3:3');
+    expect(seen).toContain('2:0');
+    expect(seen).toContain('1:1');
+    lights.dispose();
+  });
+
+  it('leaves every light exactly as it found it', () => {
+    // The failure this guards against is not a slow frame but a lit map: a pose left behind
+    // is a lamp burning with nothing powering it, and §4.1's query would agree with it.
+    const lights = new EnvironmentLights([lamp(1, 1, 'Yard'), lamp(5, 1, 'Gate')]);
+    lights.setGroupPowered('Yard', true);
+    const before = lights.lamps.map((l) => [l.light.visible, l.light.castShadow]);
+    const torch = new THREE.SpotLight(0xffffff);
+    torch.visible = true;
+
+    lights.precompile(() => {}, torch);
+
+    expect(lights.lamps.map((l) => [l.light.visible, l.light.castShadow])).toEqual(before);
+    expect(torch.visible).toBe(true);
+    expect(lights.litCount).toBe(1);
+    lights.dispose();
+  });
+
+  it('restores them even if the compile throws', () => {
+    const lights = new EnvironmentLights([lamp(1, 1, 'Yard')]);
+    const torch = new THREE.SpotLight(0xffffff);
+    torch.visible = true;
+
+    expect(() =>
+      lights.precompile(() => {
+        throw new Error('context lost');
+      }, torch),
+    ).toThrow('context lost');
+
+    expect(lights.lamps[0]!.light.visible).toBe(false);
+    expect(torch.visible).toBe(true);
+    lights.dispose();
   });
 });

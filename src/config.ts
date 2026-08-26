@@ -50,9 +50,10 @@ export const CAMERA = {
 /**
  * §2 — the trees the game builds rather than loads (`GeneratedPrefabs`).
  *
- * One shape at two sizes: `tree_small` is what a map plants inside its own boundary, and
- * §2's surround plants shorter ones outside it. Shared here because they are the same tree,
- * and a forest that changed colour at the fence would announce the fence.
+ * One shape at two sizes: §2's surround plants the short one in its thousands outside every
+ * boundary, and the same geometry is offered to maps as the `tree_small` prefab. Shared
+ * here because they are the same tree, and a wood that changed colour at the fence would
+ * announce the fence.
  */
 export const TREES = {
   /**
@@ -70,9 +71,9 @@ export const TREES = {
    * Height of the `tree_small` prefab, in metres (§2).
    *
    * Tall enough to be a tree the player walks between and short enough to be *seen* as one:
-   * the camera eye is 13.31 m up, so a crown at this height is well inside the frame. The
-   * kit's landmark tree is 26 m for the opposite reason, and from this camera two hundred of
-   * those are not a wood but two hundred dark streaks (see `GeneratedPrefabs`).
+   * the camera eye is 13.31 m up, so a crown at this height is well inside the frame. That
+   * is the whole difference from the kit's landmark tree, which is 26 m so that its canopy
+   * clears the camera and never covers the floor a map's own wood is planted on (§2).
    */
   smallHeightMetres: 4.0,
   /**
@@ -105,20 +106,34 @@ export const SURROUND = {
    * *generated* rather than a kit prefab (see `Surround`) — at this spacing a 50-triangle
    * tree fills the band for a fraction of what one 3,104-triangle model would cost (§7).
    */
-  spacingMetres: 1.5,
+  spacingMetres: 0.5,
   /**
    * How far a tree may sit from its grid point, in metres. Enough to break the lattice —
    * a visible grid at the edge of the map advertises the boundary it exists to disguise.
    */
-  jitterMetres: 0.6,
+  jitterMetres: 0.25,
+  /**
+   * How deep the band holds that spacing, in metres — and past it, how much coarser the
+   * lattice gets.
+   *
+   * The band is deep because §3.2's frustum reaches a long way sideways, but almost none of
+   * that depth is ever *looked at*: a player is held off the boundary by whatever the map's
+   * own edge is, and past the first few metres the fog and the absence of any light out
+   * there (§4) leave a tree as a slightly different shade of dark. Spending the instances
+   * evenly over the whole depth is what made a visible edge look thin. So the near rows —
+   * the only ones anybody reads as trees — are packed, and the rest fall to a lattice
+   * `farSpacingFactor` times coarser, which costs a sixteenth as much per square metre.
+   */
+  denseDepthMetres: 6,
+  farSpacingFactor: 4,
   /**
    * Extra depth past what the camera can actually see, in metres.
    *
    * The band's depth is derived from §3.2's ground footprint rather than typed out, because
-   * it *is* that number; this is the margin on top, covering the fog's far reach and the
-   * jitter pulling an outer tree inwards.
+   * it *is* that number; this is only the slack for a jittered outer tree pulling inwards
+   * and a row beyond the frustum's corner.
    */
-  marginMetres: 6,
+  marginMetres: 2,
   /**
    * Aspect ratio the depth is computed for. The footprint's half-width grows with aspect,
    * so this is the widest screen the band is guaranteed to cover — 21:9, past which an

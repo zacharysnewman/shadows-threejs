@@ -5,16 +5,16 @@
  * file is art somebody can open and change. These are the exceptions, where what is needed
  * is not in any kit and is *cheaper described than modelled*.
  *
- * **The small tree is the case that forced this.** A forest wants two things the kit's tree
- * cannot give at once. It has to read as a tree from a camera pitched 72° and 14 m up —
- * where a 26 m trunk is not a tree but a long dark streak radiating off the screen — and
- * there have to be *many*, which at 3,104 triangles apiece there cannot be. `fitHeight`
- * cannot rescue it either: it scales the Y axis alone (right for a wall), so a short kit
- * tree keeps its 11.84 m canopy and comes out a pancake that roofs the ground the player and
- * every enemy are standing on.
+ * **The small tree is the case that forced this.** §2's band outside every map wants two
+ * things the kit's tree cannot give at once. It has to show a *crown* to a camera pitched
+ * 72° and 14 m up — a 26 m landmark tree's canopy is above the eye by design, so a band of
+ * them is a band of bare trunks standing in void — and there have to be *thousands*, which
+ * at 3,104 triangles apiece there cannot be. `fitHeight` cannot rescue it either: it scales
+ * the Y axis alone (right for a wall), so a short kit tree keeps its 11.84 m canopy and
+ * comes out a pancake.
  *
- * Fifty triangles, scaled uniformly, gets a tree that looks like a tree from above, leaves
- * the ground visible, and can be planted two hundred at a time.
+ * Fifty triangles, scaled uniformly, gets a tree that reads as a tree from above and can be
+ * planted ten thousand at a time in one draw.
  *
  * A generated prefab is a prefab in every other respect: the loader returns one where it
  * would return a loaded file, so maps place it, `PREFAB_FOOTPRINT` sizes what it blocks, and

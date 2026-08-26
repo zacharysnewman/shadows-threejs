@@ -971,18 +971,20 @@ a wood of two hundred trees. What the buildings were for — routes to path arou
 lose a spider behind, geometry for the beam to throw shadows off — a forest does without
 announcing itself as level design.
 
-Getting there turned up two things about this camera, both now in §2 and the orientation
-notes. **A tall tree is not a tree from up here**: at 72° a 26 m trunk projects as a long
-dark bar radiating off the screen, and raising it to 40 m only lengthened the bar. **A wide
-crown roofs the ground**: the first attempt at short trees put 3.7 m canopies four metres
-apart, and the floor — where the player, the enemies and every shadow are — disappeared under
-them. What works is small trees, a few metres tall with crowns a couple of metres across,
-one clear tile between trunks so the wood stays walkable and the audit stays clean.
+What settled the tree is in §2 and the orientation notes now, because the intuition is
+backwards. **A crown roofs the ground.** The first attempt planted short trees, on the
+reasoning that a 26 m trunk at 72° is a dark bar rather than a shape — and 3.7 m canopies
+four metres apart buried the floor, which is where the player, the enemies and every shadow
+are. The kit's landmark tree works precisely because its canopy is *above* the eye and never
+drawn: what is left in frame is trunks, breaking every sightline and throwing every shadow
+over ground that stays completely readable. One clear tile between trunks keeps the wood
+walkable and the audit clean.
 
-So `tree_small` is a *generated* prefab now — the same tree §2's surround plants outside the
-boundary, at a larger size. `GeneratedPrefabs` is the new idea and a small one: the loader
-builds a prefab where it would otherwise fetch a `.glb`, and everything downstream — maps,
-landmarks, colliders, walkability — treats it as any other prefab.
+`GeneratedPrefabs` came out of that first attempt and stayed, because §2's surround needs
+exactly the tree the interior did not: `tree_small`, built rather than fetched, is what the
+band outside the boundary is planted from. The loader builds a prefab where it would
+otherwise fetch a `.glb`, and everything downstream — maps, landmarks, colliders,
+walkability — treats it as any other prefab.
 
 *Landmarks are instanced now (§7).* One mesh each was fine at nine landmarks and wrong at two
 hundred: the map went to 97 draw calls before this and 18 after, with the triangles down from
@@ -1012,9 +1014,15 @@ palette taken down from its near-neon `#00e72a`, which reads as a few big canopi
 be a wall of neon at this density. Authored at unit height so an instance's scale is its size
 in metres, and scaled uniformly: short means small.
 
-That buys the density the boundary actually needs: **5,989 trees** at 1.5 m spacing, more
-than one per tile of ground, crowns overlapping — and the scene got *cheaper*, 504k triangles
-against 688k for the 156 sparse kit trees it replaced.
+That buys the density the boundary actually needs — and *where* it needs it, which took a
+second pass to get right. Spread evenly, the band puts most of its trees in rows nobody can
+see: the frustum reaches ~13.7 m sideways at 16:9 (measured by unprojecting the screen
+corners onto the ground), a map's own edge holds the player several metres inside that, and
+past the first few metres the fog and the absence of any light out there leave a tree as a
+slightly different shade of dark. So the near rows are packed to 0.5 m and everything behind
+`SURROUND.denseDepthMetres` drops to a lattice four times coarser — **12,233 trees** in one
+draw, 612k triangles, with the visible strip four times denser than the evenly-spread band
+that preceded it at the same cost.
 
 *The camera stopped letting go of the player, and the world grew an outside.* §3.2 clamped
 the rig to the map's bounds so the view never framed off-map void, and the spec was candid
@@ -1060,7 +1068,7 @@ authoring slip being handed to a player as a victory. §6.5 says both.
 | --- | --- |
 | Player hard into the map's corner | camera target `(1.50, 1.50)` against a player at `(1.50, 1.50)` — dead centre, where the clamp used to pull it away |
 | The ground beyond the boundary | covered: forest floor and canopy, no void, from the corner and from all four edges |
-| Surround cost | 156 instances in one draw; **688k triangles** total for the scene, down from 980k before the ground plane let the band thin out |
+| Surround cost | 12,233 instances in one draw, 612k triangles; **1.40M triangles** and 23 draw calls for the whole scene, 200 landmark trees included |
 | Audit of the reworked map | **0 findings** |
 | The objective chain | `0/3` routed → exit locked and standing on it does nothing; three latches → `3/3`, unlocked, and the exit ends the run |
 | Gate and exit | gate at tile `(25, 46)` in the fence, exit at `(25, 48)` beyond it, on a gate tile flanked by fence stubs |
@@ -1110,6 +1118,29 @@ a test runner:
 | Spider held on the beam's centreline at 0.9 m | lit on **420 of 420** frames, seen both `frozen` and `attack`, **3 hits**, player 1.00 → 0.00 |
 | Player walking into a lamp-frozen Shade | dead on the tick of contact |
 | Cost of ten seconds of simulation | **29.7 ms** for the whole sim including every repath — the per-search memo keeps §5's tile queries off the frame |
+
+*The one stall in the game was a shader compile.* Turning the lamps on for the first time
+hitched for a fraction of a second, and never again on any later toggle — the flashlight
+never did it at all. Three keys a shader program on how many lights are *visible* and how
+many of them cast shadows, so a lamp coming on is a new key for every material on screen at
+once, compiled inside the frame that switched it; the torch escapes because it is in the
+scene from the first frame and is compiled during load with everything else. Measured with
+`renderer.info.programs.length`: six new programs per lighting state, 6 → 12 → 18 → 24 as
+the groups were switched in turn.
+
+`EnvironmentLights.precompile` now poses every lighting state a run can reach and compiles
+against it while the level loads — each number of lamps a `PowerSwitch` could light at once,
+each number of shadow slots that could be filled at that count (a slot goes only to a lamp
+on screen, so it is not fixed by the lit count), with the torch lit and dark. It is
+synchronous on purpose: a posed light is a lit lamp, and yielding between poses would show
+the player a map flashing on and off. It runs again when the character bodies land, because
+those arrive after the run is built and bring materials the first pass could not have seen.
+
+The verification is the whole point and it is one number: **216 programs after load, and
+216 after every combination of both groups on and off with the torch lit and dark**. 326 ms
+added to the load on this software rasteriser, against a hitch at the moment the player does
+the thing the level is about. §7 says the rule; `tests/lighting.test.ts` covers which states
+get posed and that every light is put back exactly as it was found.
 
 *The frame rate is still outstanding*, on a software rasteriser as always (§7).
 

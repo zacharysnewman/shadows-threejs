@@ -194,13 +194,15 @@ export async function createRun(
   // §5 — enemies spawn from the map's entities, on the grid the Phase 1 pipeline derived.
   const enemies = new EnemyManager(loaded.entities, loaded.grid, colliderIndex, rng.stream('enemies'));
   viewport.scene.add(enemies.root);
-  // §5.1 — real bodies arrive when they arrive. Not awaited: every enemy is fully playable
-  // on its placeholder, and a run that blocks on a character `.glb` is a run that does not
-  // start when the file moves.
-  void enemies.attachCharacters(characters);
-  // §3.1, §4 — and the player's own body, on the same terms: not awaited, because a run
-  // with a capsule in it is a run, and one that never starts is not.
-  void characters.load(PLAYER.character).then((body) => player.attachCharacter(body));
+  // §5.1, §3.1 — real bodies arrive when they arrive, the enemies' and the player's alike.
+  // Not awaited: every enemy is fully playable on its placeholder and a run with a capsule
+  // in it is a run, while a run that blocks on a character `.glb` is a run that does not
+  // start when the file moves. Kept as a promise for one reason — the bodies bring materials
+  // with them, and §7's shader warm-up at the end of this function has to reach those too.
+  const bodies = Promise.allSettled([
+    enemies.attachCharacters(characters),
+    characters.load(PLAYER.character).then((body) => player.attachCharacter(body)),
+  ]);
 
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.
@@ -891,7 +893,12 @@ export async function createRun(
    * a run that leaves a light in the scene is a run whose next life is brighter than its
    * first, and that is exactly the bug this ordering exists to make impossible.
    */
+  /** Set by teardown, so work that outlived the run stops touching it. */
+  let disposed = false;
+
   function disposeRun(): void {
+    disposed = true;
+
     voices.dispose();
     lampVoices.dispose();
     testEmitter.dispose();
@@ -1019,6 +1026,23 @@ export async function createRun(
   /** Exposed for the checks that a run ended the way it was supposed to. */
   handle.outcome = outcome;
   handle.overlays = overlays;
+
+  // §7 — the one stall a player could feel, paid for here instead. Last, because it wants
+  // the finished scene: the shaders it compiles are the scene's materials against a lit
+  // lamp's light count, and a material added after this would not be in them.
+  const warmLightShaders = (): void => {
+    if (disposed) return;
+    environment.precompile(
+      () => viewport.renderer.compile(viewport.scene, viewport.camera),
+      flashlight.light,
+    );
+  };
+  warmLightShaders();
+  // The bodies land after the run is built (§5.1) and bring materials of their own, which
+  // the pass above could not have seen. Warm those the moment they arrive rather than on
+  // the switch the player eventually throws. Synchronous inside, so no frame is ever drawn
+  // with the lights posed.
+  void bodies.then(warmLightShaders);
 
   console.info(`[run] seed ${rng.seed} — replay with ?seed=${rng.seed}`);
   console.info(

@@ -210,9 +210,10 @@ function spinAt(x, y) {
   return Math.round((mixed - Math.floor(mixed)) * 360);
 }
 
-// `tree_small` rather than the kit's `prop_tree`: that one is 26 m, which from §3.2's camera
-// is a dark streak rather than a tree, and 3,104 triangles, which two hundred of is a budget
-// nobody has (§7). This is the generated one — seen whole, and about fifty triangles.
+// The kit's `prop_tree`: 26 m, canopy above the camera, so what a player walks through is a
+// wood of trunks and the shadows they throw (§2, Landmarks). Two hundred of them is only
+// affordable because landmarks are instanced per prefab (§7) — one draw call, not two
+// hundred.
 //
 // Close enough that trunks are a constant presence and no sightline runs the width of the
 // map, open enough to walk and be chased through. The rejections below are what keep it a
@@ -230,7 +231,7 @@ for (let y = 1; y < HEIGHT - 1; y += TREE_SPACING) {
       type: 'Landmark',
       x: tx,
       y: ty,
-      properties: { prefab: 'tree_small', rotation: spinAt(tx, ty) },
+      properties: { prefab: 'prop_tree', rotation: spinAt(tx, ty) },
     });
   }
 }
