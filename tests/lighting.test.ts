@@ -1,10 +1,21 @@
-/** The flashlight rig and the environmental light shadow budget (§4.1, §4.2, §7). */
+/**
+ * The flashlight rig, the environmental light shadow budget, and the visible beam
+ * (§4, §4.1, §4.2, §7).
+ */
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { ENTITY_DEFAULTS, ENVIRONMENT_LIGHT, FLASHLIGHT, PLAYER, RENDER } from '../src/config';
+import {
+  ENTITY_DEFAULTS,
+  ENVIRONMENT_LIGHT,
+  FLASHLIGHT,
+  LIGHT_SHAFT,
+  PLAYER,
+  RENDER,
+} from '../src/config';
 import { EnvironmentLights, selectShadowCasters } from '../src/lighting/EnvironmentLights';
 import { Flashlight } from '../src/lighting/Flashlight';
+import { LightShaft } from '../src/lighting/LightShaft';
 import type { EnvironmentLightEntity } from '../src/map/types';
 
 function lamp(
@@ -281,7 +292,11 @@ describe('EnvironmentLights', () => {
     const lights = new EnvironmentLights([lamp(3, 3, 'Yard')]);
     const meshes: THREE.Mesh[] = [];
     lights.root.traverse((node) => {
-      if (node instanceof THREE.Mesh) meshes.push(node);
+      // The fixture, not everything under the lamp: §4's visible cone is a mesh here too,
+      // and it is placed per frame from the light rather than standing on the tile.
+      if (node instanceof THREE.Mesh && node.name.startsWith('EnvironmentLightFixture:')) {
+        meshes.push(node);
+      }
     });
 
     expect(meshes.length).toBeGreaterThan(0);
@@ -493,5 +508,159 @@ describe('the sabotage lifecycle (§4.2)', () => {
     expect(one.sabotage).toBe('steady');
     lights.setGroupPowered('Yard', true);
     expect(one.light.intensity).toBeCloseTo(ENVIRONMENT_LIGHT.baseIntensity);
+  });
+});
+
+describe('the visible beam (§4)', () => {
+  /** A spotlight has no shadow map until something renders it; this is what one looks like. */
+  function withShadowMap(light: THREE.SpotLight): THREE.SpotLight {
+    (light.shadow as unknown as { map: unknown }).map = { texture: {} };
+    return light;
+  }
+
+  function shaft(light: THREE.SpotLight): LightShaft {
+    return new LightShaft(light, { steps: 8, density: 0.05 });
+  }
+
+  it('wraps the cone the light actually throws, and grows it rather than shrinking it', () => {
+    // The proxy is the only thing deciding which pixels are considered, so a polygonal cone
+    // built the usual way — inscribed — would clip the shaft's own edge off.
+    const light = new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3);
+    const geometry = shaft(light).mesh.geometry;
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+
+    expect(box.max.y).toBeCloseTo(0, 6);
+    expect(box.min.y).toBeCloseTo(-light.distance, 5);
+    expect(Math.max(box.max.x, box.max.z)).toBeGreaterThan(light.distance * Math.tan(light.angle));
+  });
+
+  it('follows the light when the beam is re-shaped (§8.3)', () => {
+    const light = new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3);
+    const beam = shaft(light);
+    light.distance = 20;
+    light.angle = Math.PI / 5;
+    beam.refresh();
+
+    beam.mesh.geometry.computeBoundingBox();
+    expect(beam.mesh.geometry.boundingBox!.min.y).toBeCloseTo(-20, 5);
+  });
+
+  it('is drawn only where there is a shadow map to cut it with', () => {
+    // §4 — an unshadowed shaft passes through the wall the light stops at, and glows on the
+    // far side. Nothing is better than that.
+    const light = new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3);
+    light.visible = true;
+
+    const beam = shaft(light);
+    beam.update(1);
+    expect(beam.mesh.visible).toBe(false);
+
+    withShadowMap(light);
+    beam.update(1);
+    expect(beam.mesh.visible).toBe(true);
+  });
+
+  it('goes out with the light it belongs to', () => {
+    // §4.1's flat battery and §5.2's blink both arrive as a zero here, and a beam emitting
+    // nothing has to have no haze in it either — otherwise the monster's blink leaves a
+    // cone of light hanging in the air with nothing lighting it.
+    const light = withShadowMap(new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3));
+    light.visible = true;
+    const beam = shaft(light);
+
+    beam.update(0);
+    expect(beam.mesh.visible).toBe(false);
+
+    light.visible = false;
+    beam.update(1);
+    expect(beam.mesh.visible).toBe(false);
+  });
+
+  it('points down the beam, wherever the beam is pointing', () => {
+    const light = withShadowMap(new THREE.SpotLight(0xffffff, 1, 12, Math.PI / 8, 0.3));
+    light.visible = true;
+    light.position.set(3, 1.6, 4);
+    light.target.position.set(3, 0, 9);
+    light.target.updateMatrixWorld();
+
+    const beam = shaft(light);
+    beam.update(1);
+
+    expect(beam.mesh.position.toArray()).toEqual([3, 1.6, 4]);
+    // The proxy opens along its own -Y, so that is what the beam's axis has to land on.
+    const opening = new THREE.Vector3(0, -1, 0).applyQuaternion(beam.mesh.quaternion);
+    const axis = new THREE.Vector3(3, 0, 9).sub(new THREE.Vector3(3, 1.6, 4)).normalize();
+    expect(opening.distanceTo(axis)).toBeCloseTo(0, 6);
+  });
+});
+
+describe('a lamp handing its shadow slot on (§4.2, §7)', () => {
+  function lit(count: number): EnvironmentLights {
+    const lights = new EnvironmentLights(
+      Array.from({ length: count }, (_, i) => lamp(i * 4, 0, 'grid')),
+    );
+    lights.setGroupPowered('grid', true);
+    for (const one of lights.lamps) {
+      (one.light.shadow as unknown as { map: unknown }).map = { texture: {} };
+    }
+    return lights;
+  }
+
+  /** A camera that puts every lamp in frustum, so proximity is the only thing choosing. */
+  function camera(x: number): THREE.PerspectiveCamera {
+    const view = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+    view.position.set(x, 20, 40);
+    view.lookAt(x, 0, 0);
+    view.updateMatrixWorld(true);
+    return view;
+  }
+
+  it('fades the shaft in rather than popping it on across the room', () => {
+    // §7 hands the two slots round as the camera moves, and a shaft that arrived on the
+    // frame a lamp won one would flash on at whatever distance that happened.
+    const lights = lit(3);
+    const near = camera(0);
+
+    lights.update(near, 0);
+    expect(lights.shadowCasterCount).toBe(RENDER.maxShadowCastingEnvironmentLights);
+    expect(lights.lamps.filter((one) => one.shaft.mesh.visible).length).toBe(0);
+
+    lights.update(near, LIGHT_SHAFT.handoverSeconds / 2);
+    const half = lights.lamps.filter((one) => one.shaftFade > 0 && one.shaftFade < 1);
+    expect(half.length).toBe(RENDER.maxShadowCastingEnvironmentLights);
+
+    lights.update(near, LIGHT_SHAFT.handoverSeconds);
+    expect(lights.lamps.filter((one) => one.shaftFade === 1).length).toBe(
+      RENDER.maxShadowCastingEnvironmentLights,
+    );
+    expect(lights.lamps.filter((one) => one.shaft.mesh.visible).length).toBe(
+      RENDER.maxShadowCastingEnvironmentLights,
+    );
+  });
+
+  it('fades it back out when the slot goes to somebody else', () => {
+    const lights = lit(3);
+    lights.update(camera(0), LIGHT_SHAFT.handoverSeconds);
+    // The nearest lamp to the near end, and the furthest from the far one.
+    expect(lights.lamps[0]!.shaftFade).toBe(1);
+
+    // Walk the camera to the far end; the two slots go to the other two lamps.
+    lights.update(camera(20), 0);
+    expect(lights.lamps[0]!.light.castShadow).toBe(false);
+    lights.update(camera(20), LIGHT_SHAFT.handoverSeconds);
+
+    expect(lights.lamps[0]!.shaftFade).toBe(0);
+    expect(lights.lamps[0]!.shaft.mesh.visible).toBe(false);
+  });
+
+  it('takes the shaft with a lamp that a monster puts out (§4.2)', () => {
+    const lights = lit(1);
+    lights.update(camera(0), LIGHT_SHAFT.handoverSeconds);
+    expect(lights.lamps[0]!.shaft.mesh.visible).toBe(true);
+
+    lights.setGroupPowered('grid', false);
+    lights.update(camera(0), 0);
+    expect(lights.lamps[0]!.shaft.mesh.visible).toBe(false);
   });
 });

@@ -1,16 +1,25 @@
 /**
  * The rig derived for unrigged player art (§3.1).
  *
- * Two things here can be silently wrong and are worth pinning: which axis the code decides
- * is *up*, and how a vertex is shared between the hip and a leg. Get the first wrong and
- * the character is rigged across its shoulders; get the second wrong and the waist shears
- * instead of bending. Neither announces itself — they look like bad art.
+ * Three things here can be silently wrong and are worth pinning: which axis the code decides
+ * is *up*, how a vertex is shared between the hip and a leg, and which vertices it decides
+ * are an arm. Get the first wrong and the character is rigged across its shoulders; get the
+ * second wrong and the waist shears instead of bending; get the third wrong and the torso
+ * goes with the hand when the player reaches for the torch (§4.1). None of them announces
+ * itself — they look like bad art.
  */
 
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { PLAYER_RIG } from '../src/config';
-import { axesOf, buildHumanoidRig, buildWalkClip, weightFor } from '../src/player/autoRig';
+import {
+  armWeightFor,
+  axesOf,
+  buildHumanoidRig,
+  buildWalkClip,
+  elbowBlend,
+  weightFor,
+} from '../src/player/autoRig';
 
 /** A box from extents, centred on the origin in side and forward, standing on zero. */
 function box(x: number, y: number, z: number): THREE.Box3 {
@@ -85,6 +94,45 @@ describe('sharing a vertex between hip and leg (§3.1)', () => {
   it('degrades to a hard split when there is no band', () => {
     expect(weightFor(0.5, -0.1, hip, 0).legWeight).toBe(1);
     expect(weightFor(1.5, -0.1, hip, 0).legWeight).toBe(0);
+  });
+});
+
+describe('finding the arms in a bounding box (§3.1)', () => {
+  const inset = 0.22;
+  const band = 0.08;
+
+  it('gives the torso to the body and the sleeve to the arm', () => {
+    expect(armWeightFor(0.05, 0, inset, band)).toBe(0);
+    expect(armWeightFor(0.6, 0, inset, band)).toBe(1);
+  });
+
+  it('shares the line rather than cutting on it', () => {
+    expect(armWeightFor(inset, 0, inset, band)).toBeCloseTo(0.5, 6);
+    expect(armWeightFor(inset - band / 4, 0, inset, band)).toBeLessThan(0.5);
+    expect(armWeightFor(inset + band / 4, 0, inset, band)).toBeGreaterThan(0.5);
+  });
+
+  it('never claims a vertex the leg already has', () => {
+    // A foot is as far off the centreline as a shoulder is, and the only thing separating
+    // them is that the leg got there first. Claiming it twice scales the vertex.
+    for (const legWeight of [0, 0.25, 0.5, 1]) {
+      const arm = armWeightFor(0.6, legWeight, inset, band);
+      expect(arm).toBeLessThanOrEqual(1 - legWeight + 1e-12);
+      expect(legWeight + arm).toBeLessThanOrEqual(1 + 1e-12);
+    }
+    expect(armWeightFor(0.6, 1, inset, band)).toBe(0);
+  });
+
+  it('degrades to a hard line when there is no band', () => {
+    expect(armWeightFor(inset + 0.01, 0, inset, 0)).toBe(1);
+    expect(armWeightFor(inset - 0.01, 0, inset, 0)).toBe(0);
+  });
+
+  it('hands a vertex from the upper arm to the forearm across the elbow', () => {
+    expect(elbowBlend(0, 0.5, 0.3)).toBe(0);
+    expect(elbowBlend(0.5, 0.5, 0.3)).toBeCloseTo(0.5, 6);
+    expect(elbowBlend(1, 0.5, 0.3)).toBe(1);
+    expect(elbowBlend(0.6, 0.5, 0)).toBe(1);
   });
 });
 
@@ -200,6 +248,96 @@ describe('building the rig onto a model (§3.1)', () => {
 
   it('declines rather than producing a bad rig', () => {
     expect(buildHumanoidRig(new THREE.Group())).toBeNull();
+  });
+
+  /** A figure with arms: a narrow standing body, and a sleeve out to each side. */
+  function armed(): THREE.Object3D {
+    const root = new THREE.Group();
+    const material = new THREE.MeshStandardMaterial();
+
+    const body = new THREE.BoxGeometry(0.4, 1.86, 0.3);
+    body.translate(0, 0.93, 0);
+    root.add(new THREE.Mesh(body, material));
+
+    for (const sign of [-1, 1]) {
+      // Out level from the shoulder, which is how the kit is authored. Segmented along its
+      // length, because an arm has to *run* somewhere for the shoulder and the hand to be
+      // different points — a single quad at the fingertips is a box, not a limb.
+      const sleeve = new THREE.BoxGeometry(0.5, 0.12, 0.12, 6);
+      sleeve.translate(sign * 0.45, 1.4, 0);
+      root.add(new THREE.Mesh(sleeve, material));
+    }
+    return root;
+  }
+
+  it('builds an arm either side, elbow and hand included', () => {
+    const rig = buildHumanoidRig(armed())!;
+    expect(rig.arms.length).toBe(2);
+    expect(rig.arms.map((arm) => arm.upper.name).sort()).toEqual(['armUpperL', 'armUpperR']);
+    expect(rig.arms.map((arm) => arm.sideSign).sort()).toEqual([-1, 1]);
+    for (const arm of rig.arms) {
+      // A bone with no length cannot be aimed, and a rig carrying one is worse than none.
+      expect(arm.upper.position.length()).toBeGreaterThan(0);
+      expect(arm.lower.position.length()).toBeGreaterThan(0);
+      expect(arm.hand.position.length()).toBeGreaterThan(0);
+      expect(arm.upperAxis.length()).toBeCloseTo(1, 10);
+      expect(arm.lowerAxis.length()).toBeCloseTo(1, 10);
+    }
+  });
+
+  it('says no arms rather than inventing them', () => {
+    // A body with nothing beyond the inset is a body with no sleeves. Two bones hung off a
+    // torso would drag the ribcage along every time the player reached for the torch.
+    const root = new THREE.Group();
+    const narrow = new THREE.BoxGeometry(0.4, 1.86, 0.3);
+    narrow.translate(0, 0.93, 0);
+    root.add(new THREE.Mesh(narrow, new THREE.MeshStandardMaterial()));
+    expect(buildHumanoidRig(root)!.arms).toEqual([]);
+  });
+
+  it('gives every vertex weights that sum to one, arms included', () => {
+    // Four influences now — a leg, two arm bones and the hip — and anything that does not
+    // sum to one scales the vertex, which reads as the character deflating.
+    const root = armed();
+    buildHumanoidRig(root);
+    root.traverse((node) => {
+      if (!(node instanceof THREE.SkinnedMesh)) return;
+      const weight = node.geometry.getAttribute('skinWeight');
+      for (let i = 0; i < weight.count; i += 1) {
+        const total = weight.getX(i) + weight.getY(i) + weight.getZ(i) + weight.getW(i);
+        expect(total, `vertex ${i}`).toBeCloseTo(1, 5);
+      }
+    });
+  });
+
+  it('leaves an armed figure exactly where it was, at rest', () => {
+    // The same invariant the legs rest on, extended to the bones that move most: at rest,
+    // skinning is a no-op. An arm bone measured in the wrong frame tears the sleeve off.
+    const root = armed();
+    root.updateMatrixWorld(true);
+
+    const sleeve = root.children[1] as THREE.Mesh;
+    const geometry = sleeve.geometry;
+    const before = geometry.getAttribute('position');
+    const unrigged = [0, 1, 2, 3].map((i) =>
+      new THREE.Vector3().fromBufferAttribute(before, i).applyMatrix4(sleeve.matrixWorld),
+    );
+
+    expect(buildHumanoidRig(root)).not.toBeNull();
+    root.updateMatrixWorld(true);
+
+    // The skinned mesh keeps the geometry it replaced, so that is what identifies it.
+    const skinned = root.children.find(
+      (node): node is THREE.SkinnedMesh =>
+        node instanceof THREE.SkinnedMesh && node.geometry === geometry,
+    )!;
+    for (const [i, expected] of unrigged.entries()) {
+      const actual = skinned.getVertexPosition(i, new THREE.Vector3());
+      actual.applyMatrix4(skinned.matrixWorld);
+      expect(actual.x, `vertex ${i} x`).toBeCloseTo(expected.x, 5);
+      expect(actual.y, `vertex ${i} y`).toBeCloseTo(expected.y, 5);
+      expect(actual.z, `vertex ${i} z`).toBeCloseTo(expected.z, 5);
+    }
   });
 
   it('leaves the model exactly where it was, under the loader\'s wrapper nodes', () => {

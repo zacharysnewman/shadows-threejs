@@ -41,8 +41,8 @@ re-checked rather than taken on trust.
 | 9 — Interactables, Power & Objectives | **Done** |
 | 10 — Run Lifecycle | **Done** |
 | 11 — Content & Tuning | **In progress** — tooling landed, content outstanding |
-| 12 — Level Editor | Not started |
-| 13 — Shell: Title, Credits & Debug Mode | Not started |
+| 12 — Level Editor | **Done** |
+| 13 — Shell: Title, Credits & Debug Mode | **Done** |
 
 ## Phase 0 — Scaffold
 
@@ -931,6 +931,88 @@ were already centred and did not move.
 | Torch held at `height 0.6, lateral 0.7, yaw 25°` | origin `(20.30, 0.60, 27.55)` for a player at `(21, 27)` and a beam aimed 25° right of the aim — matches the arithmetic to 3 dp, and the pool moves off-centre on screen |
 | A lamp with no switch | visibly a lamppost, visibly unlit, screenshot `lamp-off.png`; nothing at all before it |
 | The same lamp powered | head lit, pool thrown, the player's shadow across it, screenshot `lamp-lit.png` |
+
+*The beam you can see, and the hand holding it.* A `SpotLight` lights the surfaces it
+reaches and nothing in between, so a torch in a dark room was a pool on the floor with no
+visible connection to the player. `src/lighting/LightShaft.ts` draws the haze inside the
+cone: a proxy cone rasterised front faces only, raymarched per fragment, each sample tested
+against the light's own shadow map. Sampling the shadow map rather than fading a cone mesh
+is the whole design — an unshadowed shaft passes through the wall the light stops at and
+glows on the far side, which contradicts §4's rule that a shadow on the ground means a light
+is on something. It is also what ties the feature to §7's budget: no shadow map, no shaft,
+so the flashlight always has one and exactly the two lamps holding §7's environmental slots
+do, fading in over 0.4 s as the slots change hands.
+
+Three bounds do real work and each is load-bearing. The march *starts* at the rasterised
+fragment, because a cone is convex and a ray that enters one crosses a front face on the way
+in — so the entry point is free and no ray-cone intersection is solved in the shader. It
+stops at the light's range, and it stops at the floor: §7 has the floor receive shadows and
+not cast them, so the shadow map cannot tell the march the ground is there, and most of the
+flashlight's cone is *below* it once §4.1's declination is applied. Without the floor clamp
+the beam glows through the ground it is lighting.
+
+`src/player/ArmIk.ts` and the arms `autoRig` now derives are the other half. §4.1 decides
+where the beam is emitted and the hand goes there, never the reverse: solving it the other
+way round would hang the light off the walk cycle's bob and quietly break the mounting rule
+that keeps the player out of their own shadow. It is also what makes §4.1's five `hold`
+knobs behave — moving the torch up, forward or off to the hand's side takes the arms with
+it, because they are solved against wherever the beam ended up rather than posed to a
+position somebody wrote down. The arms are found the one way a bounding box
+can find them — a standing figure's arms are the outermost thing above its waist — and the
+shoulder and hand come from centroids of the innermost and outermost slices of that run
+rather than from single vertices, which on an arm half a metre long is the difference
+between a joint and a fingertip. Both hands carry, which also settles a question the mesh
+cannot answer: a bounding box knows which side of centre a vertex is on, not which side is
+the model's right.
+
+The kit's reach is short and the solver says so rather than hiding it — an unreachable
+target gives a straight arm that stops where it runs out, and `TorchBody` draws the barrel
+from wherever the hand got to out to where the beam starts. That is why the torch is drawn
+between two points instead of parented to the hand: the two ends are decided by different
+things and neither yields.
+
+*A body that was the same colour all over.* §4's readability allowance was a flat emissive
+added to every material, and at §4's ambient it was most of what the unlit player was — the
+kit's red shirt, bare arms, yellow wristbands and black shorts all came out one pale
+blue-grey, and the character read as a ghost. It is now a fraction of each surface's *own*
+colour, which is what a very dim light on them would do. Not a shininess problem, which is
+where the eye goes first: the kit's metalness is 0.4 and dropping it to zero changed the
+unlit body by nothing visible, because the emissive was swamping everything either way.
+
+*Tunable, because the two new numbers are look values.* §8.3's panel gains beam haze, lamp
+haze and the readability lift. All three were read once at construction, so they join the
+beam's cone and the night's two lights in `Run`'s re-push.
+
+*Verified.* 560 unit tests (up from 529): 10 over the two-bone solver, 9 over the arm
+weighting and the rig it builds, 8 over the shaft and the lamp handover, 3 over the
+readability lift, and one over a thing that had just bitten — `TuningPanel` writes a heading
+whenever the group changes as it walks the list, so a knob filed under `Player` but sitting
+between the light ones prints a second `PLAYER` heading half a panel down. Nothing throws;
+the panel just looks broken.
+
+In a browser, on `phase3-test`, since none of this is assertable from a test runner:
+
+| Case | Measured |
+| --- | --- |
+| The rig, on the loaded player | 2 arm chains, `armUpperL` / `armUpperR` |
+| Arms with no torch | both hands at `y = 0.872` — hanging, from shoulders at ~1.35 m |
+| Arms holding the torch | both hands 0.18 m from the beam's origin, at `y = 1.525` |
+| The hand against the walk's bob | walking 5.3 m → 12.4 m, the hips move 20.9 mm and the hand-to-beam gap 8.3 mm |
+| §4.1's `hold` knobs, dragged in §8.3's panel | 0.35 m to the right moves the origin to `(19.59, 1.60, 13.49)` and the hand follows to `(19.70, 1.54, 13.55)`; 1.9 m up takes the hand to `y = 1.671` and opens the gap to 0.319, which is the short reach showing rather than hiding |
+| Haze inside the beam | +12.4/255 against the same frame with the shaft off |
+| Haze inside a crate's shadow | +4.3 — the air *above* the shadow is still lit, which is right |
+| Haze outside the cone | +0.00, exactly |
+| The shaft over the whole frame | 3.86% of pixels changed by more than 6/255, peak 186 |
+| Lamp haze at 0.018 | 36% of pixels, mean 32/255 — at 0.06 the pools blow out, which is what set 0.018 |
+| §7's cost | 3 extra draw calls and 72 extra triangles for three shafts |
+| Shadow slots | 7 lamps lit, 2 casting, 2 shafts |
+| The unlit body | red shirt, skin, yellow wristbands and black shorts all legible, screenshot `after-unlit.png` |
+
+Frame rate is not among them, for the reason it never is here: a software rasteriser. The
+shaft is the first thing in this project whose cost is *per fragment* rather than per draw
+call, so it is also the first whose §7 budget cannot be argued from draw calls alone — the
+step counts are in `config.ts` and the density sliders are in the tuner precisely because
+that judgement has to be made on real hardware.
 
 *Outstanding — the phase's actual content.*
 

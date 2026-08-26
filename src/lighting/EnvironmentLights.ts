@@ -28,12 +28,20 @@
  * The lifecycle lives on the lamp rather than on the monster for the same reason §5.3's
  * contact check lives on the manager: several monsters can be under one lamp, one monster
  * can cross several, and the dwell being the *lamp's* is what makes both of those behave.
+ *
+ * A lamp holding one of the two shadow slots also gets §4's visible cone — the haze inside
+ * it, raymarched against the shadow map it is already drawing. Only those two: without a
+ * shadow map there is nothing to cut the haze with, and an uncut cone glows straight through
+ * the wall it is mounted on. Because the slots change hands as the camera moves, the shaft
+ * arrives and leaves over `handoverSeconds` rather than appearing the instant a lamp wins
+ * one, which would pop on across the room.
  */
 
 import * as THREE from 'three';
-import { ENTITY_DEFAULTS, ENVIRONMENT_LIGHT, RENDER } from '../config';
+import { ENTITY_DEFAULTS, ENVIRONMENT_LIGHT, LIGHT_SHAFT, RENDER } from '../config';
 import type { EnvironmentLightEntity } from '../map/types';
 import { drawJitter, flickerFraction, severityAt } from './flicker';
+import { LightShaft } from './LightShaft';
 
 /** §4.2 — where a lamp is in the sabotage lifecycle. */
 export type SabotageState = 'steady' | 'strain' | 'failed';
@@ -52,6 +60,10 @@ export interface EnvironmentLamp {
   phaseFor: number;
   /** Rendered intensity fraction, 1 unless it is straining (§5.2's curve). */
   flicker: number;
+  /** §4 — the visible cone, drawn only while this lamp is one of §7's shadow casters. */
+  shaft: LightShaft;
+  /** How far the shaft has faded in, 0–1, as the lamp gains or loses a shadow slot. */
+  shaftFade: number;
 }
 
 /** What the shadow-budget choice needs to know about one lamp, and nothing more. */
@@ -127,8 +139,12 @@ export class EnvironmentLights {
       light.target.position.set(entity.wx, 0, entity.wz);
 
       const head = this.addFixture(entity, height);
+      const shaft = new LightShaft(light, {
+        steps: LIGHT_SHAFT.environmentSteps,
+        density: LIGHT_SHAFT.environmentDensity,
+      });
 
-      this.root.add(light, light.target);
+      this.root.add(light, light.target, shaft.mesh);
       this.lamps.push({
         entity,
         light,
@@ -138,6 +154,8 @@ export class EnvironmentLights {
         dwell: 0,
         phaseFor: 0,
         flicker: 1,
+        shaft,
+        shaftFade: 0,
       });
       if (!this.powered.has(entity.groupId)) this.powered.set(entity.groupId, false);
       // Put the lamp in its off state explicitly rather than relying on the state a fresh
@@ -162,6 +180,11 @@ export class EnvironmentLights {
 
   get shadowCasterCount(): number {
     return this.casting.size;
+  }
+
+  /** §4 — haze per metre in every lamp's visible cone; the debug tuner's knob (§8.3). */
+  set shaftDensity(value: number) {
+    for (const lamp of this.lamps) lamp.shaft.density = value;
   }
 
   /** A `PowerSwitch` acts on a whole group at once (§2); Phase 9 calls this. */
@@ -344,7 +367,7 @@ export class EnvironmentLights {
    * depends on where the camera is, which is a render-time fact, and a lamp that gains or
    * loses shadows between frames is invisible to the simulation.
    */
-  update(camera: THREE.Camera): void {
+  update(camera: THREE.Camera, delta = 0): void {
     if (this.lamps.length === 0) return;
 
     camera.updateMatrixWorld();
@@ -370,25 +393,50 @@ export class EnvironmentLights {
     }
 
     const chosen = selectShadowCasters(this.candidates);
-    if (chosen.length === this.casting.size && chosen.every((i) => this.casting.has(i))) {
-      return;
+    const settled = chosen.length === this.casting.size && chosen.every((i) => this.casting.has(i));
+    if (!settled) {
+      for (const index of this.casting) {
+        const lamp = this.lamps[index];
+        if (lamp) lamp.light.castShadow = false;
+      }
+      this.casting.clear();
+      for (const index of chosen) {
+        const lamp = this.lamps[index];
+        if (!lamp) continue;
+        lamp.light.castShadow = true;
+        this.casting.add(index);
+      }
     }
 
-    for (const index of this.casting) {
-      const lamp = this.lamps[index];
-      if (lamp) lamp.light.castShadow = false;
-    }
-    this.casting.clear();
-    for (const index of chosen) {
-      const lamp = this.lamps[index];
-      if (!lamp) continue;
-      lamp.light.castShadow = true;
-      this.casting.add(index);
+    this.updateShafts(delta);
+  }
+
+  /**
+   * §4 — fade each lamp's visible cone in or out with its shadow slot, and place it.
+   *
+   * On the render delta, like every other presentation effect (§7). A lamp that is off, or
+   * failed, or has no slot, is fading to nothing and is hidden outright once it gets there —
+   * a shaft at zero still costs the raymarch if it is drawn.
+   */
+  private updateShafts(delta: number): void {
+    const rate = LIGHT_SHAFT.handoverSeconds > 0 ? delta / LIGHT_SHAFT.handoverSeconds : 1;
+    for (const [index, lamp] of this.lamps.entries()) {
+      const wanted = this.casting.has(index) ? 1 : 0;
+      lamp.shaftFade =
+        rate >= 1
+          ? wanted
+          : THREE.MathUtils.clamp(lamp.shaftFade + Math.sign(wanted - lamp.shaftFade) * rate, 0, 1);
+      lamp.shaft.update(lamp.light.visible ? lamp.flicker * lamp.shaftFade : 0);
     }
   }
 
   dispose(): void {
-    for (const lamp of this.lamps) lamp.light.dispose();
+    for (const lamp of this.lamps) {
+      // Before the sweep below, and not only for tidiness: disposing a shaft takes its mesh
+      // out of `root`, so the sweep never reaches geometry this class does not own.
+      lamp.shaft.dispose();
+      lamp.light.dispose();
+    }
     // The fixtures own their geometry and materials outright — nothing is shared with the
     // asset cache — so a run that left them behind would leak one set per lamp per life.
     this.root.traverse((node) => {

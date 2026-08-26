@@ -388,3 +388,59 @@ describe('knockback and damage (§5.3)', () => {
     expect(player.health.dead).toBe(true);
   });
 });
+
+describe('being visible in the dark without lighting anything (§4)', () => {
+  /** Every standard material on the player's body, art or placeholder. */
+  function materials(player: Player): THREE.MeshStandardMaterial[] {
+    const found: THREE.MeshStandardMaterial[] = [];
+    player.object.traverse((node) => {
+      if (!(node instanceof THREE.Mesh)) return;
+      for (const material of [node.material].flat()) {
+        if (material instanceof THREE.MeshStandardMaterial) found.push(material);
+      }
+    });
+    return found;
+  }
+
+  it('lifts each surface by a fraction of its own colour, not by a colour of its own', () => {
+    // A flat emissive is the same grey wherever it lands, and at §4's ambient it is most of
+    // what an unlit body is: a red shirt, bare arms and black shorts all come out one pale
+    // blue-grey. Scaling their own colours is what a very dim light on them would do.
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    const found = materials(player);
+    expect(found.length).toBeGreaterThan(0);
+
+    for (const material of found) {
+      const expected = material.color.clone().multiplyScalar(PLAYER.readabilityLift);
+      expect(material.emissive.r).toBeCloseTo(expected.r, 6);
+      expect(material.emissive.g).toBeCloseTo(expected.g, 6);
+      expect(material.emissive.b).toBeCloseTo(expected.b, 6);
+    }
+  });
+
+  it('keeps a hue rather than washing it out', () => {
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    const material = materials(player)[0]!;
+    material.color.setRGB(0.8, 0.1, 0.1);
+    player.lift();
+
+    // The red stays red: that is the whole difference from the wash it replaced.
+    expect(material.emissive.r).toBeGreaterThan(material.emissive.g * 4);
+    expect(material.emissive.b).toBeCloseTo(material.emissive.g, 6);
+  });
+
+  it('re-reads the fraction, so the debug tuner can move it (§8.3)', () => {
+    const player = new Player(spawnAt(9, 9, 0), openField());
+    const material = materials(player)[0]!;
+    const before = material.emissive.clone();
+
+    const original = PLAYER.readabilityLift;
+    try {
+      (PLAYER as unknown as { readabilityLift: number }).readabilityLift = original * 2;
+      player.lift();
+      expect(material.emissive.r).toBeCloseTo(before.r * 2, 6);
+    } finally {
+      (PLAYER as unknown as { readabilityLift: number }).readabilityLift = original;
+    }
+  });
+});

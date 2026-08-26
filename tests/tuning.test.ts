@@ -82,6 +82,20 @@ describe('the tunables (§8.3)', () => {
     }
   });
 
+  it('keeps each group\'s knobs together', () => {
+    // `TuningPanel` writes a heading whenever the group changes as it walks the list, so a
+    // knob filed under `Player` but sitting between the light ones prints a second PLAYER
+    // heading half a panel down. Nothing throws; the panel just looks broken.
+    const seen = new Set<string>();
+    let current = '';
+    for (const entry of TUNABLES) {
+      if (entry.group === current) continue;
+      expect(seen.has(entry.group), `${entry.group} is split in two`).toBe(false);
+      seen.add(entry.group);
+      current = entry.group;
+    }
+  });
+
   it('covers the values a balance pass actually reaches for', () => {
     // Not an exhaustive list — a claim that the ones asked for are there, so a rename
     // cannot quietly drop one.
@@ -92,6 +106,11 @@ describe('the tunables (§8.3)', () => {
       'spider.fleeDelayMin',
       'spider.fleeDelayMax',
       'monster.pursue',
+      // §4 — the look values this pass is for: how thick the air in a beam is, and how far
+      // the player's own body is lifted off black.
+      'torch.haze',
+      'night.lampHaze',
+      'player.readable',
     ]) {
       expect(TUNABLES.map((entry) => entry.key)).toContain(key);
     }
