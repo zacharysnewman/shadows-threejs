@@ -241,14 +241,20 @@ back the camera rule the whole of aiming rests on.
   part of the world nobody can reach (§7). It is lit by §4's night ambient exactly as the
   map's own floor is — painting it the fog's colour would make it the colour of the void it
   is covering, since §7 colours the fog to the sky and draws the background in it too.
-- **Small trees, not the ones inside.** A landmark tree is tall enough that its canopy is
-  above the camera and never drawn (§2, Landmarks) — which is right for something you walk
-  under and useless for something whose only job is to cover ground. The surround's trees
-  are a few metres tall, so the crown is well inside the frame and what the player sees past
-  the boundary is canopy rather than a row of trunks standing in void.
-- **Thick, not scattered.** More than one tree per tile of ground, crowns overlapping. A
-  forest edge is opaque; anything sparser reads as a few trees standing in a field, which
-  says "the map stops here" as loudly as the void did.
+- **Small trees, not the ones inside.** A map's own wood is planted from the tall landmark
+  tree, whose canopy clears the camera entirely and is never drawn (*Woods inside the map*)
+  — right where the floor underneath has to stay visible, and useless where covering ground
+  is the whole job. The surround's trees are a few metres tall, so the crown is well inside
+  the frame and what the player sees past the boundary is canopy rather than a row of trunks
+  standing in void.
+- **Packed at the front, thinned behind.** Several trees per tile of ground for the first
+  few metres, crowns overlapping deep enough to be opaque; a lattice several times coarser
+  behind that. A forest edge is solid, and anything sparser reads as a few trees standing in
+  a field, which says "the map stops here" as loudly as the void did — but only the first
+  few metres are ever *read* that way. The map's own edge holds the player well off the
+  boundary, and past that the fog and the absence of any light out there (§4) leave a tree
+  as a slightly different shade of dark. Spread evenly over the whole depth, the same number
+  of trees leaves the one strip anybody looks at looking thin.
 - **The tree is generated, not a kit prefab.** Density is what the boundary needs and detail
   is what it does not: nobody can reach this ground, and at a few metres tall under §4's
   night ambient it is a silhouette. A tree built from a trunk and two faceted crowns is
@@ -257,47 +263,56 @@ back the camera rule the whole of aiming rests on.
   where a prefab's `fitHeight` scales height alone — so a short surround tree is a small
   tree rather than a full-width canopy squashed flat.
 
-  The same tree is what a map plants *inside* its boundary, at a larger size. That is the
-  whole of the small-tree prefab: one shape, two sizes, one material.
-
-### Woods inside the map
-
-A level's ground cover is trees, and they answer to the camera before they answer to
-realism. §3.2 looks down at 72° from 14 m, and that view is unforgiving in both directions:
-
-- **A tall tree is not a tree from up there, it is a streak.** The kit's landmark tree is
-  26 m precisely so its canopy clears the camera (see *Landmarks*), which is right for one
-  tree you walk under and wrong for a wood — two hundred trunks that height are two hundred
-  dark bars radiating off the screen, and none of them reads as a tree.
-- **A wide crown roofs the ground.** Anything with a canopy below the camera hides the floor
-  behind it, and the floor is where the player, the enemies and every shadow are. A forest
-  the player cannot see through is a forest they cannot be chased through.
-
-So a wood is planted from *small* trees: a few metres tall, crowns a couple of metres across,
-spaced so the ground between them stays readable. Close enough that trunks are a constant
-presence and no sightline runs the width of the map; open enough to walk and be chased
-through. **One clear tile between trunks is the limit**, because a trunk fills most of its
-tile and trees on touching tiles are a wall — a wood that walls itself off strands ground,
-which the audit reports (§2).
-
-What a wood replaces is worth stating: it is the cover, the sight-line breaks and the
-shadow-casters that interior walls used to be. A level made of rooms is not more interesting
-than a level made of trees; it is only more obviously authored.
+  It is also available to a map as the `tree_small` prefab, for a wood that wants a crown
+  the player can see rather than one above the camera.
 - **Scenery and nothing else.** They are outside the map, so they are outside walkability,
   outside the collider set, outside the audit, and outside every light's reach. They cast
   no shadows: a shadow on the ground means a light is on something (§4), and nothing out
   there is ever lit.
-- **As deep as the camera can see, and no deeper.** The band extends past the boundary by
-  the reach of §3.2's ground footprint plus a margin, because that is exactly the ground a
-  player standing on the edge tile can see. Making it deeper renders trees no camera can
-  frame; making it shallower puts the void back.
+- **As deep as the camera can frame, and no deeper.** The band extends past the boundary by
+  the reach of §3.2's ground footprint, because that is exactly the ground a player standing
+  on the edge tile can see; the margin on top of it is slack for a jittered outer tree
+  pulling inwards, not a guess at anything. Making it deeper builds trees no camera can
+  frame; making it shallower puts the void back. The *density* is what falls off with depth,
+  not the depth itself.
 - **Scattered, not planted in rows.** Positions are jittered off a grid, from the run's
   seed (Cross-Cutting: determinism), so a replay grows the same forest. A visible lattice
   at the edge of every map would read as the boundary it is meant to disguise.
+- **A tree's spin comes from where it stands.** Every tree is turned about its own axis by
+  a hash of its position, not by the next number out of the run's seed. A tree is a thing in
+  a place, and its facing is a property of the place: it does not change because the band was
+  walked in a different order, or because something earlier in the run drew one more random
+  number. The same rule holds for a wood planted inside the map, where the rotation is
+  written into the map file (*Woods inside the map*).
 
 The surround is generated rather than authored. It is not in the map file, the editor does
 not place it, and a map that says nothing about it still gets one — it is a property of
 *being a map*, not a decision a level makes.
+
+### Woods inside the map
+
+A level's ground cover is trees, and what they have to do is the opposite of what the
+surround's do: cover nothing. §3.2 looks down at 72° from 14 m, and the floor is where the
+player, the enemies and every shadow are. **A crown below that camera roofs the ground
+behind it**, and a wood the player cannot see through is a wood they cannot be chased
+through.
+
+So a wood is planted from the *tall* landmark tree — 26 m, canopy well above the eye and
+never drawn (*Landmarks*). What is left in frame is trunks: a constant vertical presence
+that breaks every sightline and casts every shadow, standing on ground that stays completely
+readable. A tree short enough to see whole is the one shape that cannot do this job.
+
+Spacing is what makes it a wood rather than a wall. Close enough that no sightline runs the
+width of the map; open enough to walk and be chased through. **One clear tile between trunks
+is the limit**, because a trunk fills most of its tile and trees on touching tiles are a wall
+— a wood that walls itself off strands ground, which the audit reports (§2).
+
+Each tree carries its own `rotation`, hashed from its tile so the same map always grows the
+same wood — the same rule as the surround's spin, for the same reason.
+
+What a wood replaces is worth stating: it is the cover, the sight-line breaks and the
+shadow-casters that interior walls used to be. A level made of rooms is not more interesting
+than a level made of trees; it is only more obviously authored.
 
 ### Entity Type Reference
 
@@ -1257,6 +1272,20 @@ constraint and not a polish-phase concern.
   clamp above — which exists to bound one long frame — becomes the size of the multiple.
 - Budget for the whole level to be resident at once: the map is a single continuous space
   (§2) with no streaming and no loading screens after the initial load.
+- **The shaders a lit lamp needs are compiled before the run starts, not when a switch is
+  thrown.** A renderer keys a shader on how many lights are visible and how many of them
+  cast shadows, so a lamp coming on is a new shader for every material on screen at once,
+  compiled inside the frame that switched it. That frame is the one where the player has
+  just done the thing the level is about (§6), and it is the only stall in an otherwise
+  steady game — the flashlight never causes it, because it is in the scene from the first
+  frame and is paid for during load like everything else.
+
+  So every lighting state a run can reach is posed and compiled while the level loads: each
+  number of lamps a `PowerSwitch` could light at once (§6), each number of shadow slots that
+  could be filled at that count, with the torch lit and dark. The cost is a fraction of a
+  second added to a load, against a visible hitch at the worst possible moment. A body that
+  arrives after the run is built (§5.1) brings materials the pass could not have seen, so it
+  is run again when they land rather than left to the switch.
 
 ## 8. Shell: Title, Credits & Debug Mode
 

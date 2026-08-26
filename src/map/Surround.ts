@@ -22,10 +22,17 @@
  * anything, or is ever reachable. It casts no shadows either: a shadow on the ground means
  * a light is on something (§4), and nothing out here is ever lit.
  *
- * **The depth is derived, not chosen.** How far a player standing on the edge tile can see
- * past it is exactly `groundFootprint`'s reach (§3.2), so that is what the band is, plus a
- * margin. Writing a number here instead would be a number that silently stops matching the
+ * **The depth is derived; the density is graded.** How far a player standing on the edge
+ * tile can see past it is exactly `groundFootprint`'s reach (§3.2), so that is what the
+ * band is. Writing a number here instead would be a number that silently stops matching the
  * camera the first time §3.2's pitch or distance moves.
+ *
+ * But that reach is sideways and enormous, and the depth of it that anybody ever *looks at*
+ * is a few metres: the map's own edge holds the player off the boundary, and past that the
+ * fog and the absence of any light out here (§4) leave a tree as a slightly different shade
+ * of dark. Spread evenly, most of the instances land where none of them read. So the near
+ * rows are packed hard enough that the crowns overlap several deep, and the rest drop to a
+ * coarse lattice — the same instance budget, spent where the edge is actually seen.
  */
 
 import * as THREE from 'three';
@@ -87,8 +94,21 @@ export function buildSurround(
   // the full rectangle and discarding the middle is what makes the corners come out right;
   // four separate strips have to agree about where they overlap, and they never quite do.
   const points: { x: number; z: number }[] = [];
+  const coarse = SURROUND.farSpacingFactor;
+  let row = 0;
   for (let z = -depth; z <= mapHeight + depth; z += spacing) {
+    row += 1;
+    let column = 0;
     for (let x = -depth; x <= mapWidth + depth; x += spacing) {
+      column += 1;
+      // Past the depth anyone actually reads as trees, drop to a lattice `farSpacingFactor`
+      // times coarser (§2). Kept on the fine grid rather than sampled at random, so the
+      // thinning cannot clump into a hole; and decided before jitter, so it is a property of
+      // the band rather than of the draw.
+      const outside = Math.max(0, -x, x - mapWidth, -z, z - mapHeight);
+      if (outside > SURROUND.denseDepthMetres && (row % coarse !== 0 || column % coarse !== 0))
+        continue;
+
       const jx = x + (rng.float() * 2 - 1) * SURROUND.jitterMetres;
       const jz = z + (rng.float() * 2 - 1) * SURROUND.jitterMetres;
       // Jittered position decides, not the grid point: a tree that jittered *into* the map

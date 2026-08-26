@@ -90,6 +90,26 @@ export function selectShadowCasters(
     .map(({ index }) => index);
 }
 
+/**
+ * Every number of lamps that can be lit at once, given how many lamps each group holds.
+ *
+ * A `PowerSwitch` acts on a whole group (§2, §6), so the reachable counts are the subset
+ * sums of the group sizes — 3 and 2 can be lit 0, 2, 3 or 5 at a time and never 1 or 4.
+ * There are at most as many of these as there are lamps, however many groups a map has,
+ * because they are counts and not subsets.
+ *
+ * This exists for `precompile`. Three keys a shader program on how many spot lights are
+ * *visible*, so each of these counts is a different program for every material in the
+ * scene, and each is compiled the first time the player reaches it (§7).
+ */
+export function reachableLitCounts(groupSizes: readonly number[]): number[] {
+  const counts = new Set<number>([0]);
+  for (const size of groupSizes) {
+    for (const seen of [...counts]) counts.add(seen + size);
+  }
+  return [...counts].sort((a, b) => a - b);
+}
+
 export class EnvironmentLights {
   readonly lamps: EnvironmentLamp[] = [];
   readonly root = new THREE.Group();
@@ -307,6 +327,67 @@ export class EnvironmentLights {
     lamp.head.color.setHex(lit ? fixture.litColour : fixture.headColour);
     lamp.head.emissive.setHex(lit ? fixture.litColour : 0x000000);
     lamp.head.emissiveIntensity = lit ? fixture.litEmissive * lamp.flicker : 0;
+  }
+
+  /**
+   * §7 — compile the shaders a lit lamp needs, before any lamp is lit.
+   *
+   * The one hitch a player could feel in an otherwise steady frame: the first time a switch
+   * routed power, the frame it happened on stalled, and no toggle after it ever did again.
+   * Three keys a shader program on the *number of visible spot lights*, so a lamp coming on
+   * is a new key for every material in the scene at once — the floor, the walls, both kinds
+   * of tree, the fixtures — and the whole set is compiled inside the frame that switched
+   * the light. The flashlight never does this because it is in the scene from frame one, so
+   * its permutation is paid for during load along with everything else.
+   *
+   * So pay for the lamps there too: pose the lights in each configuration a switch could
+   * ever produce and compile against it. Synchronous and before the first frame on purpose
+   * — a posed light is a lit lamp, and yielding between poses would show the player a map
+   * flashing on and off while it loaded.
+   *
+   * `compile` is the renderer's, passed in rather than reached for: this class knows what
+   * the lights can be doing and nothing about how a scene is drawn. `torch` is §4.1's
+   * flashlight, which is a visible spot light of its own and so doubles every count here —
+   * it goes out when the battery does (§4.1), and a count reached with it lit is not the
+   * same key as the same count reached without.
+   */
+  precompile(compile: () => void, torch?: THREE.SpotLight): void {
+    if (this.lamps.length === 0) return;
+
+    const groupSizes = [...this.powered.keys()].map(
+      (groupId) => this.lamps.filter((lamp) => lamp.entity.groupId === groupId).length,
+    );
+    const lit = this.lamps.map((lamp) => lamp.light.visible);
+    const casting = this.lamps.map((lamp) => lamp.light.castShadow);
+
+    const torchLit = torch?.visible ?? false;
+
+    try {
+      for (const count of reachableLitCounts(groupSizes)) {
+        // *Which* lamps hold the shadow slots is a camera fact that never reaches a shader;
+        // how many do is the other half of the key, and it is not fixed by the lit count —
+        // a slot goes only to a lamp that is on screen (§7), so a room full of lit lamps
+        // with none of them in frame casts nothing at all.
+        const slots = Math.min(count, RENDER.maxShadowCastingEnvironmentLights);
+        for (let filled = 0; filled <= slots; filled += 1) {
+          this.lamps.forEach((lamp, index) => {
+            lamp.light.visible = index < count;
+            lamp.light.castShadow = index < filled;
+          });
+          for (const withTorch of [true, false]) {
+            if (torch) torch.visible = withTorch;
+            compile();
+            if (!torch) break;
+          }
+        }
+      }
+    } finally {
+      this.lamps.forEach((lamp, index) => {
+        lamp.light.visible = lit[index] ?? false;
+        lamp.light.castShadow = casting[index] ?? false;
+      });
+      if (torch) torch.visible = torchLit;
+    }
   }
 
   /**

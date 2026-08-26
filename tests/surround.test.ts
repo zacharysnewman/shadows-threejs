@@ -32,6 +32,25 @@ function planted(rng = new Rng(1)) {
   return { result, at };
 }
 
+/** How far outside the map a point lies, in metres — 0 anywhere inside it. */
+function outsideBy(p: { x: number; z: number }): number {
+  return Math.max(0, -p.x, p.x - WIDTH * TILE, -p.z, p.z - HEIGHT * TILE);
+}
+
+/** Trees per tile of ground, over the ring of the band between two depths. */
+function densityPerTile(from: number, to: number): number {
+  const { at } = planted();
+  const inRing = at.filter((p) => {
+    const out = outsideBy(p);
+    return out >= from && out < to;
+  });
+  const ring = (side: number, depth: number) => side + 2 * depth;
+  const area =
+    ring(WIDTH * TILE, to) * ring(HEIGHT * TILE, to) -
+    ring(WIDTH * TILE, from) * ring(HEIGHT * TILE, from);
+  return (inRing.length / area) * TILE * TILE;
+}
+
 describe('where the surround puts its trees (§2)', () => {
   it('plants nothing on ground the player can walk on', () => {
     // The rule that matters most: out there nothing has a collider, so a tree inside the
@@ -90,15 +109,24 @@ describe('where the surround puts its trees (§2)', () => {
     expect(result.object.getObjectByName('surround:ground')).toBeDefined();
   });
 
-  it('plants more than one tree per tile of ground', () => {
+  it('packs several trees into every tile of the ground that is actually seen', () => {
     // Density is the job: a forest edge is opaque, and a gap between crowns is the void
-    // again. Derived from the spacing rather than typed out, so tuning moves it here too.
+    // again. Measured over the *near* rows rather than the whole band, because that is the
+    // only ground a player ever looks at — the map's own edge holds them well off the
+    // boundary, and averaging the deep rows in was how a thin edge passed a density check.
     expect(SURROUND.spacingMetres).toBeLessThan(TILE);
-    const { at } = planted();
-    const band = (WIDTH * TILE + 2 * surroundDepth()) * (HEIGHT * TILE + 2 * surroundDepth())
-      - WIDTH * TILE * HEIGHT * TILE;
-    const perTile = (at.length / band) * TILE * TILE;
-    expect(perTile).toBeGreaterThan(1);
+    const perTile = densityPerTile(0, SURROUND.denseDepthMetres);
+    expect(perTile).toBeGreaterThan(4);
+  });
+
+  it('thins with depth, so the instances are spent where the edge is seen (§7)', () => {
+    // The far rows are behind the near ones, unlit and fogged; a tree out there is a
+    // slightly different shade of dark. The ratio comes from `farSpacingFactor` — a lattice
+    // n times coarser in both axes is n² times sparser — so a tuning pass moves both.
+    const near = densityPerTile(0, SURROUND.denseDepthMetres);
+    const far = densityPerTile(SURROUND.denseDepthMetres + 1, surroundDepth());
+    expect(far).toBeGreaterThan(0);
+    expect(near / far).toBeGreaterThan(SURROUND.farSpacingFactor ** 2 * 0.6);
   });
 
   it('builds a tree cheap enough to plant thousands of (§7)', () => {

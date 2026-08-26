@@ -82,11 +82,20 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
-- **Tall geometry is a streak, not a shape, from this camera.** At §3.2's 72° pitch a 26 m
-  trunk projects as a long dark bar radiating away from the screen centre, and making it
-  taller only makes the bar longer. It reads as a tree only where the camera is far enough
-  away for perspective to foreshorten it — which is why §2's landmark tree works as one
-  landmark and not as two hundred, and why a wood is planted from small trees instead.
+- **A tree short enough to see whole is a tree that roofs the floor.** The instinct from
+  §3.2's 72° pitch is that a 26 m trunk is a dark bar rather than a shape, so a wood should
+  be planted from something you can see the top of. It is the wrong way round: a crown below
+  the camera hides the ground behind it, and the ground is where the player, the enemies and
+  every shadow are. The tall tree's canopy is *above* the eye and never drawn, which is
+  exactly why a wood is made of them — and why §2's surround, whose job is to cover ground
+  rather than stand on it, uses the short one instead.
+- **A light coming on compiles shaders, in the frame it comes on.** Three keys a program on
+  how many lights are visible and how many cast, so switching a lamp is a new key for every
+  material on screen at once. It looked like a physics or audio hitch at the moment a
+  `PowerSwitch` fired, and it never happened twice. `EnvironmentLights.precompile` poses
+  every reachable lighting state at load and compiles against it (§7); `renderer.info.programs.length`
+  before and after a toggle is how to check it — it must not move. It is synchronous on
+  purpose, so no frame can be drawn with the lights posed.
 - **A character's materials are shared between every instance of it.** `CharacterLoader`
   clones the node tree per instance and shares geometry *and materials* underneath, which is
   where the memory saving is. So a flag set on one instance's material is set for all of
@@ -234,6 +243,18 @@ const spot = { x: player.position.x + ((t.x - o.x) / len) * 0.9, z: /* … */ };
 authored" is a `grep`, not a browser session. What still needs the browser is anything about
 the model *in the scene*: how it reads at its game scale, what its shadow looks like, where
 the beam catches it.
+
+**To judge geometry the game keeps dark, light it in the harness rather than in the game.**
+`viewport.renderer.toneMappingExposure = 6` and `viewport.scene.fog = null` turn §2's
+surround from a black mass into a countable stand of trees, which is the difference between
+"looks thin" and "there is a gap here". Nothing about that view is a gameplay view — go back
+to a normal frame before judging how anything *reads*.
+
+**How far past the boundary the camera actually reaches is a raycast, not a guess.** Unproject
+the screen corners onto the ground plane (`y = 0`) and subtract the rig target: at 16:9 the
+far corners sit about 13.7 m to the side and 8.1 m ahead, and a map's own edge keeps the
+player several metres inside that. That gap is why §2's band is dense at the front and thin
+behind.
 
 Screenshot differencing is how the look values were settled: capture with a value at 0 and at
 its default, difference per pixel, and report the max as well as the mean — a leak is local.
