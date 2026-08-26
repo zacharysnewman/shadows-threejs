@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { ENEMY, FLICKER } from '../src/config';
 import { Rng } from '../src/core/rng';
+import type { CharacterLoader } from '../src/core/CharacterLoader';
 import { EnemyManager } from '../src/enemies/EnemyManager';
 import { ShadowMonster } from '../src/enemies/ShadowMonster';
 import { flickerFraction, severityAt } from '../src/lighting/flicker';
@@ -17,6 +18,29 @@ const FLICK = ENEMY.shadowMonster.flicker;
 const BLINK = ENEMY.shadowMonster.blink;
 
 const OPEN = Array.from({ length: 16 }, () => ' '.repeat(16));
+
+/**
+ * A `CharacterLoader` that answers with the clips this project's spider mesh actually has,
+ * without a network or a `.glb`.
+ *
+ * The suite is pure (§7's note in CLAUDE.md), and what is under test here is not the
+ * loading — it is what `EnemyManager` does with what it loaded.
+ */
+function characterLoaderWithClips(): CharacterLoader {
+  const clip = (name: string) =>
+    new THREE.AnimationClip(name, 1, [
+      new THREE.VectorKeyframeTrack('.position', [0, 1], [0, 0, 0, 0, 1, 0]),
+    ]);
+  return {
+    load: async () => ({
+      name: 'spider',
+      scene: new THREE.Group(),
+      clips: new Map(['walk', 'attack', 'idle', 'jump', 'death'].map((n) => [n, clip(n)])),
+      authoredHeight: 1.931,
+      missing: false,
+    }),
+  } as unknown as CharacterLoader;
+}
 
 function monsterAt(x: number, z: number, seed = 1): ShadowMonster {
   return new ShadowMonster('monster#0', x, z, new Rng(seed));
@@ -473,6 +497,43 @@ describe('Shadow Monsters in the manager', () => {
     }
     // The ramp did get somewhere: a beam held for four seconds is visibly struggling.
     expect(worstSeen).toBeLessThan(0.35);
+  });
+
+  it('gives the monster a body with no clips in it, though its mesh has five (§5.2)', async () => {
+    // The monster wears §5.1's spider now. That mesh walks, attacks, idles, jumps and dies,
+    // and §5.2's hard rule is that this creature is never both moving and visible — so a
+    // held beam must never find a breathing shadow. The rig is handed an empty clip map,
+    // which is what makes "one pose" a fact about the object rather than a discipline.
+    const built = world(OPEN, [
+      { type: 'PlayerSpawn', x: 0, y: 0, properties: {} },
+      { type: 'ShadowMonster', x: 8, y: 8, properties: {} },
+      { type: 'SpiderEnemy', x: 4, y: 4, properties: {} },
+    ]);
+    const manager = new EnemyManager(built.registry, built.grid, built.colliders, new Rng(1));
+    await manager.attachCharacters(characterLoaderWithClips());
+
+    // One frame of rendering is what would start a clip, so the check is made after one.
+    manager.render(1, 1 / 60);
+
+    const monster = manager.monsters[0]!;
+    expect(monster.animation?.clips).toEqual([]);
+    expect(monster.animation?.playing).toBeNull();
+  });
+
+  it('leaves the spider wearing the same mesh fully animated (§5.1)', async () => {
+    // The other half of the rule: emptying the monster's clips must not empty the spider's,
+    // which are what §5.1's speed-driven locomotion is.
+    const built = world(OPEN, [
+      { type: 'PlayerSpawn', x: 0, y: 0, properties: {} },
+      { type: 'SpiderEnemy', x: 4, y: 4, properties: {} },
+    ]);
+    const manager = new EnemyManager(built.registry, built.grid, built.colliders, new Rng(1));
+    await manager.attachCharacters(characterLoaderWithClips());
+    manager.render(1, 1 / 60);
+
+    const spider = manager.enemies[0]!;
+    expect(spider.animation?.clips).toContain('walk');
+    expect(spider.animation?.playing).toBe('walk');
   });
 
   it('reports where they are, for §4.2 to work out who is under a lamp', () => {

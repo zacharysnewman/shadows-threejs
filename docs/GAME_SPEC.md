@@ -748,8 +748,8 @@ routes the player cannot, and by the corners and dead ends they force — and by
 costs. A sprinting player has their light pointed the way they are going (§3.1), which means
 whatever they are running from is unlit, unfrozen and undeterred behind them.
 
-**Bodies.** The spider is a 0.5 m radius circle on the X/Z plane, the Shadow Monster 0.55 m,
-resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
+**Bodies.** The spider is a 0.25 m radius circle on the X/Z plane, the Shadow Monster
+0.55 m, resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
 spiders steer around each other with the local avoidance above, and the Shadow Monster
 ignores other entity colliders entirely — it walks through its own kind and through the
 spiders, which is part of taking routes the player cannot.
@@ -777,10 +777,11 @@ pressing into the wall between them.
 The radii and the wander numbers are first values, not tuned ones: they are exactly the
 kind of thing the tuning pass (§1, content) is expected to move once the game is playable.
 
-### 5.1 Enemy 1: Giant Spider (Dog-Sized)
+### 5.1 Enemy 1: Giant Spider (Cat-Sized)
 
-- **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
-  and light. Emits chittering/scuttling spatial audio, and stops while it is held still —
+- **Visual Representation:** cat-sized arachnid mesh + cast shadow — half a metre across and
+  a third of a metre tall, low enough to the ground that it reads as scuttling rather than
+  striding. Fully visible in dark and light. Emits chittering/scuttling spatial audio, and stops while it is held still —
   the sound says where a spider is *moving*, so a stunned or recoiling one gives nothing
   away, and a deterred one going quiet in the dark is not the same as a gone one.
 - **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
@@ -849,6 +850,17 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     pixel of it the player will ever see is a silhouette on the floor, and the silhouette is
     the entire visual design. The mesh is loaded with colour and depth writes off and shadow
     casting on, exactly as the placeholder was.
+
+    **The model is §5.1's spider, at twice the size the spiders are.** The silhouette a
+    player can read fastest is one they have already been taught, and this run teaches it:
+    they have spent it learning what a spider's shadow looks like on the floor. What the
+    beam finds is that shape, too large, and — unlike every other spider they have met —
+    perfectly still. A shape they half-recognise is worse than an unfamiliar one, because
+    they know what it would be doing if it were the other thing.
+
+    It follows that the two sizes are load-bearing rather than incidental. If the spiders
+    were this size the shadow would be ambiguous, and the run's one hard way of seeing this
+    creature would resolve to "probably a spider".
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a

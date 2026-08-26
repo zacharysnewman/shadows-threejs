@@ -932,6 +932,39 @@ were already centred and did not move.
 | A lamp with no switch | visibly a lamppost, visibly unlit, screenshot `lamp-off.png`; nothing at all before it |
 | The same lamp powered | head lit, pool thrown, the player's shadow across it, screenshot `lamp-lit.png` |
 
+*One mesh, two sizes.* The Shade wore a Ghoul from a different kit; it wears §5.1's spider
+now, scaled to the size the spiders were before they halved. §5.2 has always said the
+silhouette *is* the creature, and the strongest silhouette available is one the run has
+already taught the player to read: they know what a spider's shadow looks like on the floor,
+so what the beam finds is that shape, too big, and — alone among the spiders they have met —
+not moving. The two sizes are load-bearing rather than decorative, and §5.2 now says so: if
+the spiders were this size the shadow would resolve to "probably a spider", and the one hard
+way of seeing this creature would stop being hard.
+
+That put a rule in code that the art used to enforce by accident. The Ghoul had no clips, so
+"the monster is never animated" cost nothing; the spider mesh has five, and an idle breath
+under a held beam is a *moving shadow of a frozen monster* — §5.2's hard rule broken in the
+one moment the player is looking straight at it. `EnemyManager` hands the monster's rig an
+empty clip map, so the pose it holds is a property of the object rather than a discipline
+about how it is driven, and `tests/monster.test.ts` fails if that is undone.
+
+The Ghoul kit left `PREFAB_KITS` with the file, so the credits screen (§8.2) stopped naming
+an author whose work is no longer shipped — it is generated from that list, so nothing else
+had to change. `tests/prefabs.test.ts` already required claimed art and shipped art to match
+exactly, which is what made deleting the `.glb` and forgetting the credit impossible.
+
+*Verified in a browser*, since none of it is assertable from a test runner:
+
+| Case | Measured |
+| --- | --- |
+| Spider, in scene | collider radius 0.25 m, configured height 0.35 m, rendered span 1.27 × 0.35 × 1.15 m |
+| Shade, in scene | collider radius 0.55 m, configured height 0.70 m, rendered span 2.48 × 0.70 × 2.67 m — 1.96× the spider, and close to the 2.34 m the Ghoul spanned |
+| Shade in the beam | an unmistakable spider silhouette on the floor with nothing visible casting it, screenshot `shade-in-beam.png` |
+| The body behind it (`I`) | the mesh grounded and centred on its collider at its authored rest pose, screenshot `shade-body.png` |
+| Both, one beam | the Shade reads as twice the live spider at a glance, screenshot `two-sizes-bodies.png` |
+| Shade's rig | 0 clips, nothing playing, after a rendered frame |
+| Spider's rig, same mesh | 5 clips, `walk` playing |
+
 *The beam you can see, and the hand holding it.* A `SpotLight` lights the surfaces it
 reaches and nothing in between, so a torch in a dark room was a pool on the floor with no
 visible connection to the player. `src/lighting/LightShaft.ts` draws the haze inside the

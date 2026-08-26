@@ -213,8 +213,9 @@ whether it can be finished before a playthrough does.
 `PREFAB_KITS` with its licence. The spider is skinned and its walk cycle is driven by ground
 speed rather than by a clock, so a wandering, pursuing and fleeing spider all place their
 legs on the ground; its attack clip is stretched to §5.3's wind-up so re-exporting the art
-cannot move when damage lands. The Shadow Monster has a model and deliberately no animation
-— §5.2 never draws it, and what the model buys is the outline of its shadow.
+cannot move when damage lands. The Shadow Monster wears that same spider mesh at twice the
+spiders' size, and deliberately has no animation — §5.2 never draws it, and what the model
+buys is the outline of its shadow.
 
 Swapping any of it is dropping a `.glb` in: `public/prefabs/` for a static prop, and
 `public/characters/` for anything skinned, which cannot be a prefab because merging a model

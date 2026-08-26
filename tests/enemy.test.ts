@@ -192,19 +192,30 @@ describe('Enemy pathing', () => {
 
 describe('local avoidance', () => {
   it('pushes two spiders apart rather than letting them stack', () => {
+    // Everything here is a fraction of the separation the two bodies want, so this survives
+    // the spiders changing size — which they have. A literal metre here is really "some
+    // fraction of two radii", and it fails on the next tuning pass for a reason that has
+    // nothing to do with avoidance.
+    const minimum = ENEMY.spider.radius * 2;
+
     const built = world(OPEN);
     const a = spider(9, 9);
-    const b = new Enemy(ENEMY_PROFILES.SpiderEnemy, 'spider#1', 9.3, 9, new Rng(2));
+    // Deep inside each other, and on the same line as the player they are both chasing.
+    // That last part matters: the push is exactly antiparallel to the pursuit here, so it
+    // only separates them while it is the stronger of the two (§5 — steering, not physics).
+    // Starting them at a third of the minimum is what puts them in that regime at any size.
+    const b = new Enemy(ENEMY_PROFILES.SpiderEnemy, 'spider#1', 9 + minimum * 0.3, 9, new Rng(2));
     const neighbours = [a, b];
 
-    // Both chasing the same player from almost the same spot.
     for (let i = 0; i < 120; i += 1) {
       const context = contextFor(built, 18, 9, { neighbours: neighbours });
       a.tick(TICK, context);
       b.tick(TICK, context);
     }
 
-    expect(a.position.distanceTo(b.position)).toBeGreaterThan(0.5);
+    // They settle around 78% of the minimum; well clear of the 30% they started at, and
+    // below the minimum itself, which a nudge is never asked to reach.
+    expect(a.position.distanceTo(b.position)).toBeGreaterThan(minimum * 0.6);
   });
 
   it('leaves the Shadow Monster out of it — it ignores other entity colliders (§5)', () => {

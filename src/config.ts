@@ -524,9 +524,9 @@ export const ENEMY = {
   waypointRadius: 0.45,
 
   spider: {
-    /** Dog-sized (§5.1). */
-    radius: 0.5,
-    height: 0.7,
+    /** Cat-sized (§5.1) — half a metre across, and a third of a metre tall. */
+    radius: 0.25,
+    height: 0.35,
     /** §5.1 — the animated body, from `public/characters/`. */
     character: 'spider',
     /**
@@ -584,20 +584,30 @@ export const ENEMY = {
 
   shadowMonster: {
     radius: 0.55,
-    height: 2.2,
+    /**
+     * §5.2 — the size the spiders used to be, which is the whole of the silhouette's
+     * design: what the player finds in the beam is a spider twice the size of the ones
+     * that scuttle, standing still.
+     */
+    height: 0.7,
     /**
      * §5.2 — the body that is never drawn.
      *
      * It still needs to be a *shape*: the shadow is the creature, and a shadow is only
-     * frightening if its outline is. So the monster gets real art for exactly the reason
-     * the spider does not need any — every pixel of it the player ever sees is a
-     * silhouette on the floor, and a capsule casts a capsule.
+     * frightening if its outline is. A capsule casts a capsule, and every pixel of this
+     * thing the player will ever see is its outline on the floor.
+     *
+     * It wears the spider's mesh, at the size §5.1's spiders were before they shrank. A
+     * silhouette the player already knows how to read is worth more than an unfamiliar
+     * one: they have spent the run learning what a spider's shadow looks like, and this is
+     * that shape, too big, and not moving.
      *
      * What it does not get is animation. §5.2 is absolute that it is never both moving and
      * visible, so a walk cycle would be frames nobody can see and a standing temptation to
-     * show them.
+     * show them — and now that its mesh is one that *has* clips, that is enforced where the
+     * rig is built rather than by the art happening to have none. See `EnemyManager`.
      */
-    character: 'shadow_monster',
+    character: 'spider',
     wanderSpeed: 1.4,
     pursueSpeed: 1.8,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
@@ -723,23 +733,11 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     source: 'https://quaternius.itch.io/animated-easy-enemies',
     /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
     attributionRequired: false,
-    /** §5.2's spider. A character rather than a prefab — it is skinned (see §1). */
-    prefabs: ['spider'],
-  },
-  {
-    kit: 'Ghoul',
-    author: 'joney_lol',
-    url: 'https://poly.pizza/m/pEwXEubhxz',
     /**
-     * CC-BY: the credit is a condition, like the tree's. §5.2 means not one pixel of this
-     * model is ever drawn — it exists to cast a shadow — but "the player never sees it" is
-     * not a licence term, and the author is named on the credits screen either way.
+     * Both enemies' body. A character rather than a prefab — it is skinned (see §1) — and
+     * one mesh at two sizes: §5.1's spiders, and §5.2's Shade at twice their size.
      */
-    licence: 'CC BY',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
-    source: 'https://poly.pizza/m/pEwXEubhxz',
-    attributionRequired: true,
-    prefabs: ['shadow_monster'],
+    prefabs: ['spider'],
   },
   {
     kit: 'Fitness Characters',

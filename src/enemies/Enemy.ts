@@ -72,9 +72,9 @@ export interface EnemyProfile {
  * and visible, so no frame of it in motion is ever drawn to animate.
  */
 const SPIDER_GAIT: GaitProfile = {
-  /** Dog-sized and eight-legged: a short stride and a lot of them (§5.1). */
-  strideMetres: 0.8,
-  bobMetres: 0.07,
+  /** Cat-sized and eight-legged: a short stride and a lot of them (§5.1). */
+  strideMetres: 0.4,
+  bobMetres: 0.035,
   swingRadians: 0.5,
   /** Its pursue speed, so a chase is the cycle at full amplitude. */
   fullSpeed: ENEMY.spider.pursueSpeed,
@@ -602,6 +602,19 @@ export class Enemy {
   /** Whether this enemy is running on real art rather than on the placeholder. */
   get hasCharacter(): boolean {
     return this.rig !== null;
+  }
+
+  /**
+   * What this enemy's body can animate with, and what it is animating now. Null until the
+   * art has loaded.
+   *
+   * §5.2 is why this is exposed rather than kept private: the Shadow Monster wears §5.1's
+   * mesh, which has five clips, and the rule that none of them may ever play is now a
+   * property of the object somebody could quietly undo. A rule nothing can observe is a
+   * rule nothing can check.
+   */
+  get animation(): { clips: readonly string[]; playing: string | null } | null {
+    return this.rig ? { clips: this.rig.clipNames, playing: this.rig.playing } : null;
   }
 
   /**
