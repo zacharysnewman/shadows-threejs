@@ -8,10 +8,20 @@
  * the player near an edge — costs the meaning of the cursor's position in exactly the
  * corners where a player can least afford it.
  *
- * **The ground comes first, the trees second.** Foliage alone only covers the void if it is
- * opaque, and opaque foliage is a great many instances of a 3,104-triangle model (§7). A
- * ground plane coloured to the fog covers it in two triangles; the trees are then there for
- * depth and for something to stop the eye, and the band can be as sparse as it looks good.
+ * **The ground comes first, the trees second.** Ground covers the void in two triangles; the
+ * trees are what make it read as a forest edge rather than a floor.
+ *
+ * **The tree is generated, not a kit prefab, and that is what buys the density.** A forest
+ * edge has to be *thick* — more than one tree per tile of ground, crowns overlapping — and
+ * the kit's tree is 3,104 triangles, so a band of thousands would be millions of triangles
+ * for scenery nobody can reach (§7). Built here it is about fifty: a tapered trunk and two
+ * faceted crowns, merged into one geometry with vertex colours so the whole band is one
+ * material and one draw call.
+ *
+ * It is also the only way to get a *small* tree out of this kit. `PREFAB_FIT.fitHeight`
+ * scales the Y axis alone — right for a wall, and for a tree it means a short one keeps the
+ * model's 11.84 m canopy and comes out a pancake. A generated tree is authored at unit
+ * height and scaled uniformly per instance, so short means small.
  *
  * **It is scenery and nothing else.** Outside the map is outside the walkability grid, the
  * collider set, the audit and every light's reach, so nothing here has a footprint, blocks
@@ -25,8 +35,8 @@
  */
 
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { SURROUND } from '../config';
-import type { Prefab } from '../core/AssetLoader';
 import type { Rng } from '../core/rng';
 import { groundFootprint } from '../player/CameraRig';
 
@@ -65,7 +75,6 @@ export function surroundDepth(
  * one run and not the next.
  */
 export function buildSurround(
-  prefab: Prefab | undefined,
   width: number,
   height: number,
   tileSize: number,
@@ -79,10 +88,6 @@ export function buildSurround(
   const root = new THREE.Group();
   root.name = 'surround';
   root.add(groundPlane(mapWidth, mapHeight, depth));
-
-  // No art is not no surround: the ground still has to be there, or the gaps between trees
-  // that never loaded are the void this exists to cover.
-  if (!prefab) return { object: root, count: 0, depthMetres: depth };
 
   // Grid points across the whole outer rectangle, keeping the ones outside the map. Walking
   // the full rectangle and discarding the middle is what makes the corners come out right;
@@ -99,7 +104,15 @@ export function buildSurround(
     }
   }
 
-  const mesh = new THREE.InstancedMesh(prefab.geometry, prefab.material, points.length);
+  const mesh = new THREE.InstancedMesh(
+    treeGeometry(),
+    new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: SURROUND.treeRoughness,
+      metalness: 0,
+    }),
+    points.length,
+  );
   mesh.name = 'surround:trees';
   mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   // §2 — never lit, so never casting; and nothing out here receives either.
@@ -111,10 +124,18 @@ export function buildSurround(
 
   const matrix = new THREE.Matrix4();
   const rotation = new THREE.Matrix4();
+  const scale = new THREE.Matrix4();
   points.forEach((point, index) => {
     matrix.makeTranslation(point.x, 0, point.z);
-    // A turn each, so the same model does not read as the same tree repeated.
+    // A turn each, and a size each: one geometry repeated thousands of times reads as
+    // wallpaper otherwise, and a forest is the one thing that must not.
     matrix.multiply(rotation.makeRotationY(rng.float() * Math.PI * 2));
+    const height =
+      SURROUND.treeHeightMetres *
+      (1 + (rng.float() * 2 - 1) * SURROUND.heightVariation);
+    // Uniform: the geometry is authored at unit height, so this is the tree's real size and
+    // its crown stays in proportion to it.
+    matrix.multiply(scale.makeScale(height, height, height));
     mesh.setMatrixAt(index, matrix);
   });
   mesh.instanceMatrix.needsUpdate = true;
@@ -151,4 +172,61 @@ function groundPlane(mapWidth: number, mapHeight: number, depth: number): THREE.
   plane.castShadow = false;
   plane.receiveShadow = false;
   return plane;
+}
+
+/**
+ * One tree, authored at **unit height** so an instance's scale is its size in metres.
+ *
+ * A tapered trunk and two faceted crowns, merged into a single geometry carrying its colours
+ * per vertex — so the band is one material, one draw call, and about fifty triangles a tree
+ * instead of three thousand. At this size and this distance, under §4's night ambient and
+ * §7's fog, the silhouette is the whole of what reads: crowns overlapping into a dark mass
+ * with a suggestion of trunks under it.
+ *
+ * Open-ended trunk and `detail: 0` crowns are deliberate. Nobody can get out there to look
+ * at a tree from below, and the caps and subdivisions would be triangles spent on it.
+ */
+function treeGeometry(): THREE.BufferGeometry {
+  const trunkHeight = 0.45;
+  // Non-indexed throughout: `mergeGeometries` refuses a mix, and Three builds a cylinder
+  // indexed and an icosahedron not. Converting costs vertices, never triangles.
+  const trunk = new THREE.CylinderGeometry(0.05, 0.09, trunkHeight, 5, 1, true).toNonIndexed();
+  trunk.translate(0, trunkHeight / 2, 0);
+
+  const lower = new THREE.IcosahedronGeometry(0.34, 0).toNonIndexed();
+  lower.scale(1, 0.85, 1);
+  lower.translate(0, trunkHeight + 0.22, 0);
+
+  const upper = new THREE.IcosahedronGeometry(0.24, 0).toNonIndexed();
+  upper.scale(1, 0.9, 1);
+  upper.translate(0, trunkHeight + 0.52, 0);
+
+  paint(trunk, SURROUND.trunkColour);
+  paint(lower, SURROUND.canopyColour);
+  paint(upper, SURROUND.canopyColour);
+
+  const merged = mergeGeometries([trunk, lower, upper], false);
+  for (const part of [trunk, lower, upper]) part.dispose();
+  if (!merged) throw new Error('surround: tree parts would not merge');
+
+  // Normalised so "height 1" is true whatever the proportions above become: the instance
+  // matrix multiplies by a height in metres, and that only means metres if this does.
+  merged.computeBoundingBox();
+  const top = merged.boundingBox?.max.y ?? 1;
+  if (top > 0) merged.scale(1 / top, 1 / top, 1 / top);
+  merged.computeVertexNormals();
+  return merged;
+}
+
+/** Give every vertex of a part the same colour, so the merged tree needs one material. */
+function paint(geometry: THREE.BufferGeometry, colour: number): void {
+  const count = geometry.getAttribute('position').count;
+  const rgb = new THREE.Color(colour);
+  const colours = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1) {
+    colours[i * 3] = rgb.r;
+    colours[i * 3 + 1] = rgb.g;
+    colours[i * 3 + 2] = rgb.b;
+  }
+  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
 }

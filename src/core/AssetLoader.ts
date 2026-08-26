@@ -26,7 +26,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { PREFAB_FILE, PREFAB_FIT, PREFAB_FOOTING } from '../config';
+import { PREFAB_FIT, PREFAB_FOOTING } from '../config';
 
 export interface Prefab {
   name: string;
@@ -226,10 +226,7 @@ export class AssetLoader {
   }
 
   private async loadUncached(name: string, tileSize: number): Promise<Prefab> {
-    // Most prefabs are their own file; a few are a second use of another one's model at a
-    // different `PREFAB_FIT` size (§1), and copying the binary to give them a filename would
-    // be two files to keep identical by hand.
-    const url = `${this.baseUrl}${PREFAB_FILE[name] ?? name}.glb`;
+    const url = `${this.baseUrl}${name}.glb`;
 
     // A HEAD probe keeps a missing asset out of GLTFLoader's error path, which is noisy
     // and, for an HTML 404 body, throws a parse error rather than a network error. Dev

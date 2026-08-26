@@ -965,6 +965,27 @@ exactly, which is what made deleting the `.glb` and forgetting the credit imposs
 | Shade's rig | 0 clips, nothing playing, after a rendered frame |
 | Spider's rig, same mesh | 5 clips, `walk` playing |
 
+*Shadow-only spiders, and why.* Dressing §5.2's monster in §5.1's spider (below) made every
+spider in the run invisible — models gone, shadows left. `CharacterLoader` shares materials
+between instances deliberately, so the monster turning colour and depth writes off on *its*
+body turned them off on the material the spiders draw with. Nothing about the symptom points
+at the monster. `Enemy.attachCharacter` gives the monster materials of its own before hiding
+it, the sharing that makes ten spiders one upload is untouched, and
+`tests/monster.test.ts` fails on the shared material if the isolation is removed.
+
+*A forest edge, not a scatter.* The surround's trees were the kit's tree scaled down, which
+brought two problems: `fitHeight` scales Y alone, so a short one is a full-width canopy
+squashed flat, and at 3,104 triangles a *dense* band is millions of triangles for scenery
+nobody can reach. The surround builds its own tree now — a trunk and two faceted crowns
+merged with vertex colours, about fifty triangles, one material, one draw — in the kit's own
+palette taken down from its near-neon `#00e72a`, which reads as a few big canopies and would
+be a wall of neon at this density. Authored at unit height so an instance's scale is its size
+in metres, and scaled uniformly: short means small.
+
+That buys the density the boundary actually needs: **5,989 trees** at 1.5 m spacing, more
+than one per tile of ground, crowns overlapping — and the scene got *cheaper*, 504k triangles
+against 688k for the 156 sparse kit trees it replaced.
+
 *The camera stopped letting go of the player, and the world grew an outside.* §3.2 clamped
 the rig to the map's bounds so the view never framed off-map void, and the spec was candid
 that the two rules fought: near an edge a pitched frustum's far corners overhang the

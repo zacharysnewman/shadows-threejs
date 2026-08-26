@@ -82,6 +82,13 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **A character's materials are shared between every instance of it.** `CharacterLoader`
+  clones the node tree per instance and shares geometry *and materials* underneath, which is
+  where the memory saving is. So a flag set on one instance's material is set for all of
+  them — and since §5.2's monster wears §5.1's spider, hiding the monster's body (colour and
+  depth writes off) turned every spider in the run into a shadow. The symptom points nowhere
+  near the cause. `Enemy.attachCharacter` clones the monster's materials first; anything else
+  that needs to differ per instance has to do the same.
 - **Ground painted the fog's colour is invisible.** §7 colours the fog to the sky *and* uses
   it as the scene background, so a surface tinted to `FOG.color` is exactly the colour of the
   void behind it. §2's surround ground reads as ground because it is a lit material taking

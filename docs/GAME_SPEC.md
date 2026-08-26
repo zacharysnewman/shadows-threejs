@@ -244,8 +244,18 @@ back the camera rule the whole of aiming rests on.
 - **Small trees, not the ones inside.** A landmark tree is tall enough that its canopy is
   above the camera and never drawn (§2, Landmarks) — which is right for something you walk
   under and useless for something whose only job is to cover ground. The surround's trees
-  are short enough to be fully in frame, so what the player sees past the boundary is
-  canopy rather than a row of trunks standing in void.
+  are a few metres tall, so the crown is well inside the frame and what the player sees past
+  the boundary is canopy rather than a row of trunks standing in void.
+- **Thick, not scattered.** More than one tree per tile of ground, crowns overlapping. A
+  forest edge is opaque; anything sparser reads as a few trees standing in a field, which
+  says "the map stops here" as loudly as the void did.
+- **The tree is generated, not a kit prefab.** Density is what the boundary needs and detail
+  is what it does not: nobody can reach this ground, and at a few metres tall under §4's
+  night ambient it is a silhouette. A tree built from a trunk and two faceted crowns is
+  around fifty triangles against a kit tree's three thousand, which is the difference
+  between a band of thousands and a band nobody can afford (§7). It also scales *uniformly*,
+  where a prefab's `fitHeight` scales height alone — so a short surround tree is a small
+  tree rather than a full-width canopy squashed flat.
 - **Scenery and nothing else.** They are outside the map, so they are outside walkability,
   outside the collider set, outside the audit, and outside every light's reach. They cast
   no shadows: a shadow on the ground means a light is on something (§4), and nothing out
