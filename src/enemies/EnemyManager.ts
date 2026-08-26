@@ -17,6 +17,8 @@ import { ENEMY } from '../config';
 import type { CharacterLoader } from '../core/CharacterLoader';
 import type { Rng } from '../core/rng';
 import type { EntityRegistry } from '../map/EntityRegistry';
+import type { Character } from '../core/CharacterLoader';
+import { NOTHING_LIT, type LitTiles } from '../nav/LitGrid';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
 import type { ColliderIndex } from '../player/collision';
 import {
@@ -37,6 +39,12 @@ export type ContactListener = (enemy: Enemy, distance: number) => void;
 export interface EnemyWorld {
   playerX: number;
   playerZ: number;
+  /**
+   * §5 — light as terrain, per tile. Optional: a run with no lighting rig (a test, the
+   * editor's preview) is a run in which nothing is lit, which is the honest answer rather
+   * than a missing one.
+   */
+  lightTiles?: LitTiles;
   /** §4.1 — the shared light query. */
   illumination: IlluminationSampler;
   /** §5.3 — what contact resolves into. */
@@ -106,15 +114,16 @@ export class EnemyManager {
             const character = await loader.load(config.character);
             if (character.missing) return;
             enemy.attachCharacter(
-              new CharacterRig(character, {
-                // Only the spider has a locomotion cycle to drive (§5.1); the monster's
-                // rig holds no clips, so neither number is ever read for it.
+              new CharacterRig(stillIfMonster(kind, character), {
+                // Only the spider has a locomotion cycle to drive (§5.1); the monster is
+                // handed no clips at all, so neither number is ever read for it.
                 walkReferenceSpeed:
                   kind === 'SpiderEnemy' ? ENEMY.spider.walkClipSpeed : config.pursueSpeed,
                 attackSeconds: ENEMY.spider.attack.windUpSeconds,
-                // Both kits are authored several metres tall; `profile.height` is what
-                // every other system already believes each enemy to be, and the authored
-                // height is measured from the model rather than copied into config.
+                // The kit is authored close to 2 m tall; `profile.height` is what every
+                // other system already believes each enemy to be, and the authored height
+                // is measured from the model rather than copied into config — which is
+                // what lets one mesh dress both enemies at two sizes (§5.1, §5.2).
                 scale: enemy.profile.height / character.authoredHeight,
               }),
             );
@@ -198,6 +207,7 @@ export class EnemyManager {
       colliders: this.colliders,
       neighbours: this.enemies,
       illumination: world.illumination,
+      lightTiles: world.lightTiles ?? NOTHING_LIT,
       player: world.player,
     };
 
@@ -221,4 +231,25 @@ export class EnemyManager {
     this.listeners.clear();
     this.root.removeFromParent();
   }
+}
+
+/**
+ * §5.2 — the Shadow Monster is handed a body with no clips in it.
+ *
+ * It shares §5.1's mesh now, and that mesh walks, attacks, idles and dies. None of those may
+ * ever play: §5.2's hard rule is that this creature is never both moving and visible, and
+ * the one thing that makes it visible is a light casting its shadow — so an idle breath
+ * under a held beam is a *moving shadow of a frozen monster*, which is the rule broken in
+ * the one moment the player is looking straight at it.
+ *
+ * Emptying the clip map rather than not playing them: a rig with no actions has nothing to
+ * pick, so the pose it holds is the one the model was authored in, and there is no state in
+ * which some later `update` finds a clip to start. §5.2's "one pose" is a fact about the
+ * object instead of a discipline about how it is driven.
+ *
+ * The spider is untouched — it is the same `Character` instance the loader cloned, and its
+ * clips are exactly what §5.1's locomotion is driven by.
+ */
+function stillIfMonster(kind: EnemyKind, character: Character): Character {
+  return kind === 'ShadowMonster' ? { ...character, clips: new Map() } : character;
 }

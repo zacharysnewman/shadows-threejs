@@ -30,8 +30,6 @@ export interface LoadedMap {
   landmarks: LandmarkSet;
   /** Static geometry root; add this to the scene. */
   root: THREE.Group;
-  /** Map extent in world space, for camera clamping (§3.2). */
-  bounds: THREE.Box3;
   dispose(): void;
 }
 
@@ -109,11 +107,6 @@ export async function loadMap(
     }
   }
 
-  const bounds = new THREE.Box3(
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(data.width * data.tileSize, 0, data.height * data.tileSize),
-  );
-
   return {
     source: dir,
     data,
@@ -124,7 +117,6 @@ export async function loadMap(
     entities,
     landmarks,
     root: geometry.root,
-    bounds,
     dispose() {
       landmarks.dispose();
       geometry.dispose();

@@ -183,6 +183,12 @@ legible, which is a level-design property rather than a mechanic.
   around to identify is not doing the job — the player is meant to sweep past it and know.
 - **Distinct from each other.** Two landmarks of the same prefab in one region tell the
   player nothing they did not already know; the second one is decoration.
+
+  Decoration is allowed, and a `Landmark` entity is how a map says "a model here" whether or
+  not the model is doing this job. A stand of trees scattered across a yard is scenery: it
+  blocks like anything else, it is worth placing, and no one of them answers "where am I".
+  What the rules in this section govern is the claim that something is a *landmark* — which
+  is a level-design property of how a model is placed, not a property of the entity type.
 - **Placed off routes, not on them.** A landmark is a thing to *see*, and one standing in a
   corridor is a thing to walk around. Its footprint blocks the player like any other solid
   geometry (below), so this is a real cost and not a preference.
@@ -215,6 +221,46 @@ is like from below, and it costs nothing to draw. Scaling for this is a vertical
 A 4 m hoop and a 1 m bench block the same way, and both fade when they come between the
 camera and the player (§3.2's occluder rule) — which a tall landmark will exercise harder
 than anything else on the map, since it is the tallest geometry the game places.
+
+### Beyond the boundary
+
+**Every map is surrounded by trees it is not made of.** The playable area ends at the map
+rectangle; the *world* does not, and a band of small trees fills the ground outside it in
+every direction.
+
+This exists so the camera can be locked to the player (§3.2). A camera that always centres
+the player will frame ground beyond the boundary whenever they walk near one, and the
+alternative to filling that ground is sliding the camera off the player — which changes
+what a cursor position means exactly where a cornered player can least afford it. Scenery
+outside the map is the cheaper answer by a long way: it costs one instanced draw and buys
+back the camera rule the whole of aiming rests on.
+
+- **Ground first, trees second.** There is ground out there, and it is what actually covers
+  the void; the trees stand on it for depth and to stop the eye. Foliage alone would have to
+  be *opaque* to hide anything, which is a great many instances of a detailed model for a
+  part of the world nobody can reach (§7). It is lit by §4's night ambient exactly as the
+  map's own floor is — painting it the fog's colour would make it the colour of the void it
+  is covering, since §7 colours the fog to the sky and draws the background in it too.
+- **Small trees, not the ones inside.** A landmark tree is tall enough that its canopy is
+  above the camera and never drawn (§2, Landmarks) — which is right for something you walk
+  under and useless for something whose only job is to cover ground. The surround's trees
+  are short enough to be fully in frame, so what the player sees past the boundary is
+  canopy rather than a row of trunks standing in void.
+- **Scenery and nothing else.** They are outside the map, so they are outside walkability,
+  outside the collider set, outside the audit, and outside every light's reach. They cast
+  no shadows: a shadow on the ground means a light is on something (§4), and nothing out
+  there is ever lit.
+- **As deep as the camera can see, and no deeper.** The band extends past the boundary by
+  the reach of §3.2's ground footprint plus a margin, because that is exactly the ground a
+  player standing on the edge tile can see. Making it deeper renders trees no camera can
+  frame; making it shallower puts the void back.
+- **Scattered, not planted in rows.** Positions are jittered off a grid, from the run's
+  seed (Cross-Cutting: determinism), so a replay grows the same forest. A visible lattice
+  at the edge of every map would read as the boundary it is meant to disguise.
+
+The surround is generated rather than authored. It is not in the map file, the editor does
+not place it, and a map that says nothing about it still gets one — it is a property of
+*being a map*, not a decision a level makes.
 
 ### Entity Type Reference
 
@@ -375,15 +421,17 @@ they belong on the stick the thumb is already on.
   the player along the pitch vector.
 - Follows the player with critically damped smoothing (≈0.15 s time constant); no rotation
   — the map's north stays screen-up so learned routes stay legible in the dark.
-- The rig clamps to map bounds so the camera never frames off-map void. What is clamped is
-  the frustum's ground footprint, not the camera position: under a pitched camera that
-  footprint is a trapezoid, wider at its far edge than it is where the player stands.
-- Framing the player outranks hiding void. The clamp never pushes the player within 2 m of
-  the edge of the view, and on an axis where the map is too small to satisfy both rules the
-  camera centres that axis rather than pinning the player to one side. Close to a boundary
-  the far corners of the footprint will show void; that is the accepted cost, because a
-  camera that hides the void by losing the player has failed at the more important half of
-  its job.
+- **The rig is locked to the player.** It looks at where they are and nothing pulls it off
+  them — not a map edge, not a corner. The player therefore sits at the same point on the
+  screen everywhere on the map, which is the whole reason: with mouse aim, the vector from
+  the player to the cursor *is* the vector from the player to their aim, and a camera that
+  slides off-centre near a boundary silently changes what a given cursor position means, in
+  exactly the places a player is most likely to be cornered.
+- **Nothing frames off-map void, because there is none to frame.** The map is surrounded
+  beyond its boundary by scenery the player cannot reach (§2), sized against the frustum's
+  ground footprint — which under a pitched camera is a trapezoid, wider at its far edge than
+  it is where the player stands. Answering the void outside the map rather than by moving
+  the camera is what lets the camera do only the half of the job it was ever good at.
 - Static geometry between the camera and the player must not hide the player. At a 70°–75°
   pitch a full-height wall on the camera side of the player does exactly that, and once the
   map is dark (§4) the occluder does not even read as a wall — it is a black rectangle
@@ -748,8 +796,8 @@ routes the player cannot, and by the corners and dead ends they force — and by
 costs. A sprinting player has their light pointed the way they are going (§3.1), which means
 whatever they are running from is unlit, unfrozen and undeterred behind them.
 
-**Bodies.** The spider is a 0.5 m radius circle on the X/Z plane, the Shadow Monster 0.55 m,
-resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
+**Bodies.** The spider is a 0.25 m radius circle on the X/Z plane, the Shadow Monster
+0.55 m, resolved against the same obstacles as the player (§3.1). Neither is stopped by the other:
 spiders steer around each other with the local avoidance above, and the Shadow Monster
 ignores other entity colliders entirely — it walks through its own kind and through the
 spiders, which is part of taking routes the player cannot.
@@ -774,13 +822,47 @@ walks to it, and pauses 0.6–2.4 s before choosing another. An enemy that canno
 route — to a wander target or to the player — wanders rather than standing still or
 pressing into the wall between them.
 
+**Light is terrain.** Both enemies route around lit ground, not merely react to it once
+they are standing in it. Lit is lit by §4.1's query — the flashlight's cone and any powered
+environmental lamp, and *only* while they are actually emitting. An unpowered lamp, a lamp
+that has failed (§4.2), a torch switched off or run flat: none of them are terrain, because
+none of them are light.
+
+The two enemies pay for it differently, and the difference is the design rather than an
+inconsistency to tidy up:
+
+- **A spider will not enter light.** Lit ground is not walkable to it: a route that crosses
+  a pool is not a route, and a straight line at the player that crosses one is not a clear
+  line. The rule binds a spider that is *not currently lit*. One standing in light is
+  stunned or fleeing, and §5.1 owns it completely — the block would otherwise trap a spider
+  that a lamp came on over, since it could not cross its own pool to leave.
+- **The Shadow Monster only finds it expensive.** A lit tile costs it several times what a
+  dark one does, so it takes the dark way round when there is one and walks straight
+  through when the detour is long or there is no detour at all. It is never stopped by
+  light; §5.2's threat is that it never stops.
+
+**What the asymmetry buys, and why it must not be flattened.** A player standing under a
+working lamp cannot be reached by spiders at all. That is intended, and it is not safety:
+it is an invitation to the one thing that does not care. The monster walks into the pool,
+which freezes it (§5.2 step 1) and starts it degrading the lamp by standing there (§5.2
+step 3, §4.2) — so the lamp's flicker becomes the tell that the trade is being collected.
+When the lamp fails the spiders come back and the monster is standing next to the player,
+unfrozen. Giving both enemies the same rule removes the counter and makes a powered lamp a
+place to wait out the game.
+
+**A spider that cannot reach the player flees.** If the player is inside a light, they are
+not merely far away, they are unreachable — and a spider circling the edge of a pool it
+will not enter reads as a broken pathfinder. So an unlit spider whose target is lit
+abandons the hunt on §5.1's terms, taking a flee leg like any other.
+
 The radii and the wander numbers are first values, not tuned ones: they are exactly the
 kind of thing the tuning pass (§1, content) is expected to move once the game is playable.
 
-### 5.1 Enemy 1: Giant Spider (Dog-Sized)
+### 5.1 Enemy 1: Giant Spider (Cat-Sized)
 
-- **Visual Representation:** dog-sized arachnid mesh + cast shadow. Fully visible in dark
-  and light. Emits chittering/scuttling spatial audio, and stops while it is held still —
+- **Visual Representation:** cat-sized arachnid mesh + cast shadow — half a metre across and
+  a third of a metre tall, low enough to the ground that it reads as scuttling rather than
+  striding. Fully visible in dark and light. Emits chittering/scuttling spatial audio, and stops while it is held still —
   the sound says where a spider is *moving*, so a stunned or recoiling one gives nothing
   away, and a deterred one going quiet in the dark is not the same as a gone one.
 - **Animation:** a locomotion cycle and an attack. The locomotion cycle's playback rate is
@@ -790,12 +872,16 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
 - **Base Behavior:** wanders, or uses A\* pathfinding to approach the player.
 - **Light Reaction Lifecycle:**
   1. **Instant Stun:** the instant the flashlight beam hits the spider's bounding box, its
-     velocity drops to `0`.
+     velocity drops to `0`. It stops the spider *moving* and nothing else: one already
+     within §5.3's contact range still attacks, lit or not.
   2. **Deterrence Timer:** a timer `T_flee` randomized between 1.0 s and 4.0 s begins.
   3. **Flee Mode:** if illuminated for `T_flee`, the spider enters `Flee` state. It
      calculates a vector directly away from the player, raycasts along that vector for the
      furthest walkable point within 18 m, and sets that as its new target for 3 s, moving
-     at 1.5× speed. A spider with nowhere to run — the away vector blocked before the
+     at 1.5× speed. The furthest *dark* point, where the vector offers one: fleeing is what
+     ends the illumination, and a leg that stops inside the same pool has not deterred
+     anything. It may cross lit ground to get there — a spider already in light is exempt
+     from §5's rule against entering it, which is what lets it out of a pool at all. A spider with nowhere to run — the away vector blocked before the
      first step — cowers where it is for the 3 s instead. Light does not re-stun a fleeing
      spider: freezing it again would let a held beam pin it where it started, and the flee
      it just earned would never happen.
@@ -849,6 +935,17 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     pixel of it the player will ever see is a silhouette on the floor, and the silhouette is
     the entire visual design. The mesh is loaded with colour and depth writes off and shadow
     casting on, exactly as the placeholder was.
+
+    **The model is §5.1's spider, at twice the size the spiders are.** The silhouette a
+    player can read fastest is one they have already been taught, and this run teaches it:
+    they have spent it learning what a spider's shadow looks like on the floor. What the
+    beam finds is that shape, too large, and — unlike every other spider they have met —
+    perfectly still. A shape they half-recognise is worse than an unfamiliar one, because
+    they know what it would be doing if it were the other thing.
+
+    It follows that the two sizes are load-bearing rather than incidental. If the spiders
+    were this size the shadow would be ambiguous, and the run's one hard way of seeing this
+    creature would resolve to "probably a spider".
   - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
     at its pursuit speed is a step a little under every second. Slower than the player's
     own stride and carrying much further (§4.3), so the two are never confusable and a
@@ -856,7 +953,9 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     player just was.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
-     Monster cannot move.
+     Monster cannot move. It can still kill: contact is fatal at any health (§5.3) and a
+     frozen monster is no safer to touch than a walking one. The freeze buys the player
+     ground, never immunity.
   2. **Light Interference / Flickering:**
      - Sustained flashlight focus causes the beam intensity `I` to fluctuate:
 
@@ -940,10 +1039,21 @@ starts an attack, and the damage lands partway through it:
    not on the player, so other spiders are unaffected and can land their own hits in the
    same second.
 
-**Light cancels an attack outright.** A spider lit during its wind-up stops where it is
-(§5.1's stun is immediate and literal); the strike never happens and no cooldown starts.
-Cancelling a lunge with the beam is one of the few things the flashlight does *directly* to
-a spider rather than through the deterrence timer, and the battery is what it costs.
+**Light does not save a player who is already within reach.** §5.1's stun is immediate and
+literal and it stays that way — a lit spider does not *advance* — but at contact range it
+has nowhere left to advance to, and the beam no longer stops it striking. A lunge already
+committed lands whether or not the spider is lit, and a stunned spider standing inside 1.0 m
+still starts one.
+
+The same is true of the Shadow Monster, whose freeze is otherwise absolute (§5.2): a player
+who walks into a frozen one dies. Light stops it moving; it was never armour.
+
+So the beam is a tool for controlling ground, not a shield. What answers a lunge is
+distance: the wind-up is 0.35 s and §3.1 walks a metre in it, which is the whole of the
+telegraph's purpose. A player who backs off survives; a player who stands still with the
+torch on does not, however bright it is. The deterrence timer (§5.1) is unaffected and runs
+as it always did — the light still turns spiders around, it just does not do it fast enough
+to matter at arm's length.
 
 **The strike time belongs to the simulation, not to the animation.** Damage resolves at
 0.35 s into the attack whatever the art does; an attack animation whose contact frame lands
@@ -1033,6 +1143,15 @@ lands slightly before the meshes visibly touch, which reads as being grabbed.
    power, and the gate opens where it stands, wherever the player is. Distinct is by
    switch, not by press — a `latch` that has already fired contributes nothing further,
    which is what `latch` being one-way is for.
+
+   **The exit is a gate, and stands on a gate tile.** Like any other gate it is solid until
+   it swings (item 4), so the ground it occupies cannot be walked on before the power
+   routes — which is also what makes "standing where it stood" a sound way to end the run.
+   A map that places the entity on open floor has authored an exit that is not a gate at
+   all: it is walkable from the first second, and the run is won by walking onto it. The
+   escape therefore checks that the exit is *unlocked* as well as that the player is on it.
+   Both, deliberately: the tile is the design and the check is what stops a level's
+   authoring mistake being handed to the player as a victory.
 ### Run Structure
 
 A run is a single life over the whole map (§2), with no checkpoints, no saves, and no

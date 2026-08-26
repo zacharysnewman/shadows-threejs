@@ -1,8 +1,16 @@
-/** The camera rig's footprint, bounds clamp and damping (§3.2). */
+/**
+ * The camera rig's footprint, its lock to the player, and its damping (§3.2).
+ *
+ * The clamp these used to cover is gone: §3.2 no longer pulls the camera off the player to
+ * hide off-map void, because §2's surround means there is none to hide. What replaced those
+ * tests is the property the change was made for — the player is at the same point on screen
+ * wherever they stand, which is what makes the cursor's offset from them mean one thing.
+ */
 
 import { describe, expect, it } from 'vitest';
 import { CAMERA } from '../src/config';
-import { clampCameraTarget, Damped, groundFootprint } from '../src/player/CameraRig';
+import { CameraRig, Damped, groundFootprint } from '../src/player/CameraRig';
+import type { Viewport } from '../src/core/Viewport';
 
 const WIDE = 16 / 9;
 
@@ -39,68 +47,47 @@ describe('groundFootprint', () => {
   });
 });
 
-describe('clampCameraTarget', () => {
-  const footprint = groundFootprint(WIDE);
-  const bounds = { minX: 0, minZ: 0, maxX: 100, maxZ: 100 };
+/** Enough of a `Viewport` for the rig: an aspect to read and somewhere to report to. */
+function fakeViewport(aspect = WIDE) {
+  const framed = { x: Number.NaN, z: Number.NaN };
+  const viewport = {
+    camera: { aspect },
+    frame(x: number, z: number) {
+      framed.x = x;
+      framed.z = z;
+    },
+  } as unknown as Viewport;
+  return { viewport, framed };
+}
 
-  it('leaves a target in the middle of a large map alone', () => {
-    const clamped = clampCameraTarget(50, 50, footprint, bounds);
-    expect(clamped.x).toBeCloseTo(50);
-    expect(clamped.z).toBeCloseTo(50);
-  });
-
-  it('pulls the target away from an edge the player is walking towards', () => {
-    const clamped = clampCameraTarget(2, 50, footprint, bounds);
-    expect(clamped.x).toBeGreaterThan(2);
-  });
-
-  it('pulls back from the far edges too', () => {
-    const clamped = clampCameraTarget(98, 98, footprint, bounds);
-    expect(clamped.x).toBeLessThan(98);
-    expect(clamped.z).toBeLessThan(98);
-  });
-
-  it('hides the void completely when the map is big enough to allow it', () => {
-    // Far enough in that the bounds clamp and the visibility clamp do not disagree.
-    const clamped = clampCameraTarget(footprint.halfWidth + 1, 50, footprint, bounds);
-    expect(clamped.x - footprint.halfWidth).toBeGreaterThanOrEqual(bounds.minX - 1e-9);
-  });
-
-  it('never pushes the player out of frame to hide void (§3.2)', () => {
-    // Hard into the north-west corner: the corner the two rules disagree most about.
-    const clamped = clampCameraTarget(1, 1, footprint, bounds);
-    expect(Math.abs(clamped.x - 1)).toBeLessThanOrEqual(footprint.halfWidthAtTarget - 2 + 1e-9);
-    expect(1 - clamped.z).toBeGreaterThanOrEqual(footprint.minZ + 2 - 1e-9);
-    expect(1 - clamped.z).toBeLessThanOrEqual(footprint.maxZ - 2 + 1e-9);
-  });
-
-  it('keeps the player in frame on a map smaller than the footprint', () => {
-    const tiny = { minX: 0, minZ: 0, maxX: 24, maxZ: 18 };
-    for (const [x, z] of [
-      [1, 1],
-      [23, 1],
-      [1, 17],
-      [23, 17],
-      [12, 9],
-    ]) {
-      const clamped = clampCameraTarget(x!, z!, footprint, tiny);
-      expect(Math.abs(clamped.x - x!)).toBeLessThanOrEqual(footprint.halfWidthAtTarget - 2 + 1e-9);
-      expect(z! - clamped.z).toBeGreaterThanOrEqual(footprint.minZ + 2 - 1e-9);
-      expect(z! - clamped.z).toBeLessThanOrEqual(footprint.maxZ - 2 + 1e-9);
+describe('the rig is locked to the player (§3.2)', () => {
+  it('frames exactly where the player is, including hard into a corner', () => {
+    // The old clamp slid the camera off the player here, to keep the map's edge out of
+    // frame. Nothing does that now: the offset from the player to the edge of the screen is
+    // the same at (0, 0) as it is in the middle of the map, so the cursor means one thing.
+    for (const [x, z] of [[0, 0], [50, 50], [-30, 120]]) {
+      const { viewport, framed } = fakeViewport();
+      new CameraRig(viewport).snapTo(x!, z!);
+      expect(framed.x).toBeCloseTo(x!);
+      expect(framed.z).toBeCloseTo(z!);
     }
   });
 
-  it('centres on an axis the map is too small to satisfy', () => {
-    // A map narrower than the footprint shows void whatever the camera does; centring at
-    // least keeps it symmetrical rather than pinning the player to one edge.
-    const narrow = { minX: 0, minZ: 0, maxX: 10, maxZ: 100 };
-    const left = clampCameraTarget(0, 50, footprint, narrow);
-    const right = clampCameraTarget(10, 50, footprint, narrow);
-    expect(left.x).toBeCloseTo(5);
-    expect(right.x).toBeCloseTo(5);
+  it('settles on the player after smoothing, rather than near them', () => {
+    const { viewport, framed } = fakeViewport();
+    const rig = new CameraRig(viewport);
+    rig.snapTo(0, 0);
+    // Well past the smoothing time constant, so the spring has arrived (§3.2).
+    for (let t = 0; t < CAMERA.smoothingTime * 20; t += 1 / 60) rig.update(1 / 60, 3, 4);
+    expect(framed.x).toBeCloseTo(3, 3);
+    expect(framed.z).toBeCloseTo(4, 3);
+  });
+
+  it('does not care how big the map is, because it no longer knows', () => {
+    // The rig takes no bounds at all — the property is structural, not a tuning choice.
+    expect(CameraRig.length).toBe(1);
   });
 });
-
 describe('Damped', () => {
   it('converges on the target without overshooting it', () => {
     const damped = new Damped(0);

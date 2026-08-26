@@ -48,29 +48,73 @@ const outline = (layer, x0, y0, x1, y1, id) => {
   }
 };
 
-// Outer boundary.
-outline(walls, 0, 0, WIDTH - 1, HEIGHT - 1, WALL_BRICK);
+/**
+ * A deterministic PRNG, so the checked-in map is reproducible.
+ *
+ * The game's own `Rng` is seeded per run and lives in `src/`; a build script that imported
+ * it would be importing TypeScript into plain node. This is a mulberry32, which is enough
+ * for scattering trees and is not used for anything a player experiences.
+ */
+function prng(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const random = prng(20260826);
+
+// The fence is the level's edge, and the only fence there is (§2). It stands three tiles
+// inside the map so there is ground on the far side of it: the exit is out there, and the
+// gate below is the only way onto it.
+const MARGIN = 3;
+const FENCE_MIN = MARGIN;
+const FENCE_MAX = WIDTH - 1 - MARGIN;
+outline(walls, FENCE_MIN, FENCE_MIN, FENCE_MAX, FENCE_MAX, FENCE_CHAINLINK);
+
+// The way out, set into the south run. Solid until its switch is thrown (§6).
+const GATE_X = 25;
+set(walls, GATE_X, FENCE_MAX, GATE_WOOD);
+
+// The exit itself, out on the far side of the fence: a gate tile in a short stub of fence.
+//
+// The tile matters as much as the entity. An `ExitGate` is a *gate* — solid until the
+// power routes and it swings (§6.4, §6.5) — and standing where it stood is what wins the
+// run. On plain ground it would be an entity marking walkable floor, and the run would be
+// won by strolling onto it with nothing routed at all. The stub either side gives it a
+// hinge to turn about, and gives the player something to recognise from a distance.
+const EXIT_Y = HEIGHT - 2;
+set(walls, GATE_X, EXIT_Y, GATE_WOOD);
+set(walls, GATE_X - 1, EXIT_Y, FENCE_CHAINLINK);
+set(walls, GATE_X + 1, EXIT_Y, FENCE_CHAINLINK);
+
+// Ground beyond the fence reads as outside: dirt rather than the yard's concrete.
+for (let y = 0; y < HEIGHT; y += 1) {
+  for (let x = 0; x < WIDTH; x += 1) {
+    if (x < FENCE_MIN || x > FENCE_MAX || y < FENCE_MIN || y > FENCE_MAX) {
+      set(floor, x, y, FLOOR_DIRT);
+    }
+  }
+}
 
 // A dirt yard through the middle of the map, and a sunken void the player cannot cross —
 // unwalkable through Layer 0 rather than through a collider, which exercises both halves
 // of the walkability rule in §2.
-fill(floor, 18, 4, 32, 20, FLOOR_DIRT);
+fill(floor, 18, 6, 32, 20, FLOOR_DIRT);
 fill(floor, 24, 30, 27, 34, EMPTY);
 
-// Interior structures: three buildings with doorways, plus a fenced compound.
-outline(walls, 4, 4, 14, 14, WALL_BRICK);
-fill(walls, 9, 14, 9, 14, EMPTY); // doorway, south wall
+// Interior structures: three buildings with doorways.
+outline(walls, 6, 6, 15, 15, WALL_BRICK);
+fill(walls, 10, 15, 10, 15, EMPTY); // doorway, south wall
 
-outline(walls, 34, 6, 45, 18, WALL_BRICK);
-fill(walls, 34, 12, 34, 12, EMPTY); // doorway, west wall
+outline(walls, 34, 8, 44, 18, WALL_BRICK);
+fill(walls, 34, 13, 34, 13, EMPTY); // doorway, west wall
 
-outline(walls, 6, 28, 20, 42, WALL_BRICK);
-fill(walls, 13, 28, 13, 28, EMPTY); // doorway, north wall
-fill(walls, 20, 36, 20, 36, EMPTY); // doorway, east wall
-
-outline(walls, 30, 26, 46, 44, FENCE_CHAINLINK);
-// The compound's only way in is a gate; it starts solid and flips walkability when opened.
-set(walls, 30, 35, GATE_WOOD);
+outline(walls, 8, 28, 20, 41, WALL_BRICK);
+fill(walls, 14, 28, 14, 28, EMPTY); // doorway, north wall
+fill(walls, 20, 35, 20, 35, EMPTY); // doorway, east wall
 
 // Freestanding cover so the flashlight has something to throw shadows from (§7).
 fill(walls, 22, 22, 23, 23, WALL_BRICK);
@@ -78,36 +122,90 @@ fill(walls, 40, 22, 41, 22, WALL_BRICK);
 fill(walls, 16, 20, 16, 24, WALL_BRICK);
 
 const entities = [
-  { type: 'PlayerSpawn', x: 2, y: 2, properties: { rotation: 90 } },
-  { type: 'Flashlight', x: 3, y: 2, properties: {} },
-  { type: 'Note', x: 8, y: 9, properties: { noteId: 'intro_yard' } },
-  { type: 'Note', x: 40, y: 12, properties: { noteId: 'substation' } },
+  { type: 'PlayerSpawn', x: 5, y: 5, properties: { rotation: 90 } },
+  { type: 'Flashlight', x: 6, y: 5, properties: {} },
+  { type: 'Note', x: 9, y: 10, properties: { noteId: 'intro_yard' } },
+  { type: 'Note', x: 40, y: 13, properties: { noteId: 'substation' } },
 
   // Three latch switches route power to the exit (§6).
-  { type: 'PowerSwitch', x: 8, y: 12, properties: { targetId: 'MainExit', mode: 'latch' } },
+  { type: 'PowerSwitch', x: 9, y: 13, properties: { targetId: 'MainExit', mode: 'latch' } },
   { type: 'PowerSwitch', x: 40, y: 16, properties: { targetId: 'MainExit', mode: 'latch' } },
-  { type: 'PowerSwitch', x: 12, y: 38, properties: { targetId: 'MainExit', mode: 'latch' } },
-  // A latch switch opens the compound gate.
-  { type: 'PowerSwitch', x: 26, y: 24, properties: { targetId: 'CompoundGate', mode: 'latch' } },
+  { type: 'PowerSwitch', x: 13, y: 38, properties: { targetId: 'MainExit', mode: 'latch' } },
+  // A latch switch opens the way out through the perimeter.
+  { type: 'PowerSwitch', x: 26, y: 24, properties: { targetId: 'PerimeterGate', mode: 'latch' } },
   // Toggle switches address light groups, so a lit area can be deliberately killed (§6).
-  { type: 'PowerSwitch', x: 20, y: 8, properties: { targetId: 'YardLights', mode: 'toggle' } },
-  { type: 'PowerSwitch', x: 36, y: 30, properties: { targetId: 'CompoundLights', mode: 'toggle' } },
+  { type: 'PowerSwitch', x: 20, y: 9, properties: { targetId: 'YardLights', mode: 'toggle' } },
+  { type: 'PowerSwitch', x: 33, y: 30, properties: { targetId: 'GateLights', mode: 'toggle' } },
 
   // Several lights share a groupId; a switch acts on the whole group at once (§2).
-  { type: 'EnvironmentLight', x: 21, y: 7, properties: { groupId: 'YardLights', radius: 6, intensity: 1.0 } },
-  { type: 'EnvironmentLight', x: 29, y: 7, properties: { groupId: 'YardLights', radius: 6, intensity: 1.0 } },
+  { type: 'EnvironmentLight', x: 21, y: 8, properties: { groupId: 'YardLights', radius: 6, intensity: 1.0 } },
+  { type: 'EnvironmentLight', x: 29, y: 8, properties: { groupId: 'YardLights', radius: 6, intensity: 1.0 } },
   { type: 'EnvironmentLight', x: 25, y: 17, properties: { groupId: 'YardLights', radius: 7, intensity: 0.8 } },
-  { type: 'EnvironmentLight', x: 36, y: 32, properties: { groupId: 'CompoundLights', radius: 6, intensity: 1.0 } },
-  { type: 'EnvironmentLight', x: 43, y: 40, properties: { groupId: 'CompoundLights', radius: 6, intensity: 1.0 } },
+  { type: 'EnvironmentLight', x: 30, y: 32, properties: { groupId: 'GateLights', radius: 6, intensity: 1.0 } },
+  // Over the gate itself: the last stretch of the escape is lit unless the player kills it.
+  { type: 'EnvironmentLight', x: GATE_X, y: FENCE_MAX - 3, properties: { groupId: 'GateLights', radius: 6, intensity: 1.0 } },
 
-  { type: 'Gate', x: 30, y: 35, properties: { id: 'CompoundGate', targetId: 'CompoundGate', locked: true } },
-  { type: 'ExitGate', x: 44, y: 42, properties: { id: 'MainExit', locked: true, requiredSwitches: 3 } },
+  { type: 'Gate', x: GATE_X, y: FENCE_MAX, properties: { id: 'PerimeterGate', targetId: 'PerimeterGate', locked: true } },
+  // Beyond the fence: the run ends out here, on the ground the gate opens onto.
+  { type: 'ExitGate', x: GATE_X, y: EXIT_Y, properties: { id: 'MainExit', locked: true, requiredSwitches: 3 } },
 
-  { type: 'SpiderEnemy', x: 12, y: 10, properties: {} },
-  { type: 'SpiderEnemy', x: 38, y: 14, properties: {} },
-  { type: 'SpiderEnemy', x: 10, y: 36, properties: {} },
+  { type: 'SpiderEnemy', x: 13, y: 11, properties: {} },
+  { type: 'SpiderEnemy', x: 38, y: 15, properties: {} },
+  { type: 'SpiderEnemy', x: 11, y: 36, properties: {} },
   { type: 'ShadowMonster', x: 25, y: 25, properties: {} },
 ];
+
+/**
+ * Trees, scattered like a forest (§2).
+ *
+ * These are `Landmark` entities because that is how a map says "a model here"; they are
+ * scenery rather than landmarks in §2's navigational sense, and the section says so.
+ *
+ * Placement is by rejection: walk a jittered grid and drop anything that would stand on
+ * something. A tree blocks its own footprint like any solid geometry, so one in a doorway
+ * or on a switch is a soft-locked level — which is why the clearances below are generous
+ * and why `npm test` runs the audit over this file.
+ */
+const occupied = new Set(entities.map((e) => `${e.x},${e.y}`));
+const solidAt = (x, y) =>
+  x < 0 || y < 0 || x >= WIDTH || y >= HEIGHT ||
+  walls[idx(x, y)] !== EMPTY ||
+  floor[idx(x, y)] === EMPTY;
+
+/** Nothing solid, no entity, and nothing solid next door either — trees keep off routes. */
+function plantable(x, y) {
+  for (let dy = -1; dy <= 1; dy += 1) {
+    for (let dx = -1; dx <= 1; dx += 1) {
+      if (solidAt(x + dx, y + dy)) return false;
+    }
+  }
+  for (let dy = -2; dy <= 2; dy += 1) {
+    for (let dx = -2; dx <= 2; dx += 1) {
+      if (occupied.has(`${x + dx},${y + dy}`)) return false;
+    }
+  }
+  // The lane from the gate to the exit stays clear, in both directions through the fence.
+  if (Math.abs(x - GATE_X) <= 2 && y >= FENCE_MAX - 3) return false;
+  return true;
+}
+
+const TREE_SPACING = 4;
+for (let y = 1; y < HEIGHT - 1; y += TREE_SPACING) {
+  for (let x = 1; x < WIDTH - 1; x += TREE_SPACING) {
+    // Two in three, jittered off the lattice: a forest, not an orchard.
+    if (random() > 0.66) continue;
+    const tx = x + Math.floor(random() * TREE_SPACING) - 1;
+    const ty = y + Math.floor(random() * TREE_SPACING) - 1;
+    if (!plantable(tx, ty)) continue;
+    occupied.add(`${tx},${ty}`);
+    entities.push({
+      type: 'Landmark',
+      x: tx,
+      y: ty,
+      properties: { prefab: 'prop_tree', rotation: Math.floor(random() * 360) },
+    });
+  }
+}
 
 const map = {
   width: WIDTH,

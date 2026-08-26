@@ -19,6 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { glbFacts } from './glb-facts.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/project-map.jsonl');
@@ -35,13 +36,14 @@ const SKIP = new Set(['package-lock.json', 'docs/project-map.jsonl']);
 
 /** What a file is, decided by where it lives. Order matters: the first match wins. */
 const KINDS = [
-  [/^src\/.*\.d\.ts$/, 'types'],
+  [/\.d\.m?ts$/, 'types'],
   [/^src\/.*\.ts$/, 'source'],
   [/^tests\/.*\.ts$/, 'test'],
   [/^scripts\/.*\.mjs$/, 'script'],
   [/^public\/maps\/[^/]+\/map\.json$/, 'map'],
   [/^public\/maps\/[^/]+\/tileset\.json$/, 'tileset'],
   [/^public\/.*\.json$/, 'data'],
+  [/\.glb$/, 'model'],
   [/\.md$/, 'doc'],
   [/^\.github\//, 'ci'],
 ];
@@ -144,8 +146,17 @@ const files = [
 ].sort();
 
 const records = files.map((path) => {
-  const text = readFileSync(resolve(ROOT, path), 'utf8');
   const kind = kindOf(path);
+
+  // Art is measured, not read. Every other record's `lines` is a fact about a file somebody
+  // wrote; a binary's would be a count of the `\n` bytes that happen to fall inside it,
+  // which is why the models carry their size, their triangles and their clips instead.
+  if (kind === 'model') {
+    const facts = glbFacts(readFileSync(resolve(ROOT, path)));
+    return facts ? { path, kind, ...facts } : { path, kind };
+  }
+
+  const text = readFileSync(resolve(ROOT, path), 'utf8');
   const record = { path, kind, lines: text.split('\n').length };
 
   const summary = summaryOf(text);

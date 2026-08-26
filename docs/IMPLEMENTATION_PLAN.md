@@ -932,6 +932,136 @@ were already centred and did not move.
 | A lamp with no switch | visibly a lamppost, visibly unlit, screenshot `lamp-off.png`; nothing at all before it |
 | The same lamp powered | head lit, pool thrown, the player's shadow across it, screenshot `lamp-lit.png` |
 
+*One mesh, two sizes.* The Shade wore a Ghoul from a different kit; it wears §5.1's spider
+now, scaled to the size the spiders were before they halved. §5.2 has always said the
+silhouette *is* the creature, and the strongest silhouette available is one the run has
+already taught the player to read: they know what a spider's shadow looks like on the floor,
+so what the beam finds is that shape, too big, and — alone among the spiders they have met —
+not moving. The two sizes are load-bearing rather than decorative, and §5.2 now says so: if
+the spiders were this size the shadow would resolve to "probably a spider", and the one hard
+way of seeing this creature would stop being hard.
+
+That put a rule in code that the art used to enforce by accident. The Ghoul had no clips, so
+"the monster is never animated" cost nothing; the spider mesh has five, and an idle breath
+under a held beam is a *moving shadow of a frozen monster* — §5.2's hard rule broken in the
+one moment the player is looking straight at it. `EnemyManager` hands the monster's rig an
+empty clip map, so the pose it holds is a property of the object rather than a discipline
+about how it is driven, and `tests/monster.test.ts` fails if that is undone.
+
+The Ghoul kit left `PREFAB_KITS` with the file, so the credits screen (§8.2) stopped naming
+an author whose work is no longer shipped — it is generated from that list, so nothing else
+had to change. `tests/prefabs.test.ts` already required claimed art and shipped art to match
+exactly, which is what made deleting the `.glb` and forgetting the credit impossible.
+
+*Verified in a browser*, since none of it is assertable from a test runner:
+
+| Case | Measured |
+| --- | --- |
+| Spider, in scene | collider radius 0.25 m, configured height 0.35 m, rendered span 1.27 × 0.35 × 1.15 m |
+| Shade, in scene | collider radius 0.55 m, configured height 0.70 m, rendered span 2.48 × 0.70 × 2.67 m — 1.96× the spider, and close to the 2.34 m the Ghoul spanned |
+| Shade in the beam | an unmistakable spider silhouette on the floor with nothing visible casting it, screenshot `shade-in-beam.png` |
+| The body behind it (`I`) | the mesh grounded and centred on its collider at its authored rest pose, screenshot `shade-body.png` |
+| Both, one beam | the Shade reads as twice the live spider at a glance, screenshot `two-sizes-bodies.png` |
+| Shade's rig | 0 clips, nothing playing, after a rendered frame |
+| Spider's rig, same mesh | 5 clips, `walk` playing |
+
+*The camera stopped letting go of the player, and the world grew an outside.* §3.2 clamped
+the rig to the map's bounds so the view never framed off-map void, and the spec was candid
+that the two rules fought: near an edge a pitched frustum's far corners overhang the
+boundary long before the player does, so the clamp slid the player off-centre exactly where
+aiming matters most. With mouse aim that is not a cosmetic problem — the vector from the
+player to the cursor *is* their aim, and a camera that drifts changes what a cursor position
+means in the corners a player is most likely to be cornered in.
+
+The clamp is gone and the rig is locked to the player. What answers the void is §2's
+surround: ground and a scatter of small trees outside every map, in every direction, deep
+enough to cover what a player standing on the edge tile can see — derived from
+`groundFootprint` rather than typed out, so it cannot drift out of step with §3.2's pitch
+and distance. It is scenery only: outside walkability, outside the colliders, outside the
+audit, casting nothing, because nothing out there is ever lit.
+
+Two things about it were wrong first and are worth keeping written down. The trees alone
+left gaps, and the obvious fix — more trees — is 3,104 triangles each for ground nobody can
+walk on; a ground plane covers it in two, and the band went from 250 instances to 156 with a
+better result. And that plane, painted `FOG.color` on the reasoning that the fog is what
+everything fades into, was *invisible*: §7 draws the background in the same colour, so
+fog-coloured ground is the exact colour of the void. It is a lit material now, taking §4's
+ambient like the map's own floor.
+
+*The example map is a level again rather than a test rig.* The fence is the level's edge
+instead of an interior compound, the gate is set into that perimeter, and the exit is on the
+ground the gate opens onto. Trees are scattered through the interior. The old brick wall
+around the whole map is gone — the map's own edge holds the player now (`clampInside`), and
+what is past it is forest.
+
+*A win the player never earned.* Standing on the exit's tile ends the run, and what stops
+that happening early is the exit being a *gate*: solid until the power routes and it swings
+(§6.4). The entity had been sitting on a plain floor tile since the map was written, so the
+exit was walkable from the first second and the run could be won by strolling onto it with
+`0/3` routed. Found by teleporting a test player near the exit and watching the victory
+screen appear. The tile is authored correctly now, and `Objectives.escapedAt` checks the
+exit is unlocked as well — the tile is the design, the check is what stops the next
+authoring slip being handed to a player as a victory. §6.5 says both.
+
+*Verified in a browser* (`?debug&map=example&seed=7`):
+
+| Case | Measured |
+| --- | --- |
+| Player hard into the map's corner | camera target `(1.50, 1.50)` against a player at `(1.50, 1.50)` — dead centre, where the clamp used to pull it away |
+| The ground beyond the boundary | covered: forest floor and canopy, no void, from the corner and from all four edges |
+| Surround cost | 156 instances in one draw; **688k triangles** total for the scene, down from 980k before the ground plane let the band thin out |
+| Audit of the reworked map | **0 findings** |
+| The objective chain | `0/3` routed → exit locked and standing on it does nothing; three latches → `3/3`, unlocked, and the exit ends the run |
+| Gate and exit | gate at tile `(25, 46)` in the fence, exit at `(25, 48)` beyond it, on a gate tile flanked by fence stubs |
+
+*Light became terrain.* §5 had both enemies react to light standing in it and ignore it
+completely when choosing where to walk, so a spider would path through a lamp's pool to
+reach the player and be stunned by the light it had just chosen to enter. They route around
+it now, and the two do it differently on purpose: lit tiles leave a spider's grid entirely,
+while the Shade merely pays `ENEMY.lightAvoidance.monsterLitCost` to enter one. §5.2's
+threat is that it never stops, and a monster a lamp could wall off is a monster the player
+can hide from.
+
+The asymmetry is the design and §5 now says so, because it would otherwise read as an
+inconsistency to tidy up. A player standing under a working lamp cannot be reached by
+spiders at all — and that is an invitation rather than safety, because the one thing that
+does not care walks into the pool, freezes there (§5.2 step 1) and starts degrading the
+lamp by standing in it (§5.2 step 3). The lamp's flicker is the tell that the trade is being
+collected; when it fails the spiders come back and the monster is standing next to the
+player. Give both enemies the same rule and that counter disappears.
+
+Three things had to be true for any of it to work, and each was silently false at first:
+
+- **A line that crosses light is not a clear line.** `updatePursuitPath` skips pathing
+  entirely when the player is visible, so in open ground the route was a straight line that
+  answered to nothing and the whole feature did nothing.
+- **The string-pulling has to be judged against the dark.** Smoothing drops every waypoint
+  the previous one can see, so a route the monster took the long way round a pool was
+  straightened back through it — `PathOptions.smoothGrid` is what refuses that shortcut.
+- **`null` from a search is not an empty path.** Empty means *already on the player's tile*;
+  conflating the two made an enemy that had caught the player give up on it.
+
+*And light stopped being armour.* §5.3 said light cancelled a lunge outright — a spider lit
+during its wind-up never struck. It does now: §5.1's stun stops a spider *advancing*, and
+one already inside 1.0 m has nowhere left to advance to. A stunned spider at contact range
+starts attacks too, and §5.2's freeze never protected anyone who touched the monster. What
+answers a lunge is the 0.35 s telegraph and a metre of walking (§3.1); the torch is a tool
+for controlling ground. Two tests that asserted the old rule were rewritten rather than
+deleted, because the new rule has something to say about each case they covered.
+
+*Verified in a browser* (`?debug&map=example&seed=99`), since none of it is assertable from
+a test runner:
+
+| Case | Measured |
+| --- | --- |
+| Player standing in a 6 m lamp pool, spider 11 m off | spider lit on **0 of 900** ticks, closest approach 11.02 m, state `flee` throughout, no damage taken |
+| The same, with the Shade left in | lamp on → both frozen in the pool → **lamp fails at t≈4.5 s** → spiders resume and reach the player: §4.2's sabotage is the counter to camping, unscripted |
+| Spider held on the beam's centreline at 0.9 m | lit on **420 of 420** frames, seen both `frozen` and `attack`, **3 hits**, player 1.00 → 0.00 |
+| Player walking into a lamp-frozen Shade | dead on the tick of contact |
+| Cost of ten seconds of simulation | **29.7 ms** for the whole sim including every repath — the per-search memo keeps §5's tile queries off the frame |
+
+*The frame rate is still outstanding*, on a software rasteriser as always (§7).
+
 *The beam you can see, and the hand holding it.* A `SpotLight` lights the surfaces it
 reaches and nothing in between, so a torch in a dark room was a pool on the floor with no
 visible connection to the player. `src/lighting/LightShaft.ts` draws the haze inside the

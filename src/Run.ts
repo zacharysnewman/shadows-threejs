@@ -27,6 +27,7 @@ import {
   PLAYER,
   PREFAB_KITS,
   SIM,
+  SURROUND,
 } from './config';
 import type { AudioCore } from './audio/AudioCore';
 import { FootstepCadence } from './audio/Footsteps';
@@ -54,9 +55,11 @@ import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
 import { Flashlight } from './lighting/Flashlight';
 import { IlluminationService } from './lighting/Illumination';
+import { LitTileQuery } from './lighting/LitTiles';
 import { LampVoices } from './lighting/LampVoices';
 import { auditMap, type AuditResult } from './map/audit';
 import { loadMap, type LoadedMap } from './map/MapLoader';
+import { buildSurround } from './map/Surround';
 import { CameraRig } from './player/CameraRig';
 import { ColliderIndex } from './player/collision';
 import { Player } from './player/Player';
@@ -147,10 +150,28 @@ export async function createRun(
 
   viewport.scene.add(loaded.root);
 
+  // §2 — the forest outside the boundary, which is what lets §3.2 lock the camera to the
+  // player. Built here rather than in the loader because it is seeded from the run: a
+  // replayed seed has to grow the same trees (Cross-Cutting: determinism).
+  const surround = buildSurround(
+    await assets.load(SURROUND.prefab, loaded.data.tileSize),
+    loaded.data.width,
+    loaded.data.height,
+    loaded.data.tileSize,
+    rng.stream('surround'),
+  );
+  viewport.scene.add(surround.object);
+
   // §3.2 — nothing between the camera and the player may hide the player. Attached to the
   // static geometry's shared materials, so it survives the instancing §7 requires.
   const occluders = new OccluderFade();
   occluders.attach(loaded.root);
+  // The surround too, and it is not a special case: §3.2 says geometry between the camera
+  // and the player may not hide the player, and a canopy just outside the south edge sits
+  // exactly there while the player walks the boundary. The fade is a per-fragment test on
+  // world position and knows about instancing, so one band of 250 trees fades the handful
+  // of fragments actually in the way rather than the whole forest.
+  occluders.attach(surround.object);
 
   const walkability = new WalkabilityOverlay(loaded.grid);
   const colliders = new ColliderOverlay(loaded.colliders);
@@ -186,6 +207,8 @@ export async function createRun(
   // §4.1 — built once, consumed by both AIs when they arrive. Given the collider index so
   // that what blocks light is exactly what blocks walking.
   const illumination = new IlluminationService(flashlight, environment, colliderIndex);
+  // §5 — the same light, asked about tiles instead of about entities, for the pathfinder.
+  const lightTiles = new LitTileQuery(loaded.grid, illumination);
 
   // §6 — the run's world state, the props that make it findable, and the swing that opens
   // a gate. Built before the HUD, because the HUD only ever reads them.
@@ -236,7 +259,7 @@ export async function createRun(
   const sabotageRng = rng.stream('sabotage');
   const testEmitter = new AudioTestEmitter(audio);
 
-  const rig = new CameraRig(viewport, loaded.bounds);
+  const rig = new CameraRig(viewport);
   rig.snapTo(player.position.x, player.position.y);
   // The free camera starts where the player is, so toggling to it does not jump the view.
   freeCamera.lookAt(player.position.x, player.position.y, FreeCamera.fitDistance(40));
@@ -266,6 +289,7 @@ export async function createRun(
       playerX: player.position.x,
       playerZ: player.position.y,
       illumination,
+      lightTiles,
       player,
     });
 
@@ -326,12 +350,9 @@ export async function createRun(
       return;
     }
 
-    // §6 — standing on the exit's tile. A locked exit is a solid tile and cannot be stood
-    // on at all, so the gate having swung is the whole of the "is it open" test (§6.4).
-    const exit = loaded.entities.byType('ExitGate')[0];
-    if (!exit) return;
+    // §6 — standing on the exit's tile, once the power has routed and it has swung.
     const here = loaded.grid.worldToGrid(player.position.x, player.position.y);
-    if (here.gx !== exit.gx || here.gy !== exit.gy) return;
+    if (!objectives.escapedAt(here.gx, here.gy)) return;
     if (!outcome.win()) return;
     audio.setPaused(true);
     overlays.showVictory({
@@ -354,6 +375,9 @@ export async function createRun(
   overlay.addRow('cost', () => frameStats.costSummary());
   overlay.addRow('static', () =>
     `${loaded.geometry.instanceCount} tiles in ${loaded.geometry.instancedMeshCount} instanced meshes`,
+  );
+  overlay.addRow('surround', () =>
+    `${surround.count} trees · ${surround.depthMetres.toFixed(1)}m band (§2)`,
   );
   overlay.addRow('grid', () => {
     const walkable = loaded.grid.walkableCount();

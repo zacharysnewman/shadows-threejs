@@ -39,11 +39,11 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 | Directory | Owns |
 | --- | --- |
 | `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
-| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `audit` (is the level finishable) |
-| `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision`, `CameraRig`, `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
-| `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination`, `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
+| `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks`, `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
+| `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision` (the only thing holding the player on the map now), `CameraRig` (locked to the player; `groundFootprint` is what sizes §2's surround), `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
+| `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
 | `src/enemies/` | `Enemy` (shared state machine, speeds, A\*, avoidance), `Spider`, `ShadowMonster`, `EnemyManager` (spawning + the one contact test), `Gait`, `CharacterRig` |
-| `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled), `raycast` (segment vs boxes on X/Z) |
+| `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled; optional per-tile enter cost and a separate grid to straighten against), `raycast` (segment vs boxes on X/Z), `LitGrid` (§5's light-as-terrain views — pure, knows nothing about lights) |
 | `src/world/` | `Objectives` (the run's whole state), `Gates`, `Interaction`, `Notes`, `Props`, `RunOutcome` |
 | `src/audio/` | `AudioCore` (listener on the *player*, pooled sources), `SoundBank` (ZzFX-synthesised placeholders), `profiles`, `Footsteps` |
 | `src/ui/`, `src/editor/`, `src/debug/` | HUD and run overlays; the level editor (§9); the readout, overlays, tuner and frame stats |
@@ -69,6 +69,12 @@ Ownership rules worth knowing before editing:
   right one.
 - **The spec, the config, the tests and `project-map.jsonl` move together.** A behaviour
   change touching only one of them is incomplete; the map has a test that enforces its half.
+- **String-pulling can undo a route's whole reason for existing.** `findPath` straightens
+  its result by dropping every waypoint the previous one can see, so a path that went the
+  long way round something the *cost* disliked — §5's lit ground — is straightened back
+  through it unless the smoothing is judged against a grid where that ground is blocked
+  (`PathOptions.smoothGrid`). The route is correct and the enemy walks through the light
+  anyway, which looks like the cost not working.
 - **`TuningPanel` writes a group heading whenever the group changes as it walks `TUNABLES`,**
   so entries for one group must stay contiguous or the panel prints the heading twice.
 
@@ -76,6 +82,15 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **Ground painted the fog's colour is invisible.** §7 colours the fog to the sky *and* uses
+  it as the scene background, so a surface tinted to `FOG.color` is exactly the colour of the
+  void behind it. §2's surround ground reads as ground because it is a lit material taking
+  §4's ambient like the map's own floor, not because it was given the right hex.
+- **An `ExitGate` on a floor tile is a free win.** The run ends by standing where the exit
+  stood, and what stops that happening early is the tile being *solid* until the power routes
+  (§6.5). This project's own example map had the entity on plain floor for several phases:
+  walking onto it won the run with nothing routed. `Objectives.escapedAt` now checks the
+  state as well, so the next authoring slip costs a locked exit instead.
 - **A `SkinnedMesh`'s bind matrix is its *world* matrix.** Three renders a skinned vertex as
   `boneWorldNow · boneInverseAtBind · bindMatrix · v`, so an identity there renders the model
   in raw authored coordinates — for a Z-up kit, flat on its back, metres away.
@@ -83,6 +98,13 @@ Each of these looked like bad art or bad luck rather than a bug.
   assuming Y-up is right for most kits and silently wrong for one. A loader wraps a model in
   orientation and grounding nodes, so a vertex's coordinates, its mesh's and the character
   root's are three different frames — measure, place and bind in one.
+- **A skinned mesh is not where its vertices say it is.** glTF *ignores* the transform of
+  the node a skinned mesh hangs off; the joints carry it. `jointWorld · inverseBind` is the
+  identity only when the rest pose is the bind pose — on this kit's spider it is the
+  armature's 100× Z-up correction, so skinning a vertex and *then* placing it with the
+  node's matrix applies that correction twice and reports a 594 m spider on its side. Three
+  measures the bind-posed vertices, which is why `scripts/glb-facts.mjs` says 1.931 m where
+  the raw accessors say 1.949 m.
 - **Nothing in a `.glb` says where the feet are.** Characters are grounded *and* centred
   horizontally on load; without it a body stands beside the collider that represents it.
 - **A flat emissive is the same shade wherever it lands.** Applied per material it swamps a
@@ -100,11 +122,25 @@ Each of these looked like bad art or bad luck rather than a bug.
 
 ## Driving the game in a browser
 
-Tests are the floor; anything about how the game *looks* is measured here. Chromium and
-Playwright are installed but the browser Playwright expects may not be — launch with
-`executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'` and
-`args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']`. Do not run
-`playwright install`.
+Tests are the floor; anything about how the game *looks* is measured here.
+
+**Chromium is installed; the `playwright` package is not.** It is deliberately not a
+dependency of this project — nothing the game ships uses it — so install it somewhere
+outside the tree and drive the dev server from there. The browser it would otherwise
+download is already on disk and must not be fetched again:
+
+```bash
+npm install playwright        # in a scratch directory, not this repo
+```
+
+```js
+const browser = await chromium.launch({
+  executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
+  args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'],
+});
+```
+
+Do not run `playwright install`.
 
 The recipe that works:
 
@@ -115,6 +151,22 @@ await page.waitForFunction(() => window.shadows?.player);
 await page.keyboard.press('KeyH');                     // hide the readout, it covers a third
                                                        // of the screen
 ```
+
+**Every in-page path carries the base**, in dev exactly as in production (`vite.config.ts`
+sets it so a base-path mistake surfaces locally). A dynamic `import('/src/…')` or
+`import('/node_modules/…')` from inside `page.evaluate` 404s; `/shadows-threejs/src/…` and
+`/shadows-threejs/node_modules/…` resolve. Vite compiles the TypeScript on the way through,
+so the game's own modules can be imported and driven directly — which is usually better than
+reimplementing what they do:
+
+```js
+const { CharacterLoader } = await import('/shadows-threejs/src/core/CharacterLoader.ts');
+```
+
+Import `three` from `/shadows-threejs/node_modules/three/build/three.module.js` when a
+measurement needs it, and expect a "Multiple instances of Three.js" warning if the page has
+already loaded its own — harmless for measuring, and a reason not to compare object
+identities across the two.
 
 Then, from `window.shadows` (dev builds only, republished on every restart):
 
@@ -134,14 +186,42 @@ The handle carries: `clock, input, loaded, player, rig, flashlight, environment,
 testEmitter, occluders, enemies, objectives, props, gates, hud, notes, voices, monsterSteps,
 lampVoices, rng, illumination, night, audit, frameStats`.
 
-**The rig camera clamps to keep the player framed** (§3.2), so the far end of a 12 m beam is
-usually at or past the edge of the view. If a measurement needs geometry both near and far,
-put it left-to-right across the screen rather than up-screen — the frame is much wider than
-it is deep — or shorten the beam through the tuner.
+**The rig camera is locked to the player** (§3.2) — it centres them everywhere, including
+hard into a corner, so a screen position means the same thing wherever the player is
+standing. It used to clamp to the map's bounds and no longer does; §2's surround covers the
+ground outside instead.
+
+The frame is much wider than it is deep, and the far end of a 12 m beam is usually at or
+past the top of it. If a measurement needs geometry both near and far, put it left-to-right
+across the screen rather than up-screen, or shorten the beam through the tuner.
 
 Driving the tuner's sliders is the shipped path for anything marked `needsPush`: find the
 `input[type=range]` whose **`parentElement`** text contains the label (not `closest('div')` —
 that matches the whole panel), set `value` and dispatch an `input` event.
+
+**Anything about *light* has to be measured on real frames.** The beam is placed on the
+render side (see *A frame, in order*), so driving the simulation with `clock.advance()` in a
+loop advances the AI, the timers and the battery while leaving the torch pointing wherever
+the last rendered frame left it. Every light query then answers about a beam that is not
+where the player is aiming, and the run looks broken in a way that is entirely the harness's
+fault. Step the clock for arithmetic; let `requestAnimationFrame` run for anything lit.
+
+**To put something *in* the beam, move it onto the beam — not the beam onto it.** The aim is
+rebuilt from input every frame, so a value written from a `rAF` callback can be overwritten
+before `flashlight.update` reads it. Read the axis instead and place your subject on it:
+
+```js
+const o = shadows.flashlight.light.position;
+const t = shadows.flashlight.target.position;
+const len = Math.hypot(t.x - o.x, t.z - o.z);
+const spot = { x: player.position.x + ((t.x - o.x) / len) * 0.9, z: /* … */ };
+```
+
+**A model's size, triangles and clip names are in `docs/project-map.jsonl` already** —
+`npm run map` re-derives them from the files, so a question like "how tall is the spider as
+authored" is a `grep`, not a browser session. What still needs the browser is anything about
+the model *in the scene*: how it reads at its game scale, what its shadow looks like, where
+the beam catches it.
 
 Screenshot differencing is how the look values were settled: capture with a value at 0 and at
 its default, difference per pixel, and report the max as well as the mean — a leak is local.

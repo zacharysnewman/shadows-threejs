@@ -36,13 +36,58 @@ export const CAMERA = {
   distance: 14,
   /** Critically damped follow time constant, in seconds (§3.2). */
   smoothingTime: 0.15,
-  /**
-   * Metres of ground the bounds clamp must leave between the player and the edge of the
-   * view (§3.2). Where hiding off-map void would cost more than this, the void wins.
-   */
-  playerMargin: 2.0,
   near: 0.1,
   far: 200,
+} as const;
+
+/**
+ * §2 — the band of trees outside every map's boundary.
+ *
+ * It is what lets §3.2 lock the camera to the player: a centred camera frames ground past
+ * the edge whenever the player walks near one, and covering that ground is much cheaper
+ * than moving the camera off the person the player is aiming with.
+ */
+export const SURROUND = {
+  /** The prefab planted out there — §2's small tree, not the landmark one. */
+  prefab: 'prop_tree_small',
+  /**
+   * Grid pitch before jitter, in metres.
+   *
+   * Wider than it looks: `PREFAB_FIT` scales the tree's *height* only, so the surround's
+   * 9 m tree keeps the model's 11.84 m canopy and the band closes over at this spacing with
+   * room to spare. Tightening it buys nothing but triangles (§7).
+   */
+  spacingMetres: 10,
+  /**
+   * How far a tree may sit from its grid point, in metres. Enough to break the lattice —
+   * a visible grid at the edge of the map advertises the boundary it exists to disguise —
+   * and not so much that the band grows holes.
+   */
+  jitterMetres: 2.0,
+  /**
+   * Extra depth past what the camera can actually see, in metres.
+   *
+   * The band's depth is derived from §3.2's ground footprint rather than typed out, because
+   * it *is* that number; this is the margin on top, covering the fog's far reach and the
+   * jitter pulling an outer tree inwards.
+   */
+  marginMetres: 6,
+  /**
+   * Aspect ratio the depth is computed for. The footprint's half-width grows with aspect,
+   * so this is the widest screen the band is guaranteed to cover — 21:9, past which an
+   * ultrawide sees a little further sideways than there are trees.
+   */
+  widestAspect: 21 / 9,
+  /**
+   * Albedo of the ground beyond the boundary — dark earth, lit by §4's night ambient
+   * exactly as the map's own floor is.
+   *
+   * Deliberately *not* the fog's colour. Fog is what the scene fades into and is also the
+   * background (§7), so ground painted fog-coloured is ground indistinguishable from the
+   * void it was laid down to cover. It has to be lit like floor to read as floor, and then
+   * the fog takes it into the distance on its own.
+   */
+  groundColour: 0x241f1a,
 } as const;
 
 /** §7 — shadow budget. Shadows are a mechanic, so these are design constraints. */
@@ -523,10 +568,29 @@ export const ENEMY = {
   /** Distance from a waypoint at which it counts as reached, in metres. */
   waypointRadius: 0.45,
 
+  /**
+   * §5 — light as terrain. What an enemy *outside* a light does about it, as distinct from
+   * what light does to one standing in it (§5.1, §5.2).
+   */
+  lightAvoidance: {
+    /**
+     * What a lit tile costs the Shadow Monster, against 1 for a dark one (§5).
+     *
+     * It is a detour budget in disguise: at 4, the monster will walk up to about four tiles
+     * of darkness to avoid one tile of light, and takes the lit route the moment the dark
+     * one is longer than that. High enough that it visibly prefers the dark, low enough
+     * that a lamp between it and the player is an inconvenience rather than a wall — §5.2's
+     * whole threat is that it never stops.
+     *
+     * A first value, like §5's radii, and one the tuning pass should expect to move.
+     */
+    monsterLitCost: 4,
+  },
+
   spider: {
-    /** Dog-sized (§5.1). */
-    radius: 0.5,
-    height: 0.7,
+    /** Cat-sized (§5.1) — half a metre across, and a third of a metre tall. */
+    radius: 0.25,
+    height: 0.35,
     /** §5.1 — the animated body, from `public/characters/`. */
     character: 'spider',
     /**
@@ -584,20 +648,30 @@ export const ENEMY = {
 
   shadowMonster: {
     radius: 0.55,
-    height: 2.2,
+    /**
+     * §5.2 — the size the spiders used to be, which is the whole of the silhouette's
+     * design: what the player finds in the beam is a spider twice the size of the ones
+     * that scuttle, standing still.
+     */
+    height: 0.7,
     /**
      * §5.2 — the body that is never drawn.
      *
      * It still needs to be a *shape*: the shadow is the creature, and a shadow is only
-     * frightening if its outline is. So the monster gets real art for exactly the reason
-     * the spider does not need any — every pixel of it the player ever sees is a
-     * silhouette on the floor, and a capsule casts a capsule.
+     * frightening if its outline is. A capsule casts a capsule, and every pixel of this
+     * thing the player will ever see is its outline on the floor.
+     *
+     * It wears the spider's mesh, at the size §5.1's spiders were before they shrank. A
+     * silhouette the player already knows how to read is worth more than an unfamiliar
+     * one: they have spent the run learning what a spider's shadow looks like, and this is
+     * that shape, too big, and not moving.
      *
      * What it does not get is animation. §5.2 is absolute that it is never both moving and
      * visible, so a walk cycle would be frames nobody can see and a standing temptation to
-     * show them.
+     * show them — and now that its mesh is one that *has* clips, that is enforced where the
+     * rig is built rather than by the art happening to have none. See `EnemyManager`.
      */
-    character: 'shadow_monster',
+    character: 'spider',
     wanderSpeed: 1.4,
     pursueSpeed: 1.8,
     /** §5 — it always knows. The threat is that it never stops, not that it hunts well. */
@@ -723,23 +797,11 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     source: 'https://quaternius.itch.io/animated-easy-enemies',
     /** CC0 requires none. Offered here for anyone who wants to credit it anyway. */
     attributionRequired: false,
-    /** §5.2's spider. A character rather than a prefab — it is skinned (see §1). */
-    prefabs: ['spider'],
-  },
-  {
-    kit: 'Ghoul',
-    author: 'joney_lol',
-    url: 'https://poly.pizza/m/pEwXEubhxz',
     /**
-     * CC-BY: the credit is a condition, like the tree's. §5.2 means not one pixel of this
-     * model is ever drawn — it exists to cast a shadow — but "the player never sees it" is
-     * not a licence term, and the author is named on the credits screen either way.
+     * Both enemies' body. A character rather than a prefab — it is skinned (see §1) — and
+     * one mesh at two sizes: §5.1's spiders, and §5.2's Shade at twice their size.
      */
-    licence: 'CC BY',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
-    source: 'https://poly.pizza/m/pEwXEubhxz',
-    attributionRequired: true,
-    prefabs: ['shadow_monster'],
+    prefabs: ['spider'],
   },
   {
     kit: 'Fitness Characters',
@@ -864,6 +926,22 @@ export const CHARACTER_FIT: Readonly<
   // loaded model, never a parsed one.
 };
 
+/**
+ * §1 — prefabs that are a second use of another prefab's model, rather than art of their own.
+ *
+ * The loader fetches `<name>.glb`, so two sizes of the same tree would otherwise mean two
+ * copies of a 240 KB binary that have to be kept identical by hand. A prefab with no entry
+ * here loads its own name, which is every prefab that has a file.
+ *
+ * This is deliberately *not* a general aliasing feature. It exists for the case where one
+ * model is used at two `PREFAB_FIT` sizes for two different reasons, and each entry should
+ * be able to say what those reasons are.
+ */
+export const PREFAB_FILE: Readonly<Record<string, string>> = {
+  /** §2's surround, from the landmark tree's model at a fraction of its height. */
+  prop_tree_small: 'prop_tree',
+};
+
 export const PREFAB_FOOTPRINT: Readonly<Record<string, { hx: number; hz: number }>> = {
   /** Pole and base only; the backboard and rim are overhead (§2). */
   prop_hoop: { hx: 0.3, hz: 0.3 },
@@ -929,6 +1007,19 @@ export const PREFAB_FIT: Readonly<
    * else. 0.045 is the ring the trunk actually meets the ground on, 1.44 m across.
    */
   prop_tree: { fitHeight: 26, contact: 0.045 },
+  /**
+   * §2's surround — the same model, kept low enough to be seen whole.
+   *
+   * The landmark tree above is tall *so that* its canopy is above the camera and never
+   * drawn. Out beyond the boundary that is precisely the wrong shape: the job is to cover
+   * ground, and a 26 m tree covers it with a trunk. At 9 m the whole tree is well under the
+   * 13.31 m camera eye, so what fills the edge of the frame is canopy.
+   *
+   * `fitHeight` scales the Y axis only, which is what makes one model do both jobs: the
+   * canopy stays 11.84 m across at any height, so a short tree is a *wide* tree and the band
+   * closes up with far fewer of them than its spacing suggests.
+   */
+  prop_tree_small: { fitHeight: 9, contact: 0.045 },
   /**
    * §1 — the dirt tile's *surface*, not its highest pebble.
    *

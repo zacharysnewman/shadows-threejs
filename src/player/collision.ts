@@ -136,9 +136,11 @@ export class ColliderIndex {
 
   /**
    * Hold a circle inside the tile grid. The map's outer edge stops the player whether or
-   * not the author walled it: off-map tiles are unwalkable by definition (§2), and the
-   * camera clamps to the same bounds (§3.2), so walking past them would put the player
-   * off-screen as well as off-map.
+   * not the author walled it, because off-map tiles are unwalkable by definition (§2).
+   *
+   * This is the *only* thing keeping the player on the map now. The camera used to clamp to
+   * the same bounds and no longer does (§3.2) — it follows the player anywhere — so what is
+   * beyond the edge is a forest the player can see and cannot enter (§2).
    */
   clampInside(x: number, z: number, radius: number): { x: number; z: number } {
     const limitX = this.width * this.tileSize - radius;

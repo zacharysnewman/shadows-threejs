@@ -21,7 +21,8 @@ import type { CharacterRig } from './CharacterRig';
 import { ENEMY } from '../config';
 import type { Rng } from '../core/rng';
 import type { WalkabilityGrid } from '../map/WalkabilityGrid';
-import { findPath, hasLineOfSight, type GridPoint } from '../nav/AStar';
+import { findPath, hasLineOfSight, type GridPoint, type PathGrid, type PathOptions } from '../nav/AStar';
+import { unlitOnly, type LitTiles } from '../nav/LitGrid';
 import { moveCircle, type ColliderIndex } from '../player/collision';
 import { Gait, type GaitProfile } from './Gait';
 
@@ -72,9 +73,9 @@ export interface EnemyProfile {
  * and visible, so no frame of it in motion is ever drawn to animate.
  */
 const SPIDER_GAIT: GaitProfile = {
-  /** Dog-sized and eight-legged: a short stride and a lot of them (§5.1). */
-  strideMetres: 0.8,
-  bobMetres: 0.07,
+  /** Cat-sized and eight-legged: a short stride and a lot of them (§5.1). */
+  strideMetres: 0.4,
+  bobMetres: 0.035,
   swingRadians: 0.5,
   /** Its pursue speed, so a chase is the cycle at full amplitude. */
   fullSpeed: ENEMY.spider.pursueSpeed,
@@ -160,6 +161,12 @@ export interface EnemyContext {
   neighbours: readonly Enemy[];
   /** §4.1 — the one light query both AIs consume. */
   illumination: IlluminationSampler;
+  /**
+   * §5 — light as terrain, per tile. Separate from `illumination` because it is a different
+   * question asked at a different rate: that one is "is *this enemy* lit", every tick; this
+   * one is "is *that ground* lit", a few hundred times inside one path search.
+   */
+  lightTiles: LitTiles;
   /** §5.3 — what contact resolves into. */
   player: PlayerActions;
 }
@@ -425,14 +432,47 @@ export class Enemy {
   }
 
   /**
+   * §5 — the map as this enemy reads it when it plans, which is not the same map for both.
+   *
+   * The base answer is the map as it is. `Spider` narrows it to unlit ground and
+   * `ShadowMonster` prices light rather than refusing it; everything downstream — the
+   * search, the line-of-sight test, the string-pulling — goes through whatever comes back
+   * here, so each enemy's relationship with light is stated once instead of at every site
+   * that touches a route.
+   */
+  protected navigationGrid(context: EnemyContext, fromGx: number, fromGy: number): PathGrid {
+    void context;
+    void fromGx;
+    void fromGy;
+    return context.grid;
+  }
+
+  /** §5 — what a route costs this enemy, where that is not uniform. */
+  protected pathOptions(context: EnemyContext): PathOptions {
+    void context;
+    return {};
+  }
+
+  /**
    * Whether the enemy has a clear line to the player. Not a detection test — that is by
    * proximity — but the choice between walking straight at them and paying for a path.
+   *
+   * **A line that crosses light is not a clear line** (§5), and that holds for both enemies
+   * even though what they do about it differs. Without it the whole of light-as-terrain
+   * does nothing in the open: this is the test that decides between pathing and simply
+   * walking straight at the player, a straight line answers to nothing, and in open ground
+   * the answer is almost always "straight". So a pool on the line sends both of them to the
+   * pathfinder — and *there* they diverge, because a spider's grid has no lit tiles in it
+   * at all while the monster's merely prices them (§5.1, §5.2).
+   *
+   * Only ever asked while hunting or wandering, which is why it needs no exception for a
+   * spider standing in light: that one is frozen or fleeing, and both return before here.
    */
   private canSee(context: EnemyContext): boolean {
-    const grid = context.grid;
-    const from = grid.worldToGrid(this.position.x, this.position.y);
-    const to = grid.worldToGrid(context.playerX, context.playerZ);
-    return hasLineOfSight(grid, from.gx, from.gy, to.gx, to.gy);
+    const from = context.grid.worldToGrid(this.position.x, this.position.y);
+    const to = context.grid.worldToGrid(context.playerX, context.playerZ);
+    const unlit = unlitOnly(context.grid, context.lightTiles, from.gx, from.gy);
+    return hasLineOfSight(unlit, from.gx, from.gy, to.gx, to.gy);
   }
 
   private updatePursuitPath(context: EnemyContext, visible: boolean): void {
@@ -448,7 +488,33 @@ export class Enemy {
       this.path.length === 0;
     if (!stale) return;
 
-    this.repath(context, context.playerX, context.playerZ);
+    // `null` means *no route*; an empty path means the enemy is already on the player's
+    // tile, which is the opposite situation and must not read as blocked.
+    if (this.planTo(context, context.playerX, context.playerZ) === null) {
+      this.onPursuitBlocked(context);
+    }
+  }
+
+  /**
+   * No route to the player, on this enemy's reading of the map (§5).
+   *
+   * It matters that this exists at all: with no path and no handling, `steer` falls back to
+   * walking *straight at* the player, which is right when the way is clear and exactly wrong
+   * when the route failed — a spider that will not path through a lamp's pool would march
+   * into it the moment pathing round it failed, and §5's rule would be decorative.
+   *
+   * The shared answer is to carry on regardless — keep the state, and let `steer` walk
+   * straight at the player. For the Shadow Monster that is not a fallback but the rule:
+   * §5.2 gives it no way to lose the player and no reason to stop, and a monster that gave
+   * up because a route was momentarily unavailable would be a monster the player can
+   * out-manoeuvre, which §5.2 spends its whole length promising they cannot. It also has
+   * nothing to be blocked *by* here — light only costs it (§5).
+   *
+   * `Spider` replaces it: a player it cannot reach because they are standing in light is
+   * one it gives up on.
+   */
+  protected onPursuitBlocked(context: EnemyContext): void {
+    void context;
   }
 
   protected updateWanderPath(dt: number, context: EnemyContext): void {
@@ -481,15 +547,57 @@ export class Enemy {
   }
 
   protected repath(context: EnemyContext, targetX: number, targetZ: number): boolean {
-    const grid = context.grid;
-    const from = grid.worldToGrid(this.position.x, this.position.y);
-    const to = grid.worldToGrid(targetX, targetZ);
+    const path = this.planTo(context, targetX, targetZ);
+    return path !== null && path.length > 0;
+  }
+
+  /**
+   * Plan a route and adopt it, reporting what the search actually found.
+   *
+   * The distinction `repath`'s boolean throws away: `null` is *no route exists*, and an
+   * empty array is *already standing on the target tile*. They mean opposite things to a
+   * pursuing enemy — one is a wall between it and the player, the other is contact — and
+   * conflating them makes an enemy that has caught the player give up on it.
+   */
+  protected planTo(
+    context: EnemyContext,
+    targetX: number,
+    targetZ: number,
+  ): GridPoint[] | null {
+    const from = context.grid.worldToGrid(this.position.x, this.position.y);
+    const to = context.grid.worldToGrid(targetX, targetZ);
 
     this.sinceRepath = 0;
-    this.pathGridVersion = grid.version;
-    const path = findPath(grid, from.gx, from.gy, to.gx, to.gy);
+    this.pathGridVersion = context.grid.version;
+    const path = this.search(context, from.gx, from.gy, to.gx, to.gy);
     this.path = path ?? [];
-    return path !== null && path.length > 0;
+    return path;
+  }
+
+  /**
+   * One search, against this enemy's own reading of the map (§5).
+   *
+   * The memo behind `lightTiles` is invalidated here rather than per tick: the beam moves
+   * every frame, and two searches in the same tick can straddle a frame in which it moved.
+   * Sharing answers between them would route the second enemy around light the first one
+   * saw and this one would not.
+   */
+  protected search(
+    context: EnemyContext,
+    fromGx: number,
+    fromGy: number,
+    toGx: number,
+    toGy: number,
+  ): GridPoint[] | null {
+    context.lightTiles.begin();
+    return findPath(
+      this.navigationGrid(context, fromGx, fromGy),
+      fromGx,
+      fromGy,
+      toGx,
+      toGy,
+      this.pathOptions(context),
+    );
   }
 
   /** Direction the enemy wants to move, before avoidance and before speed is applied. */
@@ -602,6 +710,19 @@ export class Enemy {
   /** Whether this enemy is running on real art rather than on the placeholder. */
   get hasCharacter(): boolean {
     return this.rig !== null;
+  }
+
+  /**
+   * What this enemy's body can animate with, and what it is animating now. Null until the
+   * art has loaded.
+   *
+   * §5.2 is why this is exposed rather than kept private: the Shadow Monster wears §5.1's
+   * mesh, which has five clips, and the rule that none of them may ever play is now a
+   * property of the object somebody could quietly undo. A rule nothing can observe is a
+   * rule nothing can check.
+   */
+  get animation(): { clips: readonly string[]; playing: string | null } | null {
+    return this.rig ? { clips: this.rig.clipNames, playing: this.rig.playing } : null;
   }
 
   /**

@@ -180,6 +180,27 @@ export interface PathOptions {
   nodeBudget?: number;
   /** Pull the path straight afterwards. On by default; off makes tests easier to read. */
   smooth?: boolean;
+  /**
+   * What entering a tile costs, as a multiplier on the step, ≥ 1. Uniform by default.
+   *
+   * §5's light avoidance is what this is for: ground an enemy dislikes but is not stopped
+   * by. It must never return less than 1 — the octile heuristic assumes a step is the
+   * cheapest a step can be, and a discount would make it inadmissible and the route it
+   * finds no longer the cheapest one.
+   */
+  enterCost?: (gx: number, gy: number) => number;
+  /**
+   * The grid the finished path is straightened against, when that is not the grid it was
+   * searched on. Defaults to the search grid.
+   *
+   * §5's light costs are what this exists for, and it is not an optimisation — without it
+   * the feature silently does nothing. String-pulling drops every waypoint the previous one
+   * can see, so a route that A\* took the long way round a lamp pool is straightened back
+   * into the line through it that the cost was paid to avoid. Pass a grid in which lit
+   * tiles are not walkable and the shortcut is refused; where the route genuinely crosses
+   * light, that stretch simply keeps its waypoints.
+   */
+  smoothGrid?: PathGrid;
 }
 
 /**
@@ -198,7 +219,7 @@ export function findPath(
   goalY: number,
   options: PathOptions = {},
 ): GridPoint[] | null {
-  const { nodeBudget = DEFAULT_NODE_BUDGET, smooth = true } = options;
+  const { nodeBudget = DEFAULT_NODE_BUDGET, smooth = true, enterCost, smoothGrid } = options;
 
   if (!grid.isWalkable(startX, startY) || !grid.isWalkable(goalX, goalY)) return null;
   if (startX === goalX && startY === goalY) return [];
@@ -221,7 +242,9 @@ export function findPath(
   let expanded = 0;
   while (open.size > 0) {
     const current = open.pop()!;
-    if (current === goalIndex) return build(cameFrom, current, width, grid, smooth);
+    if (current === goalIndex) {
+      return build(cameFrom, current, width, smoothGrid ?? grid, smooth);
+    }
     if (closed[current] === 1) continue;
     closed[current] = 1;
 
@@ -250,7 +273,9 @@ export function findPath(
         if (closed[neighbour] === 1) continue;
 
         const step = dx !== 0 && dy !== 0 ? DIAGONAL : 1;
-        const tentative = currentCost + step;
+        // Charged on *entering* a tile, so the ground an enemy dislikes is paid for once
+        // per tile crossed rather than once per neighbour considered (§5).
+        const tentative = currentCost + step * (enterCost ? enterCost(nx, ny) : 1);
         if (tentative >= (cost[neighbour] ?? Number.POSITIVE_INFINITY)) continue;
 
         cost[neighbour] = tentative;
@@ -267,6 +292,7 @@ function build(
   cameFrom: Int32Array,
   goal: number,
   width: number,
+  /** The grid the string-pulling is judged against — see `PathOptions.smoothGrid`. */
   grid: PathGrid,
   smooth: boolean,
 ): GridPoint[] {
