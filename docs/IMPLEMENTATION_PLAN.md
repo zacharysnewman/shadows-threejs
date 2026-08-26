@@ -983,14 +983,15 @@ unlit body by nothing visible, because the emissive was swamping everything eith
 haze and the readability lift. All three were read once at construction, so they join the
 beam's cone and the night's two lights in `Run`'s re-push.
 
-*Verified.* 560 unit tests (up from 529): 10 over the two-bone solver, 9 over the arm
-weighting and the rig it builds, 8 over the shaft and the lamp handover, 3 over the
+*Verified.* 561 unit tests (up from 529): 10 over the two-bone solver, 9 over the arm
+weighting and the rig it builds, 9 over the shaft and the lamp handover, 3 over the
 readability lift, and one over a thing that had just bitten — `TuningPanel` writes a heading
 whenever the group changes as it walks the list, so a knob filed under `Player` but sitting
 between the light ones prints a second `PLAYER` heading half a panel down. Nothing throws;
 the panel just looks broken.
 
-In a browser, on `phase3-test`, since none of this is assertable from a test runner:
+In a browser, on `phase3-test` and — where a wall with floor on both sides was needed —
+`example`, since none of this is assertable from a test runner:
 
 | Case | Measured |
 | --- | --- |
@@ -1000,8 +1001,11 @@ In a browser, on `phase3-test`, since none of this is assertable from a test run
 | The hand against the walk's bob | walking 5.3 m → 12.4 m, the hips move 20.9 mm and the hand-to-beam gap 8.3 mm |
 | §4.1's `hold` knobs, dragged in §8.3's panel | 0.35 m to the right moves the origin to `(19.59, 1.60, 13.49)` and the hand follows to `(19.70, 1.54, 13.55)`; 1.9 m up takes the hand to `y = 1.671` and opens the gap to 0.319, which is the short reach showing rather than hiding |
 | Haze inside the beam | +12.4/255 against the same frame with the shaft off |
-| Haze inside a crate's shadow | +4.3 — the air *above* the shadow is still lit, which is right |
 | Haze outside the cone | +0.00, exactly |
+| Haze over a crate's floor shadow | +4.3, not 0 — the air *above* a low crate's shadow is still lit, so partial is the right answer here and this measures nothing about clipping |
+| Beam held on a 3 m wall with open floor behind it | +31.8/255 in the air before the wall; **0.0 across every one of the ~185,000 pixels behind it** |
+| The same, with the walls taken out of the shadow map | +13.8 behind the wall, peak 25 — the control, and the only thing that proves that region was inside the cone to begin with |
+| The same, with the occluder at ~90% of the shadow camera's far plane | still 0.0 — the negative bias a mid-air sample needs does not leak where depth precision is worst |
 | The shaft over the whole frame | 3.86% of pixels changed by more than 6/255, peak 186 |
 | Lamp haze at 0.018 | 36% of pixels, mean 32/255 — at 0.06 the pools blow out, which is what set 0.018 |
 | §7's cost | 3 extra draw calls and 72 extra triangles for three shafts |
