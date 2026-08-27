@@ -203,4 +203,4 @@
 {"path":"tests/walkCycle.test.ts","kind":"test","lines":108,"summary":"§3.1, §4.3 — the walk cycle, and the footfalls the sound is hung off.","spec":["§3.1","§4.3","§7"]}
 {"path":"tests/walkability.test.ts","kind":"test","lines":93,"summary":"Walkability derivation and runtime flips (§2, §6).","spec":["§2","§6"]}
 {"path":"tsconfig.json","kind":"config","lines":22}
-{"path":"vite.config.ts","kind":"config","lines":27}
+{"path":"vite.config.ts","kind":"config","lines":30,"spec":["§2"]}

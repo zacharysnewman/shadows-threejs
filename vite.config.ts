@@ -22,5 +22,8 @@ export default defineConfig({
   test: {
     // ZzFX builds an `AudioContext` at import; node has none. See the setup file.
     setupFiles: ['./tests/support/setup.ts'],
+    // §2's ground rebuild rasterises real pixels and sits close to the 5s default on a
+    // loaded CI runner; the slack costs nothing on a real failure, which still hangs.
+    testTimeout: 15000,
   },
 });
