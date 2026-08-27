@@ -1629,13 +1629,27 @@ map it belongs to and is rewritten when that changes, not only when the document
 and opening leave the document untouched, and a reload in between came back under the old
 name.
 
+The menu is a selector, a preview and the actions on what is selected, rather than a row per
+map: choosing shows what a map is without opening it, and `src/editor/preview.ts` draws the
+whole thing in the sheet at whatever zoom fits. Its fit is separated from its drawing and
+tested, because a preview that overflows its box is a preview that looks like a map with
+nothing along the bottom.
+
 *Verified in Chromium on a Pixel 7 profile* (`?edit`): a fresh browser opens `example`
 (`clean · 2306 tiles reachable`); saving out of it suggests `example 2` and refuses the name
 `example` outright; saving as `the yard` writes the library and the draft together; one edit
 puts `•` on the button; opening another map with unsaved work asks first; reopening `the
-yard` and reloading both come back to it. `tests/editor.test.ts` covers the rules underneath
-— overwrite precedence, name collisions case-insensitively, a corrupt stored library, and
-the dropped undo stack.
+yard` and reloading both come back to it. Selecting `phase8-test` draws its preview
+(`34×24 · 10 entities · read-only`) and leaves what is open alone; `Rename` and `Delete` are
+disabled for the project's maps and live for this browser's. `tests/editor.test.ts` covers
+the rules underneath — overwrite precedence, name collisions case-insensitively, a corrupt
+stored library, the dropped undo stack, and the preview's fit.
+
+*A trap, paid for here.* `.ed-row input` was `flex: 1` with no `min-width: 0`, so it would
+not shrink below the input's intrinsic width. One label longer than the panel had ever
+carried pushed the row 52 px past the sheet and clipped **every** label in the panel against
+the left edge — which reads as a broken sheet, not as one row being too wide. Any row with a
+long label had the same bug waiting in it.
 
 ## Cross-Cutting
 

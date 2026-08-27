@@ -25,6 +25,7 @@ import {
   saveSavedMaps,
   uniqueMapName,
 } from '../src/editor/mapLibrary';
+import { previewFit } from '../src/editor/preview';
 import {
   ENTITIES,
   FLOOR_TILES,
@@ -393,5 +394,31 @@ describe('the map library (§9.3)', () => {
     doc.replace(EditorDocument.blank(6, 6).toSnapshot());
     expect(doc.canUndo).toBe(false);
     expect(doc.width).toBe(6);
+  });
+});
+
+describe('the map preview (§9.3)', () => {
+  it('fits a map inside its box and centres it, whichever way round it is', () => {
+    // The failure this holds shut is silent: a preview that overflows its box just draws
+    // the bottom rows outside it, and looks like a map with nothing down there.
+    const wide = previewFit(100, 10, 280, 150);
+    expect(wide.zoom * 100).toBeLessThanOrEqual(280);
+    expect(wide.zoom * 10).toBeLessThanOrEqual(150);
+    expect(wide.offsetX).toBeCloseTo((280 - 100 * wide.zoom) / 2);
+    expect(wide.offsetY).toBeCloseTo((150 - 10 * wide.zoom) / 2);
+
+    const tall = previewFit(10, 100, 280, 150);
+    expect(tall.zoom * 10).toBeLessThanOrEqual(280);
+    expect(tall.zoom * 100).toBeLessThanOrEqual(150);
+
+    // The long side decides, or a wide map is fitted by its height and runs off the sides.
+    expect(previewFit(100, 10, 280, 150).zoom).toBeLessThan(previewFit(10, 10, 280, 150).zoom);
+  });
+
+  it('does not divide by a box with no room in it', () => {
+    // A sheet that is hidden reports a zero-sized canvas, and a zoom of NaN paints nothing
+    // and logs nothing.
+    expect(previewFit(50, 50, 0, 0).zoom).toBe(0);
+    expect(previewFit(50, 50, 4, 4).zoom).toBe(0);
   });
 });

@@ -1475,6 +1475,11 @@ precedence between them is the whole of the rule:
   closing whether or not it has ever been saved, and it remembers which map it came from, so
   a later Save knows what it is saving. A draft outranks the default: reopening the editor
   never discards an edit to show a fresh copy of `example`.
+- **A map is chosen, previewed, then opened.** The library offers every map in one selector
+  and draws the chosen one whole — its tiles and where its entities sit — before anything
+  happens to what is on screen. Opening replaces the level being edited, so it is worth being
+  sure first; and a list of names cannot answer the question somebody has the menu open to
+  ask, which is which of these is the one with the two monsters in it.
 - **Copy to clipboard.** The whole `map.json` as text, in one action. On a phone this is the
   reliable path — no file system, no download permissions — and it pastes into a commit.
   Saving in the browser and getting a level out are different acts: the first keeps a level

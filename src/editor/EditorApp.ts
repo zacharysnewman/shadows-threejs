@@ -28,6 +28,7 @@ import {
   normalise,
 } from './palette';
 import { EDITOR_STYLE } from './style';
+import { drawMapPreview } from './preview';
 import { expandStamp, rotatedFootprint, stampFits } from './stamps';
 import {
   StampLibrary,
@@ -96,6 +97,10 @@ export class EditorApp {
   private open: OpenMap | null = null;
   /** §9.3 — this browser's maps. The project's are read-only and are not in here. */
   private maps: SavedMap[] = loadSavedMaps();
+  /** §9.3 — what the library's selector is pointed at, which is not what is open. */
+  private mapChoice: OpenMap | null = null;
+  /** Project maps already fetched for a preview. `null` marks one that could not be read. */
+  private readonly previewCache = new Map<string, unknown | null>();
   /**
    * §9.3 — `doc.version` as of the last save or open, so the menu can say whether there is
    * anything to lose. Not a boolean: undoing back to the saved state is not a change.
@@ -944,8 +949,13 @@ export class EditorApp {
   /**
    * §9.3 — the menu.
    *
-   * A sheet like the rest of the editor's panels: on a phone a file dialog is not available
-   * and a row of chips is not enough, since a map has to be opened, renamed and deleted.
+   * A sheet like the rest of the editor's panels: on a phone a file dialog is not available,
+   * and a map has to be opened, renamed and deleted, not just listed.
+   *
+   * **A map is chosen, previewed, and then opened.** Picking from the selector shows what it
+   * is rather than doing anything, because opening replaces what is on screen — and a list
+   * of names cannot tell `phase5-test` from `phase8-test`, which is exactly the question
+   * somebody has the menu open to answer.
    */
   private showMaps(): void {
     this.sheet.hidden = false;
@@ -965,15 +975,174 @@ export class EditorApp {
       : 'Unsaved level. Give it a name to keep it in this browser.';
     this.sheet.append(hint);
 
-    // --- Save --------------------------------------------------------------
-    const nameRow = document.createElement('div');
-    nameRow.className = 'ed-row';
-    nameRow.append(Object.assign(document.createElement('span'), { textContent: 'Name' }));
+    this.sheet.append(this.saveRow());
+
+    // --- Choose ------------------------------------------------------------
+    const chooseRow = document.createElement('div');
+    chooseRow.className = 'ed-row';
+    chooseRow.append(Object.assign(document.createElement('span'), { textContent: 'Open' }));
+
+    const select = document.createElement('select');
+    select.className = 'ed-select';
+
+    if (this.maps.length > 0) {
+      const mine = document.createElement('optgroup');
+      mine.label = 'In this browser';
+      for (const map of this.maps) {
+        mine.append(Object.assign(document.createElement('option'), {
+          value: `browser:${map.name}`,
+          textContent: map.name,
+        }));
+      }
+      select.append(mine);
+    }
+
+    const theirs = document.createElement('optgroup');
+    theirs.label = 'In the project (read-only)';
+    for (const name of PROJECT_MAPS) {
+      theirs.append(Object.assign(document.createElement('option'), {
+        value: `project:${name}`,
+        textContent: name,
+      }));
+    }
+    select.append(theirs);
+
+    // Whatever is open, or the first thing there is — never an empty selector with a
+    // preview box that has nothing to do with it.
+    this.mapChoice ??= this.open ?? this.firstChoice();
+    if (this.mapChoice) select.value = `${this.mapChoice.source}:${this.mapChoice.name}`;
+    chooseRow.append(select);
+    this.sheet.append(chooseRow);
+
+    // --- Preview -----------------------------------------------------------
+    const canvas = document.createElement('canvas');
+    canvas.className = 'ed-preview';
+    const caption = document.createElement('div');
+    caption.className = 'ed-hint ed-preview-caption';
+    this.sheet.append(canvas, caption);
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    const openIt = document.createElement('button');
+    openIt.type = 'button';
+    openIt.textContent = 'Open';
+    const rename = document.createElement('button');
+    rename.type = 'button';
+    rename.textContent = 'Rename';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'ed-danger';
+    remove.textContent = 'Delete';
+    actions.append(openIt, rename, remove);
+    this.sheet.append(actions);
+
+    const chosen = (): OpenMap | null => {
+      const [source, ...rest] = select.value.split(':');
+      const name = rest.join(':');
+      return source === 'browser' || source === 'project' ? { source, name } : null;
+    };
+
+    const refresh = (): void => {
+      const choice = chosen();
+      this.mapChoice = choice;
+      const editable = choice?.source === 'browser';
+      rename.disabled = !editable;
+      remove.disabled = !editable;
+      openIt.disabled = choice === null;
+      void this.renderPreview(canvas, caption, choice);
+    };
+
+    select.addEventListener('change', refresh);
+
+    openIt.addEventListener('click', () => {
+      const choice = chosen();
+      if (!choice || !this.confirmDiscard()) return;
+      if (choice.source === 'project') {
+        void this.openProject(choice.name).then(() => this.showMaps());
+        return;
+      }
+      const map = findMap(this.maps, choice.name);
+      if (!map) return;
+      this.openDocument(map.map, { source: 'browser', name: map.name });
+      this.flash(`Opened ${map.name}`);
+      this.showMaps();
+    });
+
+    rename.addEventListener('click', () => {
+      const choice = chosen();
+      if (choice?.source !== 'browser') return;
+      const to = prompt(`Rename ${choice.name} to`, choice.name);
+      if (to === null) return;
+      const named = normaliseMapName(to);
+      const next = renameMap(this.maps, choice.name, to);
+      if (named === null || next === this.maps) {
+        this.flash(`Could not rename to "${to.trim()}"`);
+        return;
+      }
+      this.maps = next;
+      saveSavedMaps(this.maps);
+      if (this.open?.source === 'browser' && this.open.name === choice.name) {
+        this.open = { source: 'browser', name: named };
+        saveDraft(this.doc, this.open);
+      }
+      this.mapChoice = { source: 'browser', name: named };
+      this.refreshToolbar();
+      this.showMaps();
+    });
+
+    remove.addEventListener('click', () => {
+      const choice = chosen();
+      if (choice?.source !== 'browser') return;
+      if (!confirm(`Delete ${choice.name}?\n\nThis browser is the only place it exists.`)) return;
+      this.maps = deleteMap(this.maps, choice.name);
+      saveSavedMaps(this.maps);
+      // What is on screen stays on screen: deleting the entry a document came from does not
+      // close it, it just leaves it unsaved again.
+      if (this.open?.source === 'browser' && this.open.name === choice.name) {
+        this.open = null;
+        saveDraft(this.doc, null);
+      }
+      this.mapChoice = null;
+      this.refreshToolbar();
+      this.showMaps();
+    });
+
+    // --- New and close -----------------------------------------------------
+    const footer = document.createElement('div');
+    footer.className = 'ed-row';
+    const blank = document.createElement('button');
+    blank.type = 'button';
+    blank.textContent = 'New';
+    blank.addEventListener('click', () => {
+      if (!this.confirmDiscard()) return;
+      this.openDocument(EditorDocument.blank().toMapJson(), null);
+      this.flash('New level');
+      this.showMaps();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => {
+      this.sheet.hidden = true;
+    });
+    footer.append(blank, close);
+    this.sheet.append(footer);
+
+    refresh();
+  }
+
+  /** The name field and Save, which is the half of the menu that writes rather than reads. */
+  private saveRow(): HTMLDivElement {
+    const row = document.createElement('div');
+    row.className = 'ed-row';
+    row.append(Object.assign(document.createElement('span'), { textContent: 'Save as' }));
+
     const input = document.createElement('input');
     input.value = canOverwrite(this.open)
       ? this.open!.name
       : uniqueMapName(this.maps, this.open?.name ?? 'untitled');
     input.placeholder = 'map name';
+
     const save = document.createElement('button');
     save.type = 'button';
     save.textContent = 'Save';
@@ -993,126 +1162,81 @@ export class EditorApp {
       const replacing = existing && name.toLowerCase() !== this.open?.name.toLowerCase();
       if (replacing && !confirm(`${existing.name} already exists.\n\nReplace it?`)) return;
       this.saveAs(name);
+      this.mapChoice = { source: 'browser', name };
       this.showMaps();
     });
-    nameRow.append(input, save);
-    this.sheet.append(nameRow);
 
-    // --- This browser's ----------------------------------------------------
-    const mine = document.createElement('div');
-    mine.className = 'ed-sheet-title';
-    mine.textContent = 'In this browser';
-    this.sheet.append(mine);
+    row.append(input, save);
+    return row;
+  }
 
-    if (this.maps.length === 0) {
-      const none = document.createElement('div');
-      none.className = 'ed-hint';
-      none.textContent = 'Nothing saved here yet.';
-      this.sheet.append(none);
+  /** Whatever the selector would show first, so a preview is never of nothing. */
+  private firstChoice(): OpenMap | null {
+    const mine = this.maps[0];
+    if (mine) return { source: 'browser', name: mine.name };
+    const theirs = PROJECT_MAPS[0];
+    return theirs ? { source: 'project', name: theirs } : null;
+  }
+
+  /**
+   * §9.3 — draw the chosen map into the preview box.
+   *
+   * A project map has to be fetched, so this is async and the result is kept: flicking
+   * through the selector should not refetch a map on every change, and coming back to one
+   * should be instant.
+   */
+  private async renderPreview(
+    canvas: HTMLCanvasElement,
+    caption: HTMLElement,
+    choice: OpenMap | null,
+  ): Promise<void> {
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    // The box is styled in CSS; the backing store has to match it and the device, or the
+    // preview is a blurry rectangle on every phone there is.
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
+    const width = canvas.clientWidth || 280;
+    const height = canvas.clientHeight || 150;
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+    context.fillStyle = '#0a0c11';
+    context.fillRect(0, 0, width, height);
+
+    if (!choice) {
+      caption.textContent = '';
+      return;
     }
 
-    for (const map of this.maps) {
-      const row = document.createElement('div');
-      row.className = 'ed-row ed-maprow';
+    const map = await this.previewMap(choice);
+    // The selector may have moved on while a fetch was in flight; the last choice wins.
+    if (this.mapChoice?.source !== choice.source || this.mapChoice.name !== choice.name) return;
 
-      const openIt = document.createElement('button');
-      openIt.type = 'button';
-      openIt.className = 'ed-mapname';
-      openIt.textContent = map.name;
-      openIt.classList.toggle('is-on', this.open?.source === 'browser' && this.open.name === map.name);
-      openIt.addEventListener('click', () => {
-        if (!this.confirmDiscard()) return;
-        this.openDocument(map.map, { source: 'browser', name: map.name });
-        this.flash(`Opened ${map.name}`);
-        this.showMaps();
-      });
-
-      const rename = document.createElement('button');
-      rename.type = 'button';
-      rename.textContent = 'Rename';
-      rename.addEventListener('click', () => {
-        const to = prompt(`Rename ${map.name} to`, map.name);
-        if (to === null) return;
-        const next = renameMap(this.maps, map.name, to);
-        const named = normaliseMapName(to);
-        if (named === null || next === this.maps) {
-          this.flash(`Could not rename to "${to.trim()}"`);
-          return;
-        }
-        this.maps = next;
-        saveSavedMaps(this.maps);
-        if (this.open?.source === 'browser' && this.open.name === map.name) {
-          this.open = { source: 'browser', name: named };
-        }
-        this.refreshToolbar();
-        this.showMaps();
-      });
-
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'ed-danger';
-      remove.textContent = 'Delete';
-      remove.addEventListener('click', () => {
-        if (!confirm(`Delete ${map.name}?\n\nThis browser is the only place it exists.`)) return;
-        this.maps = deleteMap(this.maps, map.name);
-        saveSavedMaps(this.maps);
-        // What is on screen stays on screen: deleting the entry a document came from does
-        // not close it, it just leaves it unsaved again.
-        if (this.open?.source === 'browser' && this.open.name === map.name) {
-          this.open = null;
-          saveDraft(this.doc, null);
-        }
-        this.refreshToolbar();
-        this.showMaps();
-      });
-
-      row.append(openIt, rename, remove);
-      this.sheet.append(row);
+    if (!map) {
+      caption.textContent = `${choice.name} — could not be read`;
+      return;
     }
 
-    // --- The project's -----------------------------------------------------
-    const theirs = document.createElement('div');
-    theirs.className = 'ed-sheet-title';
-    theirs.textContent = 'In the project';
-    const theirsHint = document.createElement('div');
-    theirsHint.className = 'ed-hint';
-    theirsHint.textContent = 'Read-only. Open one to work from it; saving writes a new map.';
-    this.sheet.append(theirs, theirsHint);
+    const snapshot = EditorDocument.fromJson(map).toSnapshot();
+    drawMapPreview(context, snapshot, width, height);
+    const entities = snapshot.entities.length;
+    caption.textContent =
+      `${choice.name} · ${snapshot.width}×${snapshot.height} · ` +
+      `${entities} ${entities === 1 ? 'entity' : 'entities'}` +
+      (choice.source === 'project' ? ' · read-only' : '');
+  }
 
-    const chips = document.createElement('div');
-    chips.className = 'ed-row ed-mapchips';
-    for (const name of PROJECT_MAPS) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.textContent = name;
-      chip.classList.toggle('is-on', this.open?.source === 'project' && this.open.name === name);
-      chip.addEventListener('click', () => {
-        if (!this.confirmDiscard()) return;
-        void this.openProject(name).then(() => this.showMaps());
-      });
-      chips.append(chip);
-    }
-    this.sheet.append(chips);
+  /** A map's JSON for previewing, fetched once per project map and then kept. */
+  private async previewMap(choice: OpenMap): Promise<unknown | null> {
+    if (choice.source === 'browser') return findMap(this.maps, choice.name)?.map ?? null;
 
-    const actions = document.createElement('div');
-    actions.className = 'ed-row';
-    const blank = document.createElement('button');
-    blank.type = 'button';
-    blank.textContent = 'New';
-    blank.addEventListener('click', () => {
-      if (!this.confirmDiscard()) return;
-      this.openDocument(EditorDocument.blank().toMapJson(), null);
-      this.flash('New level');
-      this.showMaps();
-    });
-    const close = document.createElement('button');
-    close.type = 'button';
-    close.textContent = 'Close';
-    close.addEventListener('click', () => {
-      this.sheet.hidden = true;
-    });
-    actions.append(blank, close);
-    this.sheet.append(actions);
+    const cached = this.previewCache.get(choice.name);
+    if (cached !== undefined) return cached;
+    const map = await loadProjectMap(choice.name, import.meta.env.BASE_URL);
+    this.previewCache.set(choice.name, map);
+    return map;
   }
 
   // --- Getting it out ------------------------------------------------------
