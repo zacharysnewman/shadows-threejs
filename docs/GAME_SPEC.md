@@ -746,11 +746,14 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   is showing. The point is read off the ground plane the player stands on and nothing else —
   never a raycast against trees, walls or props, or an occluder under the cursor would tip
   the beam up at the sky instead of the floor it is meant to search. The distance is clamped
-  between 2 m and the beam's range: nearer and the beam would decline past vertical for a
-  cursor at or behind the player, the likeliest place for it to rest; further and the pitch
-  would flatten past the range the cone is built for. Eased towards rather than snapped to,
-  over a render-frame time constant, so the pitch does not visibly step at display refresh
-  rate. Both the near clamp and the time constant are tunable (§8.3).
+  between 0.5 m and the beam's range: nearer, or a cursor at or behind the player, projects
+  at or past zero, and the target would land behind the origin instead of in front of it —
+  the beam folding back through the player rather than settling near their feet; further and
+  the pitch would flatten past the range the cone is built for. 0.5 m is low enough that
+  aiming down at the ground right in front of the player still tracks the cursor rather than
+  snapping to a fixed distance. Eased towards rather than snapped to, over a render-frame
+  time constant, so the pitch does not visibly step at display refresh rate. Both the near
+  clamp and the time constant are tunable (§8.3).
 
   **Where the torch is held is five values, and all five are tunable (§8.3):** the height it
   is carried at, how far forward of the player it is emitted, how far to the player's right
