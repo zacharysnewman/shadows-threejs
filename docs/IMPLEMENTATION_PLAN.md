@@ -1750,6 +1750,40 @@ With `Play` as the very first gesture it starts and stops without the volume ris
 there is no blip. The `music` readout row survives a restart, which is what `addShellRow`
 is for.
 
+*Added afterwards — the menu's backdrop.* §8.1 had said nothing animated behind the title;
+it now says a film of oily water, and gives the values it is made of. `src/ui/MenuBackdrop.ts`
+is a domain-warped fBm field evaluated per sample on the CPU and drawn on a 144-sample canvas
+that the browser scales to the screen — no assets, no video, nothing to go stale when the art
+does. It sits behind both shell screens, with a scrim between it and the words and its own
+sheet of black under the credits, which are the one place a wall of text sits over it.
+
+**The rule §8.1 actually cares about is a lifetime, not a fast draw.** `TitleScreen.hide` stops
+it, so nothing is scheduled while a run is; a hidden tab stops it too. Two more: a device whose
+frames are over budget keeps the picture and stops turning it over, and `prefers-reduced-motion`
+draws one frame and no more.
+
+*Two things went wrong, and both are in the suite.* The over-budget rule was **one** frame,
+and on a page still loading its assets exactly one frame is — the film stopped a second after
+the menu appeared, on hardware drawing every other frame in half the budget, and looked
+exactly like an animation that had never been wired up. It is the median of 12 frames now.
+And the contrast stretch was centred on ½ while the field's median is 0.61, so an eighth of
+every frame clipped to the highlight: broad pale plateaus that read as smoke rather than as
+water. Neither is visible in a range check, which is why `tests/menuBackdrop.test.ts` checks
+the *distribution* and the continuity-under-refinement instead — a step-size bound cannot tell
+a seam from an honest gradient at this feature scale.
+
+*Verified in Chromium at 1280×720* (`?debug&map=phase3-test&overlay=0`). One frame of the
+field at 144×81: median 4.7 ms, worst of twelve 7.2 ms, against an 8 ms budget. Redraws
+measured off the canvas rather than assumed: 44 in 2.01 s while the census itself held the
+page to 72 rAF frames — the 30 Hz cap working. Two captures 8 s apart differ by a mean of
+14.0/255 with 78.7% of pixels moved, so it turns over rather than sitting still. On `Play`:
+`backdrop.running` false, shell hidden. `Credits` and `Back` both bring it back.
+
+*Outstanding.* The budget rule is the part that cannot be checked here — this container
+renders through a software rasteriser and its CPU is not a phone's, so whether a real
+low-end device falls back to the still picture is unmeasured. What is measured is that the
+rule no longer fires on a machine that can afford the film.
+
 ## Cross-Cutting
 
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit

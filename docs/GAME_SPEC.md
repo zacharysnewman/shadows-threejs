@@ -1323,13 +1323,47 @@ that must not be part of what a player sees.
 
 Four, and no more. A horror game's menu should get out of the way.
 
-1. **Title.** The game's name, `Play`, and `Credits`. Nothing animated behind it that costs
-   a frame budget the run needs.
+1. **Title.** The game's name, `Play`, and `Credits`, over the backdrop below.
 2. **Run.** §6's single life. The HUD (§6) and the damage feedback (§3.4) are the only
    things on screen.
 3. **Ending.** §5.3's game-over or §6's victory overlay, both offering another run.
 4. **Credits.** Reachable from the title and from the victory screen, and it returns to the
    title.
+
+**The menu's backdrop is a film of oily water**, turning over slowly behind the title and
+the credits, in the blacks and greys the rest of the game is lit in (§4). Not a video and not
+a scene: it is a noise field evaluated per sample, so it has no assets to load, no seams to
+loop, and nothing to go stale when the art does.
+
+It costs a frame budget a run needs only if it is alive during one, so **it runs on the
+shell's screens and nowhere else** — it is stopped on the way into a run rather than trusted
+to be cheap, and stopped again in a hidden tab. Two other rules hold it to that:
+
+- **A device that cannot afford it gets it still.** The film is drawn at a fixed cost per
+  frame; where the median of a run of frames is over budget, the picture stays and stops
+  turning over. A menu that stutters is a promise about the game behind it.
+- **So does a player who asked for one.** `prefers-reduced-motion` draws a single frame and
+  no more — the backdrop, not the animation, is what the screen needs.
+
+The field is fractal noise looked up at a position displaced by fractal noise, twice, which
+is what gives an oil slick its folded sheets rather than even lumps; the animation moves the
+displacements around circles rather than sliding the field, so it turns over in place instead
+of drifting past. Colour is one grey ramp with a thin-film sheen on the ridges, carrying a
+little of the title's own amber so the film and the words in front of it are one palette.
+
+| Value | Setting | Why |
+| --- | --- | --- |
+| Samples across the longest edge | 144 | The whole of the cost; the short edge follows the aspect, and the browser scales the result up |
+| Redraws per second | 30 | The film moves slowly enough that more is not visible |
+| Frame budget | 8 ms, judged by the median of 12 frames | One frame settles nothing: a page still loading or a collection lands a frame over budget on hardware that draws the rest inside it |
+| Octaves — picture / displacement | 3 / 2 | Detail in a displacement is detail nothing can see, at the price of detail that can be |
+| Field cells across the longest edge | 5.5 | How large the swirls read |
+| Displacement, per stage | 1.2 cells | What makes it swirl rather than boil |
+| Churn | 9 s per radian | Slow enough to be weather rather than motion |
+| Contrast, then thickness curve | ×2.1 about a midpoint of 0.61, then ^3.2 | Fractal noise piles up around its mean, so without the stretch the picture is all mid-greys; the curve puts most of the surface back down in the blacks. The midpoint is the field's own median, and it is not a half — centre the stretch on a half and an eighth of the picture clips to the highlight, which reads as smoke rather than water |
+| Sheen | 3.4 bands across the range, ^6 | Oil on water is coloured by interference; the exponent is what makes the ridges thin and wet rather than a soft gradient |
+| The greys | `#030406` to `#626a76` | §4's palette. The sheen adds the title's amber at 0.1 |
+| Centre scrim | 0.72 | The menu's words sit there, and a backdrop that competes with them is one that has to go |
 
 **The title screen is where the audio context is armed** (§4.3). Browsers refuse to start an
 `AudioContext` without a user gesture, and pressing `Play` is the first gesture there is —

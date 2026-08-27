@@ -46,7 +46,7 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 | `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled; optional per-tile enter cost and a separate grid to straighten against), `raycast` (segment vs boxes on X/Z), `LitGrid` (§5's light-as-terrain views — pure, knows nothing about lights) |
 | `src/world/` | `Objectives` (the run's whole state), `Gates`, `Interaction`, `Notes`, `Props`, `RunOutcome` |
 | `src/audio/` | `AudioCore` (listener on the *player*, pooled sources), `SoundBank` (ZzFX-synthesised placeholders), `profiles`, `Footsteps` |
-| `src/ui/`, `src/editor/`, `src/debug/` | HUD and run overlays; the level editor (§9); the readout, overlays, tuner and frame stats |
+| `src/ui/`, `src/editor/`, `src/debug/` | HUD and run overlays; `TitleScreen` and its `MenuBackdrop` (§8.1's oily-water film — the one thing outside `main.ts` that drives its own `rAF`, and only while the shell's screens are up); the level editor (§9); the readout, overlays, tuner and frame stats |
 
 Ownership rules worth knowing before editing:
 
@@ -61,7 +61,10 @@ Ownership rules worth knowing before editing:
 
 - **One driver on the clock.** A system that registers its own `requestAnimationFrame` while
   `main.ts` is already driving makes the world run at a multiple of real time.
-  `tests/run.test.ts` fails if a run drives itself.
+  `tests/run.test.ts` fails if a run drives itself. The menu's backdrop is the one loop that
+  is not `main.ts`'s, and it is only allowed to be because it is never alive at the same
+  time: `TitleScreen.hide` stops it on the way into a run, and `tests/menuBackdrop.test.ts`
+  fails if that line goes.
 - **Skin weights sum to 1.** Anything else scales the vertex and reads as the character
   deflating, not as a rig bug.
 - **At rest, skinning moves no vertex.** `tests/autoRig.test.ts` asserts it under the
@@ -160,6 +163,15 @@ Each of these looked like bad art or bad luck rather than a bug.
   anything that the ground is there. The shaft's march clamps to `y ≥ 0` separately.
 - **A test that hard-codes a distance that is really a speed times a time** fails on the next
   tuning pass for a reason unrelated to what it checks. Derive it from the constant.
+- **A performance rule that fires on one sample fires on a page still loading.** The menu
+  backdrop stopped animating a second after the menu came up, on hardware drawing every frame
+  in half its budget, because the "too slow" rule was a single over-budget frame and exactly
+  one frame always is. It read as an animation that had never been wired up. Judge on a
+  median of a run of frames.
+- **fBm does not sit on ½, and a range check will not tell you.** The backdrop's contrast
+  stretch was centred on ½ while the field's median measured 0.61, so an eighth of every frame
+  clipped to the highlight — pale plateaus that read as smoke rather than water. The field's
+  *range* was wide and healthy the whole time; only its distribution said anything.
 
 ## Driving the game in a browser
 
@@ -230,10 +242,18 @@ The handle carries: `clock, input, loaded, player, rig, flashlight, environment,
 testEmitter, occluders, enemies, objectives, props, gates, hud, notes, voices, monsterSteps,
 lampVoices, rng, illumination, night, audit, frameStats`.
 
-**`music` and `restart` are the shell's, not the run's**, and are on the handle from the
-moment the page loads rather than from the first run — which is the point of them, since the
+**`music`, `restart` and `backdrop` are the shell's, not the run's**, and are on the handle
+from the moment the page loads rather than from the first run — which is the point of them, since the
 music plays on the title screen and a handle that only existed inside a run could not reach
 it. A run's own entries are merged over these when one is built.
+
+`shadows.backdrop()` is a getter, not a value — the title screen is built after the handle
+is published, so a captured reference would be `undefined`. It answers §8.1's two questions
+that a screenshot cannot: `running` (a frame is scheduled) and `still` (`'preference'` for
+`prefers-reduced-motion`, `'budget'` for a device that could not draw it in time, null while
+it is turning over). Anything about the *rate* is measured off the canvas — hash a
+`getImageData` of it once per `rAF` and count the changes — because `running` says only that
+the loop is alive, not that it is redrawing at the cap.
 
 `shadows.music` is also the only way to see what the menu's music is doing: `new Audio()`
 makes a *detached* element, so it is not in the DOM and `document.querySelector('audio')`
