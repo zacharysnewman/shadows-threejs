@@ -112,7 +112,7 @@ alongside the map. The map file carries no art or collision information itself.
 {
   "tiles": {
     "0": { "prefab": null,            "solid": false },
-    "1": { "prefab": "floor_concrete", "solid": false },
+    "1": { "prefab": "floor_grass", "solid": false },
     "2": { "prefab": "wall_brick",     "solid": true  },
     "3": { "prefab": "fence_chainlink", "solid": true  }
   }
@@ -133,6 +133,35 @@ alongside the map. The map file carries no art or collision information itself.
   non-zero *and* its Layer 1 tile is not `solid`. Gates flip their tile's walkability at
   runtime (§6). The resulting boolean grid is the A\* input and is rebuilt on any
   walkability change.
+
+### Ground surface
+
+Every floor tile and every metre of the surround (*Beyond the boundary*) wears one
+procedurally generated earth texture rather than the kit's own floor art: a colour, a
+normal and a roughness map, built as pixels at load. `floor_grass` and `floor_dirt` are two
+roles a map can still place — the map format keeps both, and a level may want the
+distinction later — but both wear the same generated ground today. A textured lawn was
+built for `floor_grass` and cut: at the resolution a floor tile actually renders at, blade
+detail read as noise, not grass, and a good-looking earth beat a bad-looking one.
+
+- **The normal map is the point of it.** Lighting is a torch beam raking a floor at a low
+  angle (§4), and a flat surface takes that light flatly — it reads as a bright patch rather
+  than as light falling on ground. Relief (clods, grain, and pebbles that catch a highlight
+  on one side and cast a scrap of shadow on the other) is what makes it read.
+- **Seamless by construction.** The noise is built from lattices whose period divides the
+  texture, so the last row or column is already the neighbour of the first and nothing is
+  blended at an edge.
+- **One repeat covers 8 m**, at 512 px per repeat (64 px/m) — fine enough that a beam lying
+  across the floor finds detail rather than a gradient, and wide enough that the map's own
+  tile grid is never visible in it.
+- **UVs come from world position, not the mesh's.** The floor is one instanced mesh (§7), so
+  every tile sharing the mesh's own UVs would show the same square metre of texture stamped
+  everywhere. Deriving the UV from world X/Z instead makes the ground continuous across
+  tiles, across the map's edge, and into the surround beyond it — one texture with no seam
+  anywhere a player can stand.
+- **Generated, not loaded**, for the reason the surround's small tree is (*Beyond the
+  boundary*): a seamless, high-resolution ground texture is a large file, and the kit's own
+  floor art is a slab atlas never meant to be walked over by the acre.
 
 ### Three ways a map says "put a thing here"
 
@@ -443,9 +472,18 @@ draws the torch from the hand out to the beam rather than parenting it to either
   which part of that circle it sits on.
 - Arms that are holding nothing hang **14°** out from vertical.
 - One stride is **0.9 s**, the legs swinging **±22°** and the body lifting **1.2%** of its
-  height twice per stride — once over each foot.
-- The clip is authored at the walk speed, so it plays at ground speed ÷ **3.0 m/s** and
-  stops when the player does.
+  height twice per stride — once over each foot. The lift peaks at the *pass*, where the
+  legs are together and one of them is carrying the body; its two low points are the two
+  footfalls, which is where the weight is handed over.
+- **The stride is a length of ground, not a length of time.** The clip is authored at the
+  walk speed, so one stride is 0.9 s × **3.0 m/s** = **2.7 m** covered, and the body is
+  posed at the point in that stride the player has actually walked to. A sprint is the same
+  stride crossed faster rather than a second animation, and a player held against a wall
+  does not walk on the spot.
+- **A foot plants a quarter and three quarters of the way through**, where each leg reaches
+  its forward extreme — so the two footfalls in a stride are **1.35 m** apart. That is the
+  frame the step is *heard* on (§4.3): the sound and the leg read the same number, and
+  nothing can drift between them at any speed.
 - Every value here is a fraction of the model's own size rather than a length, so the same
   numbers suit a character of any height.
 
@@ -556,8 +594,9 @@ two read differently at range:
   nothing is visible outside the beam, an invisible monster is distinguishable from nothing —
   everything is equally unseen. Against a gloom in which a spider is a shape crossing open
   ground, a creature that never appears there at all is a different kind of thing. Its other
-  tells stay the ones §5 gives it: footsteps that carry further than anything else on the map
-  (§4.3), and the lamp it makes flicker from across the level (§4.2).
+  tell stays the one §5 gives it: the lamp it makes flicker from across the level (§4.2). It
+  makes no sound of its own (§5.2), so that flicker and the beam are the whole of what a
+  player has to find it with.
 
 **A moon for shape.** One dim directional light, steeply angled, gives the gloom a direction
 so an unlit yard reads as a place rather than as a flat grey wash. It casts no shadow.
@@ -814,14 +853,14 @@ readable at any distance, and worth reading before the pool goes dark.
 - All entities utilize `THREE.PositionalAudio` with a defined rolloff/reference distance so
   the player can audibly locate unseen threats. Default `linear` distance model,
   `refDistance` 2 m, `maxDistance` 25 m, `rolloffFactor` 1.0.
-- The Shadow Monster's footsteps use `refDistance` 4 m and `maxDistance` 35 m — audible
-  further out than anything else on the map, because hearing is the only way to track it
-  before it is close enough to cast a readable shadow.
-- The player's own footsteps sound on a cadence driven by ground actually covered, not by a
-  timer: a player held against a wall makes no noise however hard they walk into it. One
-  step per **0.95 m** covered — one foot, then the other. They are quieter and higher than
-  the Shadow Monster's (§5.2) and always centred on the listener, so they can never be
-  mistaken for something approaching.
+- **The player's own footsteps are the walk cycle's, not a cadence of their own.** A step
+  sounds at each of the two footfalls in a stride (§3.1) — left foot down, right foot down,
+  1.35 m apart — so the sound lands on the frame the foot does at any speed, and a player
+  held against a wall makes no noise however hard they walk into it. A second counter
+  beside the animation is the thing this rules out: any counter that does not agree with
+  the legs is right at one speed and wrong at every other, which is heard as steps too slow
+  when walking and too fast when sprinting. They are always centred on the listener, so
+  they can never be mistaken for something approaching.
 - **The player's step is four recordings, not one, and no two consecutive steps use the
   same one.** The player walks for the whole run, and a single sample on repeat is the
   first thing an ear picks out — the repetition becomes more audible than the footstep. The
@@ -831,11 +870,13 @@ readable at any distance, and worth reading before the pool goes dark.
   the draw is over the *other* three: still even across the set, and never twice running.
 - The four are cut to one footfall each and aligned so the audible strike sits at the same
   offset in every one, because a variant whose step arrives later is a variant that moves
-  the cadence. Being quieter than the Shadow Monster is a property of the recordings
-  themselves: the player's steps play at zero distance and never attenuate, so there is no
-  distance left to make them quieter.
+  the cadence off the foot it belongs to. They are matched to each other in peak and in
+  loudness for the same reason: the player's steps play at zero distance and never
+  attenuate, so there is no distance left to even them out and a loud take reads as a
+  different walker.
 - Browser autoplay policy requires a user gesture before audio starts; the title screen's
-  first input resumes the `AudioContext`.
+  first input resumes the `AudioContext`. The menu's music asks anyway, on the chance that
+  this browser allows it (§8.1).
 - A paused simulation (§6) silences positional sources: a world that is not advancing must
   not still be walking towards the player. The listener and the context stay alive, so
   unpausing resumes rather than restarts.
@@ -1013,11 +1054,11 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
     It follows that the two sizes are load-bearing rather than incidental. If the spiders
     were this size the shadow would be ambiguous, and the run's one hard way of seeing this
     creature would resolve to "probably a spider".
-  - **Audio:** heavy, slow, spatial footsteps — one every 1.6 m of ground covered, which
-    at its pursuit speed is a step a little under every second. Slower than the player's
-    own stride and carrying much further (§4.3), so the two are never confusable and a
-    step heard in the dark is information about where the monster is, not about where the
-    player just was.
+  - **Audio: none.** The Shadow Monster moves in silence. Every other threat on the map
+    announces itself — the spiders chitter, the lamps strain — and this one is the
+    exception, so the absence of a sound is itself the thing that distinguishes it. It
+    also means the beam is the only instrument that finds it: a player who wants to know
+    where it is has to look, and looking is what freezes it and what lets it close.
 - **Light Reaction Lifecycle:**
   1. **Movement Freeze:** when illuminated (by flashlight or environment light), the Shadow
      Monster cannot move. It can still kill: contact is fatal at any health (§5.3) and a
@@ -1054,18 +1095,19 @@ kind of thing the tuning pass (§1, content) is expected to move once the game i
        consecutive ticks — the beam **goes out, and stays out for 0.5 s**, about
        the length of a human blink. For the whole of that window the Shadow Monster's freeze
        lifts and it simply *walks*, at its ordinary 1.8 m/s pursuit speed, along a route the
-       grid allows. Roughly 0.9 m of ground, and it can be heard covering it: the blink is a
-       walk, so it has footsteps (§4.3). Another blink cannot begin until 0.5 s after this
-       one **ends**, so the beam is reliable for at least that long in between.
+       grid allows. Roughly 0.9 m of ground, covered in silence like the rest of its
+       movement (above). Another blink cannot begin until 0.5 s after this one **ends**, so
+       the beam is reliable for at least that long in between.
 
        It is a walk and not a teleport on purpose. A jump-cut is something the player is
        told about after the fact — the shape was there, now it is here. Half a second of
-       near-dark with heavy footsteps in it is something they are *inside*, and the dread is
-       in the window rather than in the discovery afterwards.
+       near-dark that the monster is crossing is something they are *inside*, and the dread
+       is in the window rather than in the discovery afterwards.
 
        The monster casts no shadow for the length of the blink. The beam is still on it and
        still bright enough to cast by, so this is enforced rather than incidental — see the
-       hard rule above. The walk is something the player *hears*; it is never something they
+       hard rule above. What the player gets is the shape on the floor going out and the
+       half-second before the beam finds it again; the walk itself is never something they
        watch.
 
        Those numbers interlock: the threshold is only reachable once `flickerSeverity`
@@ -1403,11 +1445,26 @@ so it is mixed with the game's sound, suspended with it, and takes no lock-scree
 controls and nothing the player was already listening to. A media element left to itself is
 *media* to a phone, which is right for a music app and wrong for a game.
 
-**It waits for a gesture rather than failing.** The menu is on screen before there has been
-one, so the first attempt to play is refused — that is the expected first answer, not an
-error, and the reply to it is to start on the next input. It is also **streamed rather than
+**It asks the moment the menu appears, and waits for a gesture rather than failing.** The
+menu is on screen before there has been one, so the attempt is usually refused — that is the
+expected first answer, not an error, and the reply to it is to start on the next input. The
+attempt is still made every time, because the refusal is not universal: a browser that has
+decided this origin may autoplay starts the music with the menu, and asking is the only way
+to find out which kind of browser this is. It is asked again whenever the page becomes
+visible, because a tab loaded in the background is refused for a reason that expires — a
+menu nobody has looked at yet has not been shown. It is also **streamed rather than
 decoded**: a track of this length held as PCM is memory measured in hundreds of megabytes,
 which is not a thing to spend on a menu.
+
+**Once started, it pauses whenever it could not be heard and resumes when it could be
+again.** A minimised window, a backgrounded tab, a browser window that has lost focus to
+something else — none of those end the menu (that is `stop()`, when a run begins), so the
+track is paused directly and picked back up from where it left off rather than left playing
+into an empty room or restarted from silence. Visibility and focus are checked separately
+and both have to hold for the track to be considered audible: a tab kept in front on a
+second monitor while the browser window itself is unfocused is visible but not focused, and
+a tab switched away from behind an already-unfocused browser is neither — either failure on
+its own is enough to pause.
 
 **Two gates open on that input: the audio context, and the track.** Both are asked for in
 the same gesture and neither is waited on there — Safari counts a gesture as spent across an
@@ -1545,7 +1602,7 @@ site (§1), rather than in a third-party tool. Three reasons, in order of weight
   used carefully instead of quickly.
 - **The palette is the standard tileset.** The editor writes tile ids, and ids mean nothing
   without the `tileset.json` a map is loaded beside (§2). So the ids the palette offers —
-  `0` pit, `1` concrete, `2` wall, `3` fence, `4` dirt, `5` gate, `6` crate — are defined by
+  `0` pit, `1` grass, `2` wall, `3` fence, `4` dirt, `5` gate, `6` crate — are defined by
   every `tileset.json` in the project, whether or not that map uses them. A level moved
   between directories keeps its tiles; one played through §9.3 gets the same walls it was
   drawn with.
@@ -1586,7 +1643,7 @@ precedence between them is the whole of the rule:
   with two things called the same thing is a list nobody can choose from.
 - **A fresh browser opens `example`**, not an empty grid. The default is a level that
   already parses, already passes the audit and already has one of everything, which is a
-  better place to start than 32×32 of concrete — and it makes the read-only case the first
+  better place to start than 32×32 of bare grass — and it makes the read-only case the first
   one an author meets, rather than a surprise the first time they press Save.
 - **The draft is what is open, not a map of its own.** Work in progress survives the browser
   closing whether or not it has ever been saved, and it remembers which map it came from, so

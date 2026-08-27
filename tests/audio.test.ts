@@ -11,7 +11,8 @@ import { mp3Facts } from '../scripts/mp3-facts.mjs';
 import { wavFacts } from '../scripts/wav-facts.mjs';
 import { describe, expect, it } from 'vitest';
 import { AUDIO, MUSIC, PLAYER, RUN } from '../src/config';
-import { FootstepCadence, FootstepVariants } from '../src/audio/Footsteps';
+import { FOOTFALL_METRES } from '../src/player/WalkCycle';
+import { FootstepVariants } from '../src/audio/Footsteps';
 import { attenuationAt, AUDIO_PROFILES, stereoBias } from '../src/audio/profiles';
 import {
   isLooping,
@@ -23,7 +24,6 @@ import {
 import { Rng } from '../src/core/rng';
 
 const DEFAULT = AUDIO_PROFILES.default;
-const MONSTER = AUDIO_PROFILES.monsterFootsteps;
 
 describe('audio profiles', () => {
   it('matches the distances §4.3 specifies', () => {
@@ -33,8 +33,6 @@ describe('audio profiles', () => {
       maxDistance: 25,
       rolloffFactor: 1,
     });
-    expect(MONSTER.refDistance).toBe(4);
-    expect(MONSTER.maxDistance).toBe(35);
   });
 
   it('is at full volume inside the reference distance', () => {
@@ -47,16 +45,6 @@ describe('audio profiles', () => {
     expect(attenuationAt(midpoint, DEFAULT)).toBeCloseTo(0.5);
     expect(attenuationAt(DEFAULT.maxDistance, DEFAULT)).toBeCloseTo(0);
     expect(attenuationAt(1000, DEFAULT)).toBe(0);
-  });
-
-  it('carries the monster further than anything else on the map (§4.3)', () => {
-    // The whole point of its own profile: at a distance where everything else has gone
-    // quiet, its footsteps are still there.
-    for (const distance of [10, 20, 24]) {
-      expect(attenuationAt(distance, MONSTER)).toBeGreaterThan(attenuationAt(distance, DEFAULT));
-    }
-    expect(attenuationAt(30, DEFAULT)).toBe(0);
-    expect(attenuationAt(30, MONSTER)).toBeGreaterThan(0);
   });
 
   it('reads left and right off the screen axis, and centres what is north or south', () => {
@@ -73,42 +61,6 @@ describe('audio profiles', () => {
     const bias = stereoBias(5, -5);
     expect(bias).toBeCloseTo(Math.SQRT1_2);
     expect(Math.abs(bias)).toBeLessThan(1);
-  });
-});
-
-describe('FootstepCadence', () => {
-  it('lands a step every stride of ground covered', () => {
-    const cadence = new FootstepCadence(1);
-    expect(cadence.tick(0.5)).toBe(false);
-    expect(cadence.tick(0.4)).toBe(false);
-    expect(cadence.tick(0.2)).toBe(true);
-  });
-
-  it('makes no noise when the player is not moving', () => {
-    const cadence = new FootstepCadence(1);
-    for (let i = 0; i < 100; i += 1) expect(cadence.tick(0)).toBe(false);
-  });
-
-  it('keeps an even cadence at speed rather than drifting', () => {
-    // Walk 3 m/s for 10 s at 60 Hz with a 1 m stride: 30 steps, give or take the first.
-    const cadence = new FootstepCadence(1);
-    let steps = 0;
-    for (let i = 0; i < 600; i += 1) if (cadence.tick(3 / 60)) steps += 1;
-    expect(steps).toBeGreaterThanOrEqual(29);
-    expect(steps).toBeLessThanOrEqual(30);
-  });
-
-  it('does not swallow strides when one tick covers several', () => {
-    const cadence = new FootstepCadence(1);
-    expect(cadence.tick(2.5)).toBe(true);
-    // The remainder carries, so the next step lands 0.5 m later rather than 1 m later.
-    expect(cadence.tick(0.5)).toBe(true);
-  });
-
-  it('takes its stride from the config rather than a number of its own (§4.3)', () => {
-    const cadence = new FootstepCadence();
-    expect(cadence.tick(AUDIO.playerStrideMetres * 0.99)).toBe(false);
-    expect(cadence.tick(AUDIO.playerStrideMetres * 0.02)).toBe(true);
   });
 });
 
@@ -190,8 +142,8 @@ describe('placeholder synthesis', () => {
   });
 
   it('follows the sample rate it is given', () => {
-    const low = synthesise('footstep_heavy', 22050);
-    const high = synthesise('footstep_heavy', 44100);
+    const low = synthesise('death_monster', 22050);
+    const high = synthesise('death_monster', 44100);
     expect(high.data.length).toBeCloseTo(low.data.length * 2, -1);
   });
 
@@ -201,62 +153,12 @@ describe('placeholder synthesis', () => {
     for (const name of PLAYER_FOOTSTEPS) expect(isLooping(name)).toBe(false);
   });
 
-  it('gives the monster a heavier step than the player, where "heavier" means lower', () => {
-    // Not a mix note: §5.2 is tracked by ear before it is seen, and low frequencies are
-    // what survive distance. Compared by zero crossings, which is cheap and enough.
-    //
-    // Measured across the part of the buffer that is *sounding*, not across the whole of
-    // it. The monster's step is both lower and longer, and a rate taken over the padded
-    // length would count its silence against it — which reads as the low sound being the
-    // high one.
-    const crossingRate = (name: SoundName): number => {
-      const { data } = synthesise(name, sampleRate);
-      let peak = 0;
-      for (const sample of data) peak = Math.max(peak, Math.abs(sample));
-      const floor = peak * 0.01;
-
-      let count = 0;
-      let sounding = 0;
-      for (let i = 1; i < data.length; i += 1) {
-        if (Math.abs(data[i] ?? 0) < floor) continue;
-        sounding += 1;
-        if ((data[i - 1] ?? 0) <= 0 !== (data[i] ?? 0) <= 0) count += 1;
-      }
-      return count / (sounding / sampleRate);
-    };
-    expect(crossingRate('footstep_heavy')).toBeLessThan(crossingRate('footstep_light_1'));
-  });
-
-  it('puts the monster\'s step where distance cannot take it: below 150 Hz', () => {
-    // The crossing rate above is a weak proxy — broadband noise dominates it, and both
-    // steps read around 2.5 kHz by it. What §4.3 actually claims is that the low end is
-    // what survives distance, so measure the low end: the share of a sound's energy that
-    // makes it through a one-pole low-pass at roughly 150 Hz.
-    const lowShare = (name: SoundName): number => {
-      const { data } = synthesise(name, sampleRate);
-      // One-pole coefficient for a ~150 Hz corner at this rate.
-      const coefficient = 1 - Math.exp((-2 * Math.PI * 150) / sampleRate);
-      let filtered = 0;
-      let lowEnergy = 0;
-      let totalEnergy = 0;
-      for (const sample of data) {
-        filtered += coefficient * (sample - filtered);
-        lowEnergy += filtered * filtered;
-        totalEnergy += sample * sample;
-      }
-      return totalEnergy === 0 ? 0 : lowEnergy / totalEnergy;
-    };
-
-    const heavy = lowShare('footstep_heavy');
-    expect(heavy).toBeGreaterThan(lowShare('footstep_light_1') * 2);
-    expect(heavy).toBeGreaterThan(0.1);
-  });
 });
 
 describe('the death sounds (§5.3)', () => {
   const sampleRate = 44100;
 
-  /** Share of a sound's energy below ~150 Hz, as `footstep_heavy` is measured above. */
+  /** Share of a sound's energy below ~150 Hz — what survives distance. */
   const lowShare = (name: SoundName): number => {
     const { data } = synthesise(name, sampleRate);
     const coefficient = 1 - Math.exp((-2 * Math.PI * 150) / sampleRate);
@@ -417,12 +319,13 @@ describe("the player's step recordings (§4.3)", () => {
     for (const offset of offsets) expect(offset).toBeCloseTo(offsets[0]!, 2);
   });
 
-  it('finishes inside one stride, so a step never overlaps the next', () => {
-    // Derived, not hard-coded: the stride and the walk speed are both spec values (§4.3,
-    // §3.1), and a tuning pass on either should not fail this for the wrong reason.
-    const strideSeconds = AUDIO.playerStrideMetres / PLAYER.walkSpeed;
+  it('finishes before the next foot lands, at the speed they land fastest', () => {
+    // Derived, not hard-coded: the footfall spacing is §3.1's stride and the speed is
+    // §3.1's sprint, and a tuning pass on either should not fail this for the wrong
+    // reason. Sprinting is the bound — that is where the two feet are closest in time.
+    const between = FOOTFALL_METRES / PLAYER.sprintSpeed;
     for (const clip of clips) {
-      expect(clip.samples.length / clip.sampleRate).toBeLessThan(strideSeconds);
+      expect(clip.samples.length / clip.sampleRate).toBeLessThan(between);
     }
   });
 
@@ -438,20 +341,6 @@ describe("the player's step recordings (§4.3)", () => {
       Math.sqrt(samples.reduce((sum, s) => sum + s * s, 0) / samples.length),
     );
     expect(Math.max(...levels) / Math.min(...levels)).toBeLessThan(2);
-  });
-
-  it("stays under the monster's step, which §4.3 requires", () => {
-    // §4.3: the player's own steps are quieter than the Shadow Monster's. They also play
-    // at zero distance and never attenuate, so "quieter" has to be true of the asset —
-    // there is no distance left to do it. The monster's placeholder normalises to 0.9.
-    let heavy = 0;
-    for (const sample of synthesise('footstep_heavy', 48000).data) {
-      heavy = Math.max(heavy, Math.abs(sample));
-    }
-    for (const { samples } of clips) {
-      const peak = samples.reduce((max, s) => Math.max(max, Math.abs(s)), 0);
-      expect(peak).toBeLessThan(heavy);
-    }
   });
 
   it('starts and ends at silence, so a step cannot click', () => {

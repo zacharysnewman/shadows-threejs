@@ -1,39 +1,13 @@
 /**
- * Step cadence, and which recording a step comes out as (§4.3).
+ * Which recording a footstep comes out as (§4.3).
  *
- * The first consumer of the source pool, and the only one until enemies exist: a step
- * sound every stride's worth of ground covered. Driven by distance rather than by a timer,
- * so a player easing into a walk does not get the same cadence as one at full speed, and a
- * player stopped against a wall gets none at all.
- *
- * Pure arithmetic on the fixed clock (§7) — it reports *when* a step lands and *which* of
- * the recordings it is, and nothing else, so the same classes serve the player now and any
- * walking entity later.
+ * *When* a step lands is not here: it is the walk cycle's, in `src/player/WalkCycle.ts`,
+ * because a step is a foot going down and the body is what puts it there. A cadence of its
+ * own beside the animation is what drifted, and the sound the player heard was a walk
+ * nobody was doing. This is the other half — which of the four takes that footfall is.
  */
 
-import { AUDIO } from '../config';
 import type { Rng } from '../core/rng';
-
-export class FootstepCadence {
-  private travelled = 0;
-
-  constructor(private readonly strideMetres: number = AUDIO.playerStrideMetres) {}
-
-  /** Feed the distance covered this tick. True on the tick a step lands. */
-  tick(distanceMoved: number): boolean {
-    if (distanceMoved <= 0) return false;
-    this.travelled += distanceMoved;
-    if (this.travelled < this.strideMetres) return false;
-    // Modulo rather than reset: at high speed a tick can cover more than one stride, and
-    // carrying the remainder keeps the cadence even instead of drifting.
-    this.travelled %= this.strideMetres;
-    return true;
-  }
-
-  reset(): void {
-    this.travelled = 0;
-  }
-}
 
 /**
  * Which of the player's step recordings the next footfall is (§4.3).

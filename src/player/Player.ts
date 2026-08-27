@@ -31,6 +31,7 @@ import { PLAYER, PLAYER_RIG } from '../config';
 import type { PlayerSpawnEntity } from '../map/types';
 import { moveCircle, type ColliderIndex } from './collision';
 import { Health } from './Health';
+import { lerpPhase, WalkCycle } from './WalkCycle';
 
 /**
  * Grid rotation, in degrees clockwise from north (§2), as a world-space direction. North
@@ -62,6 +63,16 @@ export class Player {
   /** §3.1 — the walk, once there is a body with a rig to play it on. */
   private mixer: THREE.AnimationMixer | null = null;
   private walk: THREE.AnimationAction | null = null;
+  /**
+   * §3.1 — where the legs are, as ground covered. The clip is posed from this rather than
+   * played at a rate, so the body and §4.3's footsteps cannot drift apart: both read the
+   * same number.
+   */
+  private readonly cycle = new WalkCycle();
+  /** Cycle position at the end of the previous tick, for render interpolation. */
+  private previousPhase = 0;
+  /** §4.3 — feet that landed on the tick just run. Normally 0 or 1. */
+  private _footfalls = 0;
   /** §3.1, §4.1 — the arms that reach for the torch. Empty when the art has no rig. */
   private readonly arms: Arm[] = [];
   /** §4 — every material the readability allowance is applied to, art or placeholder. */
@@ -120,6 +131,21 @@ export class Player {
   }
 
   /**
+   * §4.3 — how many feet landed on the tick just run, for whoever is making the sound.
+   *
+   * A count rather than a callback: the footfall is a fact about the walk cycle, and the
+   * body has no business knowing there is audio downstream of it.
+   */
+  get footfalls(): number {
+    return this._footfalls;
+  }
+
+  /** §3.1 — cycle position at the end of the last tick, 0–1. Debug readout, and tests. */
+  get walkPhase(): number {
+    return this.cycle.phase;
+  }
+
+  /**
    * Advance one simulation tick.
    *
    * `moveX` / `moveZ` are the input's movement intent in world axes with magnitude ≤ 1;
@@ -127,6 +153,7 @@ export class Player {
    */
   tick(dt: number, moveX: number, moveZ: number, sprintHeld = false): void {
     this.previous.copy(this.position);
+    this.previousPhase = this.cycle.phase;
 
     // §3.1 — no sprinting in place: a held key with no movement behind it is not a sprint,
     // and must not spend the aim lock.
@@ -155,6 +182,10 @@ export class Player {
     );
     this.position.set(result.x, result.z);
     this._touchingWall = result.hit;
+
+    // §3.1 — the walk advances on ground actually covered, so a player held against a wall
+    // neither walks on the spot nor makes a sound (§4.3). The footfalls fall out of it.
+    this._footfalls = this.cycle.advance(this.previous.distanceTo(this.position));
 
     if (result.hit) {
       // Cancel only the component driving into the surface: the along-wall component is
@@ -297,11 +328,18 @@ export class Player {
     this.position.set(worldX, worldZ);
     this.previous.copy(this.position);
     this.velocity.set(0, 0);
+    // Ground that was crossed by being put down somewhere else is not ground walked, so
+    // the legs start again rather than carrying a stride across the jump.
+    this.cycle.reset();
+    this.previousPhase = 0;
+    this._footfalls = 0;
   }
 
   /**
    * Place the mesh for rendering. `alpha` is the sim clock's fraction into the pending
-   * tick; interpolating with it decouples visible smoothness from the 60 Hz tick rate.
+   * tick; interpolating with it decouples visible smoothness from the 60 Hz tick rate —
+   * the legs as well as the body, since §3.1's walk is posed from the simulation's own
+   * cycle rather than played on the render delta.
    */
   /**
    * Swap the capsule for real art (§3.1, §4).
@@ -357,23 +395,25 @@ export class Player {
   }
 
   /**
-   * Advance the walk, at the rate the player is actually covering ground (§3.1).
+   * Pose the walk at the cycle position the player has actually walked to (§3.1).
    *
-   * The same rule §5.1 states for the spider, for the same reason: a fixed playback rate is
-   * right at exactly one speed, and the player has two. Sprinting is the walk hurried rather
-   * than a second animation, which is what makes the aim lock — not a new gait — the thing
-   * that reads as sprinting.
+   * **The clip is posed, not played.** A playback rate is right at exactly one speed, and
+   * the player has two — but the deeper problem is that a rate and a distance drift: the
+   * legs would be somewhere the footsteps are not, and the faster the player moves the
+   * further apart the two get. Reading both off `WalkCycle` is what makes a step land on
+   * the frame the foot does, at any speed and against any wall.
    *
-   * Runs on the render delta, like every other presentation effect (§7).
+   * `alpha` is the sim clock's fraction into the pending tick, exactly as the body's
+   * position uses it: the cycle advances at 60 Hz because §4.3's step is on the simulation
+   * clock, and interpolating it here is what keeps the legs off that staircase.
    */
-  private advanceWalk(delta: number): void {
+  private advanceWalk(alpha: number): void {
     if (!this.mixer || !this.walk) return;
-    // Below a crawl the legs stop rather than creeping, so a player standing still is
-    // standing still and not shuffling on the spot.
-    const rate = this.speed / PLAYER_RIG.walkClipSpeed;
-    this.walk.timeScale = rate;
-    this.walk.paused = rate < 0.02;
-    this.mixer.update(delta);
+    const phase = lerpPhase(this.previousPhase, this.cycle.phase, alpha);
+    this.walk.time = phase * this.walk.getClip().duration;
+    // Zero, because nothing here is measured in time any more: the update applies the
+    // pose the line above asked for and advances nothing.
+    this.mixer.update(0);
   }
 
   /**
@@ -429,8 +469,8 @@ export class Player {
     return _hands.divideScalar(this.arms.length);
   }
 
-  render(alpha: number, delta = 0): void {
-    this.advanceWalk(delta);
+  render(alpha: number): void {
+    this.advanceWalk(alpha);
     this.object.position.set(
       THREE.MathUtils.lerp(this.previous.x, this.position.x, alpha),
       0,

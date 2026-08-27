@@ -29,10 +29,9 @@ import {
   SIM,
 } from './config';
 import type { AudioCore } from './audio/AudioCore';
-import { FootstepCadence, FootstepVariants } from './audio/Footsteps';
+import { FootstepVariants } from './audio/Footsteps';
 import { PLAYER_FOOTSTEPS } from './audio/SoundBank';
 import { EnemyManager } from './enemies/EnemyManager';
-import { MonsterFootsteps } from './enemies/MonsterFootsteps';
 import { Spider } from './enemies/Spider';
 import { SpiderVoices } from './enemies/SpiderVoices';
 import type { AssetLoader } from './core/AssetLoader';
@@ -51,6 +50,7 @@ import { FreeCamera } from './debug/FreeCamera';
 import { PathOverlay } from './debug/PathOverlay';
 import type { TuningPanel } from './debug/TuningPanel';
 import { WalkabilityOverlay } from './debug/WalkabilityOverlay';
+import { Floodlight } from './debug/Floodlight';
 import { addNightAmbient } from './lighting/Ambient';
 import { EnvironmentLights } from './lighting/EnvironmentLights';
 import { Flashlight } from './lighting/Flashlight';
@@ -172,6 +172,9 @@ export async function createRun(
   // of fragments actually in the way rather than the whole forest.
   occluders.attach(surround.object);
 
+  // §8.3 — a view for looking at what the game keeps dark. Not a lighting state: nothing
+  // that reads the light knows it exists (`Floodlight`).
+  const floodlight = new Floodlight(viewport.scene, night);
   const walkability = new WalkabilityOverlay(loaded.grid);
   const colliders = new ColliderOverlay(loaded.colliders);
   const markers = new EntityMarkers(loaded.entities);
@@ -247,14 +250,11 @@ export async function createRun(
     );
   });
 
-  const footsteps = new FootstepCadence();
-  // §4.3 — and which of the four recordings each step comes out as. Its own stream, so
+  // §4.3 — which of the four recordings each step comes out as. Its own stream, so
   // adding a randomised system elsewhere does not re-roll the order the steps play in.
   const footstepVariants = new FootstepVariants(PLAYER_FOOTSTEPS.length, rng.stream('footsteps'));
   // §5.1 — the spiders get a voice now that they have something to be heard doing.
   const voices = new SpiderVoices(audio, enemies.enemies);
-  // §5.2 — and the monster gets the only tell it has at range.
-  const monsterSteps = new MonsterFootsteps(audio);
   // §4.2 — a straining lamp is audible from anywhere, which is the half of the tell that
   // still works when the lamp is off screen.
   const lampVoices = new LampVoices(audio, environment);
@@ -278,13 +278,13 @@ export async function createRun(
     const moveX = driving ? input.moveX : 0;
     const moveZ = driving ? input.moveZ : 0;
     const sprinting = driving && input.isHeld('sprint');
-    const before = player.position.clone();
     player.tick(dt, moveX, moveZ, sprinting);
     flashlight.tick(dt);
 
-    // The pool's first customer: a step every stride of ground actually covered, so a
-    // player stopped against a wall makes no noise however hard they walk into it.
-    if (footsteps.tick(before.distanceTo(player.position))) {
+    // §4.3 — one sound per foot the walk cycle just put down, so the step is heard on the
+    // frame it is seen and a player stopped against a wall makes no noise however hard
+    // they walk into it. The body decides when a foot lands; this only chooses the take.
+    for (let step = 0; step < player.footfalls; step += 1) {
       audio.playAt(
         PLAYER_FOOTSTEPS[footstepVariants.next()]!,
         player.position.x,
@@ -307,7 +307,6 @@ export async function createRun(
     flashlight.intensityScale = enemies.beamInterference;
     // §4.2 — the lamps find out who is standing under them.
     environment.tick(dt, enemies.monsterPositions(), () => sabotageRng.float());
-    monsterSteps.tick(enemies.monsters);
     // §6.4 — a swing is the one piece of map geometry that moves, and it runs on the
     // simulation clock like everything else with a timer, so a note modal stops it too.
     gates.tick(dt);
@@ -730,7 +729,7 @@ export async function createRun(
    */
   if (tuning) {
     tuning.onChange = (): void => {
-      night.ambient.intensity = AMBIENT.intensity;
+      if (!floodlight.enabled) night.ambient.intensity = AMBIENT.intensity;
       night.moon.intensity = MOON.intensity;
       flashlight.refresh();
       flashlight.shaftDensity = LIGHT_SHAFT.flashlightDensity;
@@ -818,6 +817,10 @@ export async function createRun(
       case 'KeyL':
         environment.toggleAll();
         break;
+      case 'KeyU':
+        // §8.3 — see the ground, the map and the art without walking a beam over them.
+        console.info(`[debug] floodlight ${floodlight.toggle() ? 'on' : 'off'}`);
+        break;
       case 'KeyK':
         // §3.4 — one spider's worth of damage, the only damage source until Phase 7.
         if (player.health.damage()) console.info('[player] health reached 0 (Phase 10 owns death)');
@@ -894,11 +897,11 @@ export async function createRun(
     hud,
     notes,
     voices,
-    monsterSteps,
     lampVoices,
     rng,
     illumination,
     night,
+    floodlight,
     audit,
     frameStats,
   };
@@ -982,8 +985,10 @@ export async function createRun(
     // plays over a world that has stopped, not one still walking around behind it.
     if (outcome.simulating) clock.advance(realDelta);
 
-    // §7 — the render delta, not the tick: the walk cycle is a presentation effect.
-    player.render(clock.alpha, realDelta);
+    // §7 — the tick's own alpha and no delta: the walk cycle is *ground*, advanced on the
+    // simulation clock with the movement that produced it (§3.1), and interpolated here for
+    // the same reason the body's position is.
+    player.render(clock.alpha);
     // §7 — the render delta, not the tick: an animation is a presentation effect.
     enemies.render(clock.alpha, realDelta);
     // §5.3 — only while the world is live. These re-`play()` their emitters whenever the

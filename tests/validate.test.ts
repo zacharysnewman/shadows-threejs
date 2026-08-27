@@ -7,7 +7,7 @@ import { ENTITY_DEFAULTS } from '../src/config';
 const TILESET = {
   tiles: {
     '0': { prefab: null, solid: false },
-    '1': { prefab: 'floor_concrete', solid: false },
+    '1': { prefab: 'floor_grass', solid: false },
     '2': { prefab: 'wall_brick', solid: true },
   },
 };
@@ -29,8 +29,8 @@ function minimalMap(overrides: Record<string, unknown> = {}) {
 
 describe('parseTileset', () => {
   it('parses tile definitions and defaults `solid` to false', () => {
-    const tileset = parseTileset({ tiles: { '1': { prefab: 'floor_concrete' } } });
-    expect(tileset.get(1)).toEqual({ prefab: 'floor_concrete', solid: false });
+    const tileset = parseTileset({ tiles: { '1': { prefab: 'floor_grass' } } });
+    expect(tileset.get(1)).toEqual({ prefab: 'floor_grass', solid: false });
   });
 
   it('supplies the empty tile 0 when a tileset omits it', () => {

@@ -107,7 +107,7 @@ describe('normalisePrefab (§1)', () => {
     // KayKit's floor slab tops out at +0.05. Left there, the player walks 5 cm underground
     // and every upright prefab floats.
     const geometry = box([-1, 1], [-0.1, 0.05], [-1, 1]);
-    normalisePrefab(geometry, 'floor_concrete');
+    normalisePrefab(geometry, 'floor_grass');
     const after = bounds(geometry);
     expect(after.y[1]).toBe(0);
     expect(after.y[0]).toBe(-0.15);

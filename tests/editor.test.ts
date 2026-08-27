@@ -42,7 +42,7 @@ import { parseMap, parseTileset } from '../src/map/validate';
 const tileset = parseTileset({
   tiles: {
     '0': { prefab: null, solid: false },
-    '1': { prefab: 'floor_concrete', solid: false },
+    '1': { prefab: 'floor_grass', solid: false },
     '2': { prefab: 'wall_brick', solid: true },
   },
 });

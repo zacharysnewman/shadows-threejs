@@ -61,7 +61,16 @@ export class OccluderFade {
     if (this.patched.has(material)) return;
     this.patched.add(material);
 
-    material.onBeforeCompile = (shader) => {
+    // **Chained, not replaced.** A material may already carry a patch of its own — §2's
+    // ground derives its UVs from world position in exactly this hook — and assigning over
+    // it drops that patch silently: the material still compiles, still draws, and simply
+    // loses whatever the first patch did. It cost an afternoon of looking at a ground
+    // texture that sampled one texel across an entire map and reading it as a mipmap bug.
+    const inner = material.onBeforeCompile;
+    const innerKey = material.customProgramCacheKey;
+
+    material.onBeforeCompile = (shader, renderer) => {
+      inner.call(material, shader, renderer);
       Object.assign(shader.uniforms, this.uniforms);
 
       shader.vertexShader = shader.vertexShader
@@ -121,8 +130,10 @@ export class OccluderFade {
     };
 
     // Otherwise Three may hand this material a cached program compiled from the unpatched
-    // source of an identically-configured material.
-    material.customProgramCacheKey = () => 'occluder-fade';
+    // source of an identically-configured material. The inner key goes in it for the same
+    // reason: two materials that differ only in a patch above this one are two programs,
+    // and a constant here would quietly give them one.
+    material.customProgramCacheKey = () => `occluder-fade:${innerKey.call(material)}`;
     material.needsUpdate = true;
   }
 

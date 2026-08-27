@@ -36,10 +36,11 @@
  */
 
 import * as THREE from 'three';
-import { SURROUND } from '../config';
+import { GROUND, SURROUND } from '../config';
 import { treeGeometry, treeMaterial } from '../core/GeneratedPrefabs';
 import type { Rng } from '../core/rng';
 import { groundFootprint } from '../player/CameraRig';
+import { groundMaterial } from '../core/GroundTextures';
 
 export interface SurroundResult {
   /** The ground plane and the trees on it. */
@@ -164,11 +165,16 @@ export function buildSurround(
  * of a 3,104-triangle model (§7). Two triangles of ground does the covering, and the trees
  * go back to doing what trees are for — depth, and something for the eye to stop on.
  *
- * **Lit, not painted.** The obvious colour for it is the fog's, and that is the one colour
- * it must not be: the fog is also the background (§7), so fog-coloured ground is ground you
- * cannot tell from the void. It is a standard material instead, so §4's night ambient and
- * moon light it exactly as they light the map's own floor — it reads as ground because it
- * *is* being lit like ground — and the fog carries it into the distance from there.
+ * **Lit, not painted.** The obvious thing to do with it is to give it a colour, and the
+ * obvious colour is the fog's — which is the one it must not be: the fog is also the
+ * background (§7), so fog-coloured ground is ground you cannot tell from the void. It takes
+ * §2's generated ground instead (`GroundTextures`), lit by §4's night ambient and moon
+ * exactly as the map's own floor is — it reads as ground because it *is* ground, being lit
+ * like ground — and the fog carries it into the distance from there.
+ *
+ * It is the same generated ground the map's own floor wears (§2), and the texture is
+ * continuous across the boundary because the UVs are world-space — the map's floor and
+ * this run into one another rather than meeting at a line.
  *
  * It sits just below the floor so it cannot z-fight with the map's own tiles, and neither
  * casts nor receives: nothing out there is ever lit by a lamp or the beam (§2, §4).
@@ -176,7 +182,7 @@ export function buildSurround(
 function groundPlane(mapWidth: number, mapHeight: number, depth: number): THREE.Mesh {
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(mapWidth + depth * 2 + SURROUND.spacingMetres * 2, mapHeight + depth * 2 + SURROUND.spacingMetres * 2),
-    new THREE.MeshStandardMaterial({ color: SURROUND.groundColour, roughness: 1, metalness: 0 }),
+    groundMaterial(GROUND.surroundSurface),
   );
   plane.name = 'surround:ground';
   plane.rotation.x = -Math.PI / 2;
