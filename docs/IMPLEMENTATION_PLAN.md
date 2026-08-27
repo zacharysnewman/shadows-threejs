@@ -925,6 +925,14 @@ one sweeping back from a sprint (§3.1) is not pointing where the cursor is yet,
 at it then would fight the same lock the yaw already respects. No pointer, or the fallback,
 reproduces the derived declination exactly, unchanged.
 
+Driven live on `example` (§ Driving the game in a browser): a cursor near the player's own
+screen position clamps the reach to the 2 m near bound, one near the top of the frame stretches
+it to ~6.6 m, and both read `target.position.y === 0` throughout — the point never leaves the
+ground plane, because nothing here ever raycasts the scene for it. Switching `input.aimSource`
+to `'stick'` reproduces the derived ~2.76 m reach exactly. Sprinting with the cursor thrown
+across the screen mid-sprint held the reach at ~2.76 m rather than following it, matching
+`aimSettled` gating the pointer out.
+
 *A lamp you can see.* §4.2's environmental lights were a pool of light coming out of nothing,
 so an unpowered one was not dim, it was *absent* — a level with lamps and no switch wired to
 them looked like a level with no lamps in it. There is a post and a shade now, and the head
