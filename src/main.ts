@@ -16,6 +16,7 @@
  */
 
 import { AudioCore } from './audio/AudioCore';
+import { MUSIC } from './config';
 import { AssetLoader } from './core/AssetLoader';
 import { CharacterLoader } from './core/CharacterLoader';
 import { Input } from './core/Input';
@@ -108,6 +109,11 @@ async function main(): Promise<void> {
   const input = new Input(viewport.renderer.domElement);
   const freeCamera = new FreeCamera(viewport);
   const audio = new AudioCore(viewport.scene);
+  // §8.1 — built on the game's own audio graph, so it is game audio rather than the
+  // device's media: no lock-screen transport, and nothing the player was listening to gets
+  // stopped. Null where there is no Web Audio at all, which is a silent game, not a broken
+  // one.
+  const music = audio.createMusic(`${import.meta.env.BASE_URL}audio/music/${MUSIC.file}`);
   const hud = new Hud();
   // §4.3 — the context starts suspended until the player touches something.
   audio.armGesture();
@@ -133,6 +139,17 @@ async function main(): Promise<void> {
   let run: Run | null = null;
   // A run asks for the next one; the shell is what actually swaps them, because a run
   // cannot be the thing that disposes itself.
+  /**
+   * §8.3 — what the handle carries before there is a run, and still carries between runs.
+   * `run.handle` is merged over this each time one is built; these outlive all of them.
+   * Published now rather than at the first run, because the title screen is where the
+   * music plays and a handle that only exists inside a run cannot reach it.
+   */
+  const shellHandle = { music, restart: () => void startRun() };
+  if (import.meta.env.DEV) {
+    (window as unknown as { shadows: unknown }).shadows = shellHandle;
+  }
+
   const shell = {
     viewport,
     overlay,
@@ -161,7 +178,7 @@ async function main(): Promise<void> {
     hud.reset();
     run = await createRun(shell, directory, pinnedSeed, playtest ?? undefined);
     if (import.meta.env.DEV) {
-      (window as unknown as { shadows: unknown }).shadows = { ...run.handle, restart: startRun };
+      (window as unknown as { shadows: unknown }).shadows = { ...shellHandle, ...run.handle };
     }
   }
 
@@ -172,6 +189,17 @@ async function main(): Promise<void> {
    * there is no way past this screen: a run reached without it would be a run with no
    * sound until the player happened to click something.
    */
+  // §8.3 — the music's own row. Shell-level like the music itself, and it is the only place
+  // a graph that plays nothing is visible: `silent` is the shape of `createMediaElementSource`
+  // failing, which looks exactly like a track that never loaded.
+  if (music) {
+    overlay.addShellRow('music', () =>
+      music.silent
+        ? 'playing, but the graph is silent'
+        : `${music.playing ? 'playing' : 'stopped'} · ${(music.volume * 100).toFixed(0)}%`,
+    );
+  }
+
   const title = new TitleScreen({
     onPlay: () => {
       audio.armGesture();
@@ -179,6 +207,10 @@ async function main(): Promise<void> {
       title.hide();
       void begin();
     },
+    // §8.1 — the music belongs to these screens and to nothing else. It cannot simply be
+    // started here: a browser will not play before a gesture and the title is on screen
+    // before there has been one, so `Music.start` asks and then waits for one.
+    onVisible: (visible) => (visible ? music?.start() : music?.stop()),
     // §8.3 — the editor is a developer affordance on the title, and reachable by URL
     // regardless; what debug mode decides is whether a player is offered it.
     onEdit: options.debug ? () => { window.location.search = '?edit'; } : null,

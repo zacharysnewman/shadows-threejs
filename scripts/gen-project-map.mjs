@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { glbFacts } from './glb-facts.mjs';
+import { mp3Facts } from './mp3-facts.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/project-map.jsonl');
@@ -44,6 +45,7 @@ const KINDS = [
   [/^public\/maps\/[^/]+\/tileset\.json$/, 'tileset'],
   [/^public\/.*\.json$/, 'data'],
   [/\.glb$/, 'model'],
+  [/\.(mp3|ogg|wav)$/, 'audio'],
   [/\.md$/, 'doc'],
   [/^\.github\//, 'ci'],
 ];
@@ -153,6 +155,13 @@ const records = files.map((path) => {
   // which is why the models carry their size, their triangles and their clips instead.
   if (kind === 'model') {
     const facts = glbFacts(readFileSync(resolve(ROOT, path)));
+    return facts ? { path, kind, ...facts } : { path, kind };
+  }
+
+  // Audio is measured too, and for the same reason. Its line count came out at 30,065 and
+  // its `spec` citations were scraped out of compressed audio.
+  if (kind === 'audio') {
+    const facts = mp3Facts(readFileSync(resolve(ROOT, path)));
     return facts ? { path, kind, ...facts } : { path, kind };
   }
 

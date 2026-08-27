@@ -7,8 +7,9 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { mp3Facts } from '../scripts/mp3-facts.mjs';
 import { describe, expect, it } from 'vitest';
-import { AUDIO, RUN } from '../src/config';
+import { AUDIO, MUSIC, RUN } from '../src/config';
 import { FootstepCadence } from '../src/audio/Footsteps';
 import { attenuationAt, AUDIO_PROFILES, stereoBias } from '../src/audio/profiles';
 import { isLooping, SOUND_NAMES, type SoundName, synthesise } from '../src/audio/SoundBank';
@@ -258,5 +259,43 @@ describe('pool sizing', () => {
     // Entities hold their own emitters, so the pool only covers one-shots — but it still
     // has to survive a handful of them landing together.
     expect(AUDIO.poolSize).toBeGreaterThanOrEqual(8);
+  });
+});
+
+describe('the menu music (§8.1)', () => {
+  const file = new URL(`../public/audio/music/${MUSIC.file}`, import.meta.url);
+
+  it('is the track the config names, and is read from the file rather than guessed at', () => {
+    // The map used to index this as 30,065 "lines" — the `\n` bytes that happen to fall
+    // inside compressed audio — with `§` citations scraped out of the same. A binary's
+    // facts have to be measured or not stated.
+    const facts = mp3Facts(readFileSync(file));
+    expect(facts).not.toBeNull();
+    expect(facts!.exact).toBe(true);
+    expect(facts!.seconds).toBeGreaterThan(280);
+    expect(facts!.seconds).toBeLessThan(300);
+  });
+
+  it('is far too long to decode, which is why it streams', () => {
+    // §8.1 — `decodeAudioData` holds the whole thing as PCM. The number below is what that
+    // would cost, and it is the entire reason `Music` uses a media element at all: this is
+    // the check that fails if somebody later moves the track into the `SoundBank`.
+    const facts = mp3Facts(readFileSync(file))!;
+    const decodedBytes = facts.seconds * facts.sampleRate * facts.channels * 4;
+    expect(decodedBytes).toBeGreaterThan(100_000_000);
+    expect(SOUND_NAMES).not.toContain(MUSIC.file.replace('.mp3', ''));
+  });
+
+  it('refuses a buffer that is not MPEG audio rather than inventing facts about it', () => {
+    expect(mp3Facts(Buffer.from('this is not audio'))).toBeNull();
+    expect(mp3Facts(Buffer.alloc(4096))).toBeNull();
+  });
+
+  it('fades out over less time than it fades in (§8.1)', () => {
+    // A run beginning should not have the menu still audible under it; arriving can take
+    // its time.
+    expect(MUSIC.fadeOutSeconds).toBeLessThan(MUSIC.fadeInSeconds);
+    expect(MUSIC.volume).toBeGreaterThan(0);
+    expect(MUSIC.volume).toBeLessThan(1);
   });
 });

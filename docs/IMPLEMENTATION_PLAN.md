@@ -1709,6 +1709,47 @@ the context, and audible the moment it had to stay alive. Both are in `docs/ORIE
 the world silenced to exactly the death sound, then the sound running out — with the context
 reporting `running` throughout and the right scare class up in each case.
 
+*Added afterwards — the menu has music.* §8.1 gains one track, looping, on the title and the
+credits and nowhere else, fading in when those screens come up and out when a run begins. A
+run stays silent under it on purpose: §4.3 builds a run around hearing where things are, and
+music takes the one channel the game gives a player for tracking what is coming. The ending
+screens too — the jump-scare's sound (§5.3) is the last thing heard, and a tune after it
+would answer it. `Falling Through Glass`, by Zack Newman, credited under a new **Music**
+heading (§8.2) on the same grounds as the art.
+
+Two decisions worth keeping:
+
+- **It streams rather than decodes.** 4:48 at 48 kHz stereo is ~110 MB held as PCM, so it
+  cannot go through the `SoundBank` like every other sound. `tests/audio.test.ts` asserts
+  that figure from the file itself, so the check fails if anyone later moves the track into
+  the bank.
+- **It plays on the game's graph, not the device's media flow.** A bare `HTMLAudioElement`
+  is *media* to a phone — lock-screen transport, notification shade, and it stops whatever
+  the player was already listening to. `createMediaElementSource` on the listener's context
+  makes it one more node in the graph the rest of the sound comes out of.
+
+*On the pitch bug.* iOS takes the context's sample rate from whatever the audio is routed
+through, so a raw `AudioBuffer` built at an assumed rate plays at the wrong speed and pitch.
+That trap is real and this project already guards it — `SoundBank.synthesiseBuffer` builds at
+`context.sampleRate` — but it does not reach the music: a media element source is resampled
+by the graph, as decoded files are. What iOS *does* threaten here is
+`createMediaElementSource` itself, silent on Safari for years and only dependable from
+iOS 15, which is why `Music.silent` exists and why it has a readout row: a graph playing
+nothing looks exactly like a track that failed to load. **Not verified on real iOS** — there
+is no device in this environment — so that remains outstanding.
+
+The project map indexed the mp3 as 30,065 "lines" with `§` citations scraped out of
+compressed audio. `scripts/mp3-facts.mjs` now measures audio the way `glb-facts.mjs`
+measures models: bytes, duration from the file's stated frame count, rate and channels.
+
+*Verified in Chromium on a Pixel 7 profile*, on the real gesture path with no autoplay
+override: before any input the music is stopped at volume 0 (asked, refused, waiting);
+tapping `Credits` — a gesture that is not `Play` — starts it and fades it to 0.45 with
+`silent` false, so the graph is carrying it; `Play` fades it out and pauses it for the run.
+With `Play` as the very first gesture it starts and stops without the volume rising, so
+there is no blip. The `music` readout row survives a restart, which is what `addShellRow`
+is for.
+
 ## Cross-Cutting
 
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit

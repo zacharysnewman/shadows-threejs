@@ -100,6 +100,9 @@ and the game's credits screen (§8.2) is generated from that list rather than ty
 credits screen maintained by hand is one that stops being true the first time an asset
 changes, and so is a README section. That is the list to read, and the one to add to.
 
+The menu's music (§8.1) is credited the same way, from `CREDITS.music`: *Falling Through
+Glass*, by Zack Newman.
+
 The vendored kit ships its licence beside the files as
 `public/prefabs/LICENSE-kaykit.txt`, and `public/prefabs/README.md` records which kit file
 each prefab name maps to and the commit they were pulled from.

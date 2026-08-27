@@ -82,6 +82,13 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **A media element is the device's media unless it is put on the graph.** An
+  `HTMLAudioElement` left to itself takes a phone's lock-screen transport controls, shows in
+  the notification shade, and stops whatever the player was already listening to — correct
+  for a music app, wrong for a game. Routing it through `createMediaElementSource` makes it
+  one more node in the graph the rest of the sound comes out of. The music streams through
+  an element rather than a decoded buffer only because a four-minute track is ~110 MB of PCM;
+  the element is a compromise, and putting it on the graph is what pays for it.
 - **ZzFX's `filter` is a high-pass when positive.** Reaching for a positive number to take
   the top off a sound removes its *bottom* instead — ZzFX builds one biquad from
   `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form. Negative is the
@@ -222,6 +229,17 @@ Then, from `window.shadows` (dev builds only, republished on every restart):
 The handle carries: `clock, input, loaded, player, rig, flashlight, environment, audio,
 testEmitter, occluders, enemies, objectives, props, gates, hud, notes, voices, monsterSteps,
 lampVoices, rng, illumination, night, audit, frameStats`.
+
+**`music` and `restart` are the shell's, not the run's**, and are on the handle from the
+moment the page loads rather than from the first run — which is the point of them, since the
+music plays on the title screen and a handle that only existed inside a run could not reach
+it. A run's own entries are merged over these when one is built.
+
+`shadows.music` is also the only way to see what the menu's music is doing: `new Audio()`
+makes a *detached* element, so it is not in the DOM and `document.querySelector('audio')`
+finds nothing. `music.silent` is the one worth knowing — the graph playing nothing, which is
+what an older iOS Safari does with `createMediaElementSource` and which looks exactly like a
+track that failed to load.
 
 **The rig camera is locked to the player** (§3.2) — it centres them everywhere, including
 hard into a corner, so a screen position means the same thing wherever the player is

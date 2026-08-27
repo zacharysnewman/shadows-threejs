@@ -249,3 +249,28 @@ describe('the readout fits the screen it is on (§8.3)', () => {
     expect(source).toContain('padding-left:9ch;text-indent:-9ch');
   });
 });
+
+describe('rows that outlive a run (§8.3)', () => {
+  it('does not clear the shell\'s rows when a run clears its own', () => {
+    // `Run.dispose` calls `clearRows` because a run's rows close over its objects and must
+    // go when it does. The shell's close over things that outlive every run — the menu's
+    // music among them — so clearing those deletes the readout's only view of them after
+    // the first restart, which reads as the row never having worked.
+    const overlay = readFileSync(new URL('../src/debug/DebugOverlay.ts', import.meta.url), 'utf8');
+    const clear = /clearRows\(\): void \{([^}]*)\}/.exec(overlay)?.[1] ?? '';
+    expect(clear).toContain('this.rows.clear()');
+    expect(clear).not.toContain('shellRows');
+    // And the readout actually reads them, or a persistent row is one nobody ever sees.
+    expect(overlay).toContain('...this.rows, ...this.shellRows');
+  });
+
+  it('puts the music on the shell rows and the shell handle, not on a run', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    expect(main).toContain("overlay.addShellRow('music'");
+    // Published before the first run: the music plays on the title screen, and a handle
+    // that only existed inside a run could not reach it.
+    expect(main).toContain('const shellHandle = {');
+    const run = readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8');
+    expect(run).not.toContain('addShellRow');
+  });
+});

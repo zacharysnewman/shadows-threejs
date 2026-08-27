@@ -21,6 +21,7 @@ import * as THREE from 'three';
 import { AUDIO } from '../config';
 import { AUDIO_PROFILES, type DistanceProfile, type ProfileName } from './profiles';
 import { isLooping, SoundBank, type SoundName } from './SoundBank';
+import { Music } from './Music';
 
 export type AudioState = 'unavailable' | 'suspended' | 'running' | 'closed';
 
@@ -181,6 +182,14 @@ export class AudioCore {
     for (const source of this.pool) if (source.isPlaying) source.stop();
   }
 
+  /**
+   * §8.1 — the menu's music, built on this context so it is game audio rather than the
+   * device's (see `src/audio/Music.ts`). Null where there is no Web Audio at all.
+   */
+  createMusic(url: string): Music | null {
+    return this.listener ? new Music(url, this.listener) : null;
+  }
+
   /** Move the listener with the player. Called per rendered frame from the interpolated position. */
   update(x: number, z: number): void {
     this.listener?.position.set(x, 1.4, z);
@@ -250,7 +259,7 @@ export class AudioCore {
   }
 }
 
-const GESTURE_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const;
+export const GESTURE_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const;
 
 function applyProfile(source: THREE.PositionalAudio, profile: DistanceProfile): void {
   source.setDistanceModel(profile.model);

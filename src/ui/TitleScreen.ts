@@ -26,6 +26,12 @@ export class TitleScreen {
       onPlay: () => void;
       /** Debug only (§8.3): the level editor, which is a tool rather than a screen. */
       onEdit?: (() => void) | null;
+      /**
+       * §8.1 — whether these screens are on show, so the menu's music can follow them.
+       * A callback rather than the music itself: the title screen has no more business
+       * knowing what an `HTMLAudioElement` is than what an `AudioContext` is.
+       */
+      onVisible?: ((visible: boolean) => void) | null;
     },
     parent: HTMLElement = document.body,
   ) {
@@ -39,6 +45,13 @@ export class TitleScreen {
 
     this.root.append(this.title, this.credits);
     parent.append(this.root);
+
+    // §8.1 — a session opens on the title without anything calling `showTitle`, so the
+    // first "these screens are up" has to be said here or the music is never asked for.
+    // Asking is all this does: waiting for the gesture a browser needs before it will play
+    // is the audio layer's problem, and it is solved there rather than with a listener on
+    // this screen (`Music.start`).
+    this.handlers.onVisible?.(true);
   }
 
   private buildTitle(): HTMLDivElement {
@@ -115,6 +128,7 @@ export class TitleScreen {
     this.root.hidden = false;
     this.title.hidden = false;
     this.credits.hidden = true;
+    this.handlers.onVisible?.(true);
   }
 
   /** §8.1 — reachable from the title and from the victory screen. */
@@ -122,11 +136,13 @@ export class TitleScreen {
     this.root.hidden = false;
     this.title.hidden = true;
     this.credits.hidden = false;
+    this.handlers.onVisible?.(true);
   }
 
   /** Out of the way, so the run underneath is the only thing on screen (§8.1). */
   hide(): void {
     this.root.hidden = true;
+    this.handlers.onVisible?.(false);
   }
 
   get visible(): boolean {

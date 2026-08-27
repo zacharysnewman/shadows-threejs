@@ -24,6 +24,14 @@ export class DebugOverlay {
   private readonly statsEl: HTMLDivElement;
   private readonly bindingsEl: HTMLDivElement;
   private readonly rows = new Map<string, RowProvider>();
+  /**
+   * Rows belonging to the shell rather than to a run (§8.3). Kept apart because
+   * `clearRows` exists for the opposite case: a run's rows close over its objects and have
+   * to go when it does, and a shell row closes over something that outlives every run —
+   * clearing it would delete the readout's only view of, say, the menu's music after the
+   * first restart.
+   */
+  private readonly shellRows = new Map<string, RowProvider>();
   private readonly bindings: Binding[] = [];
   /** The `×` on the readout and the handle that brings it back; both debug-only. */
   private readonly dismissEl: HTMLButtonElement;
@@ -141,6 +149,11 @@ export class DebugOverlay {
     this.rows.set(label, provider);
   }
 
+  /** §8.3 — a row that outlives the run, and so survives `clearRows`. */
+  addShellRow(label: string, provider: RowProvider): void {
+    this.shellRows.set(label, provider);
+  }
+
   /**
    * Drop every row. The rows close over the run that added them, so a restart has to clear
    * them or the readout keeps the previous run's objects alive and reports them.
@@ -219,7 +232,7 @@ export class DebugOverlay {
 
     const fps = this.smoothedFrameMs > 0 ? 1000 / this.smoothedFrameMs : 0;
     const lines = [`frame    ${this.smoothedFrameMs.toFixed(2)} ms  (${fps.toFixed(0)} fps)`];
-    for (const [label, provider] of this.rows) {
+    for (const [label, provider] of [...this.rows, ...this.shellRows]) {
       lines.push(`${label.padEnd(8)} ${provider()}`);
     }
     DebugOverlay.renderRows(this.statsEl, this.statRows, lines);

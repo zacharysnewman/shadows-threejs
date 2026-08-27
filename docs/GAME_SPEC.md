@@ -1337,6 +1337,24 @@ which is why a run must not begin without passing through the title, however tem
 `?skip` would be. Loading a specific map for testing is a debug affordance (§8.3), not a
 route into the game.
 
+**The menu has music, and a run does not.** One track, looping, on the title and the credits
+and nowhere else: it fades in when those screens come up and out when a run begins, because
+§4.3 builds a run around hearing where things are and music over that takes the one channel
+the game gives a player for tracking what is coming. The ending screens are silent for the
+same reason — the jump-scare's sound (§5.3) is the last thing heard, and following it with a
+tune would answer it.
+
+**It is game audio, not the device's.** It plays through the same graph as everything else,
+so it is mixed with the game's sound, suspended with it, and takes no lock-screen transport
+controls and nothing the player was already listening to. A media element left to itself is
+*media* to a phone, which is right for a music app and wrong for a game.
+
+**It waits for a gesture rather than failing.** The menu is on screen before there has been
+one, so the first attempt to play is refused — that is the expected first answer, not an
+error, and the reply to it is to start on the next input. It is also **streamed rather than
+decoded**: a track of this length held as PCM is memory measured in hundreds of megabytes,
+which is not a thing to spend on a menu.
+
 ### 8.2 Credits
 
 The credits screen names, in this order:
@@ -1345,6 +1363,7 @@ The credits screen names, in this order:
 - **Art:** each kit and its author (§1), linked to where it came from. Every kit is named,
   including the ones whose licence asks for nothing: a project that credits only what it is
   forced to has misunderstood why the licence is free.
+- **Music:** the menu's track and who wrote it (§8.1), on the same grounds as the art.
 - **Code:** the libraries and build tools the game is built on, and who wrote them.
 
 **Attributions, not licence terms.** The screen says who made what. It does not print
