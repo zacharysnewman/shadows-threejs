@@ -252,8 +252,41 @@ either alone.
 
 *Left to later phases.* Nothing on the map makes a sound of its own yet — the emitters an
 enemy holds are Phase 5's to create, and `footstep_heavy` and `chitter` are sitting in the
-bank waiting for them. Real audio files replace the synthesised placeholders in Phase 11,
-changing nothing above `SoundBank`.
+bank waiting for them. Real audio files replace the synthesised placeholders as they arrive.
+
+*The player's step is a recording now, and it did reach above `SoundBank`.* This phase
+expected a real file to be a drop-in — same name, same call, better sound. Four of them
+are not: §4.3 now asks for a variant per footfall and no two consecutive steps alike, which
+is a name per variant in the bank, a picker on the run's seed (`FootstepVariants`), and a
+choice at the call site. The swap is transparent for any sound that stays *one* sound;
+a set of variants is a behaviour change, and belongs in the spec rather than in an asset
+folder. The cut the four recordings needed, and why, is in `public/audio/README.md`.
+
+*Verified.* Walked on `phase2-test` with a tap on `AudioCore.playAt`:
+
+| | Measured |
+| --- | --- |
+| Steps fired over one walk | 154, every one played |
+| Consecutive repeats | **0** |
+| Spread over the four | 41 / 43 / 39 / 31 |
+| Stride between steps | median **0.950 m**, against §4.3's 0.95 |
+| Loaded from disk | all four; `bank.placeholders` lists only the seven still synthesised |
+| Decoded | mono, 0.078–0.118 s, peak 0.499–0.501 |
+
+Level and placement were rendered through an `OfflineAudioContext` carrying the game's own
+buffers, `AUDIO_PROFILES.default` and the real master gain — not measured off the live
+graph, for the reason in `ORIENTATION.md`:
+
+| | Peak | Bias |
+| --- | --- | --- |
+| The four variants, at the player | 0.306 – 0.334 (**1.09×** spread) | 0.000, centred |
+| `footstep_heavy`, same distance | 0.857 | 0.000 |
+| A step 8 m east / 8 m west | 0.160 | **+0.607** / **−0.607** |
+
+The last row is the cross-check on the method: Phase 4 measured +0.59/−0.60 off the live
+graph at that distance, so the offline render agrees with the device path where the device
+path can be measured. Every variant is comfortably under the monster's step, which is what
+§4.3 asks for and what the player's steps cannot get from distance — they play at zero.
 
 ## Phase 5 — Navigation & Enemy Base
 
@@ -1740,8 +1773,8 @@ measures models: bytes, duration from the file's stated frame count, rate and ch
 
 *Verified in Chromium on a Pixel 7 profile*, on the real gesture path with no autoplay
 override: before any input the music is stopped at volume 0 (asked, refused, waiting);
-tapping `Credits` — a gesture that is not `Play` — starts it and fades it to 0.45 with
-`silent` false, so the graph is carrying it; `Play` fades it out and pauses it for the run.
+tapping `Credits` — a gesture that is not `Play` — starts it at 0.45 with `silent` false,
+so the graph is carrying it; `Play` fades it out and pauses it for the run.
 With `Play` as the very first gesture it starts and stops without the volume rising, so
 there is no blip. The `music` readout row survives a restart, which is what `addShellRow`
 is for.
@@ -1768,12 +1801,32 @@ showed a media indicator — and nothing came out. §8.1 now says how the two ga
   second element.
 
 *Verified in Chromium*, since there is no iOS device in this environment: on the real gesture
-path the music reaches `route: 'graph'` and fades 0 → 0.45 without the fallback firing, which
-is the probe hearing the graph carry it; with `createMediaElementSource` stubbed to a node the
+path the music reaches `route: 'graph'` and comes up at 0.45 without the fallback firing,
+which is the probe hearing the graph carry it; with `createMediaElementSource` stubbed to a node the
 element never feeds, and again with `resume` stubbed never to resolve, it lands on
 `route: 'media'`, playing, within ~2.5 s of the tap. **The fix is not verified on real iOS** —
 what that device does with either path is still outstanding, and the `music` readout row now
 carries the route and the context's state so the answer can be read off the phone.
+
+*Added afterwards — the music was starting a second into itself.* Two things ate the
+opening of the track, and both were invisible because each is small on its own:
+
+- **The fade-in ran across it.** `MUSIC.fadeInSeconds` is 1.5 s and the track is four
+  minutes, so the fade was never noticed as a fade — it was noticed as the music seeming to
+  begin partway in, because the part that introduces it went past under a ramp. §8.1 now
+  splits the two cases: the first start goes straight to level, and the fade is for a
+  *return* to the menu, where a run interrupted the track mid-phrase and arriving rather
+  than cutting is right.
+- **The element played while it was muted and off the graph.** §8.1 holds it off the graph
+  until the context is running and mutes it meanwhile, so the window between `play()`
+  resolving and the route landing is real playback nobody can hear. It is now rewound on
+  the first attach rather than skipped past.
+
+*Verified in Chromium* on the real gesture path, polled every 20 ms: with a gesture that is
+not `Play`, the track is audible from **0.011 s** in — the first poll after playback begins
+— at a gain of **0.45** that does not move for the three seconds measured. Not one sampled
+row sits at a partial level, which is what a fade-in would look like. `tests/music.test.ts`
+covers both halves, and both of the new cases fail on the old code.
 
 *Added afterwards — the menu's backdrop.* §8.1 had said nothing animated behind the title;
 it now says a film of oily water, and gives the values it is made of. `src/ui/MenuBackdrop.ts`

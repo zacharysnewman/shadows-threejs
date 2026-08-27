@@ -29,7 +29,8 @@ import {
   SIM,
 } from './config';
 import type { AudioCore } from './audio/AudioCore';
-import { FootstepCadence } from './audio/Footsteps';
+import { FootstepCadence, FootstepVariants } from './audio/Footsteps';
+import { PLAYER_FOOTSTEPS } from './audio/SoundBank';
 import { EnemyManager } from './enemies/EnemyManager';
 import { MonsterFootsteps } from './enemies/MonsterFootsteps';
 import { Spider } from './enemies/Spider';
@@ -247,6 +248,9 @@ export async function createRun(
   });
 
   const footsteps = new FootstepCadence();
+  // §4.3 — and which of the four recordings each step comes out as. Its own stream, so
+  // adding a randomised system elsewhere does not re-roll the order the steps play in.
+  const footstepVariants = new FootstepVariants(PLAYER_FOOTSTEPS.length, rng.stream('footsteps'));
   // §5.1 — the spiders get a voice now that they have something to be heard doing.
   const voices = new SpiderVoices(audio, enemies.enemies);
   // §5.2 — and the monster gets the only tell it has at range.
@@ -281,7 +285,11 @@ export async function createRun(
     // The pool's first customer: a step every stride of ground actually covered, so a
     // player stopped against a wall makes no noise however hard they walk into it.
     if (footsteps.tick(before.distanceTo(player.position))) {
-      audio.playAt('footstep_light', player.position.x, player.position.y);
+      audio.playAt(
+        PLAYER_FOOTSTEPS[footstepVariants.next()]!,
+        player.position.x,
+        player.position.y,
+      );
     }
 
     illumination.tick(dt);

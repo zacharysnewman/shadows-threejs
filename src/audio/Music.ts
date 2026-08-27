@@ -19,6 +19,12 @@
  * listener's input directly, the way a non-positional `THREE.Audio` is, because nothing
  * about it is a threat to be located (§4.3).
  *
+ * **The first time it comes up, it comes up whole.** A fade-in over the opening of a track
+ * nobody has heard yet spends the bars that introduce it — the player never gets the start
+ * of the music, only its second phrase arriving at full volume. So the first start is set
+ * straight to level, and `MUSIC.fadeInSeconds` is for a *return* to the menu, which is
+ * picking up something already heard from wherever it was paused (§8.1).
+ *
  * **A browser will not start audio before a gesture**, and the menu is on screen before
  * there has been one. A refusal is the expected first answer rather than a failure, and the
  * reply to it is to wait for an input and try again — see `start`.
@@ -78,6 +84,8 @@ export class Music {
   /** Removes the one-shot gesture listeners, or null when none are armed. */
   private disarm: (() => void) | null = null;
   private wanted = false;
+  /** Whether the track has ever actually started — what tells a first start from a return. */
+  private begun = false;
   /** Reads the graph's own output, to tell a silent route from a track that never started. */
   private readonly analyser: AnalyserNode;
   private probe = 0;
@@ -141,7 +149,12 @@ export class Music {
    */
   start(): void {
     this.wanted = true;
-    this.rampTo(MUSIC.volume, MUSIC.fadeInSeconds);
+    // §8.1 — the first start is not a fade. Everything below this line is about a track
+    // that has never been heard, and a ramp across its opening is a ramp across the only
+    // part of it that introduces itself. A return to the menu is a different thing — the
+    // track is mid-phrase where a run interrupted it — and that fades.
+    if (this.begun) this.rampTo(MUSIC.volume, MUSIC.fadeInSeconds);
+    else this.setLevel(MUSIC.volume);
     this.attempt();
   }
 
@@ -206,6 +219,7 @@ export class Music {
 
     void this.element.play().then(
       () => {
+        this.begun = true;
         this.clearGesture();
         // The context may have come up while the element was starting.
         this.attachToGraph();
@@ -228,6 +242,12 @@ export class Music {
     if (this.source || this.fellBack || this.context.state !== 'running') return;
     this.source = this.context.createMediaElementSource(this.element);
     this.source.connect(this.gain);
+    // §8.1 — anything that played between `play()` and this moment played muted and off
+    // the graph, where nobody could hear it. Give the opening back rather than start the
+    // player a second into a track they have not heard: losing the start of it to the
+    // route being built is the same loss as losing it under a fade. Only ever the first
+    // attach — the guard above means this runs once.
+    if (this.element.currentTime > 0) this.element.currentTime = 0;
     // Now that the graph holds the level, the element can be let go of.
     this.element.muted = false;
   }
@@ -346,6 +366,13 @@ export class Music {
       // one; the next input starts it.
       () => this.armGesture(),
     );
+  }
+
+  /** Straight to a level, cancelling any fade in flight. The first start uses this. */
+  private setLevel(to: number): void {
+    const now = this.context.currentTime;
+    this.gain.gain.cancelScheduledValues(now);
+    this.gain.gain.setValueAtTime(to, now);
   }
 
   /**

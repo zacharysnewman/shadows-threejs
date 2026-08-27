@@ -818,9 +818,22 @@ readable at any distance, and worth reading before the pool goes dark.
   further out than anything else on the map, because hearing is the only way to track it
   before it is close enough to cast a readable shadow.
 - The player's own footsteps sound on a cadence driven by ground actually covered, not by a
-  timer: a player held against a wall makes no noise however hard they walk into it. They
-  are quieter and higher than the Shadow Monster's (§5.2) and always centred on the
-  listener, so they can never be mistaken for something approaching.
+  timer: a player held against a wall makes no noise however hard they walk into it. One
+  step per **0.95 m** covered — one foot, then the other. They are quieter and higher than
+  the Shadow Monster's (§5.2) and always centred on the listener, so they can never be
+  mistaken for something approaching.
+- **The player's step is four recordings, not one, and no two consecutive steps use the
+  same one.** The player walks for the whole run, and a single sample on repeat is the
+  first thing an ear picks out — the repetition becomes more audible than the footstep. The
+  variant is drawn from the run seed like every other randomised value (Cross-Cutting:
+  determinism), so a replayed seed walks in the same order. Drawing uniformly over all four
+  would repeat one step in four, which is exactly the artefact the set exists to remove, so
+  the draw is over the *other* three: still even across the set, and never twice running.
+- The four are cut to one footfall each and aligned so the audible strike sits at the same
+  offset in every one, because a variant whose step arrives later is a variant that moves
+  the cadence. Being quieter than the Shadow Monster is a property of the recordings
+  themselves: the player's steps play at zero distance and never attenuate, so there is no
+  distance left to make them quieter.
 - Browser autoplay policy requires a user gesture before audio starts; the title screen's
   first input resumes the `AudioContext`.
 - A paused simulation (§6) silences positional sources: a world that is not advancing must
@@ -1372,9 +1385,16 @@ which is why a run must not begin without passing through the title, however tem
 route into the game.
 
 **The menu has music, and a run does not.** One track, looping, on the title and the credits
-and nowhere else: it fades in when those screens come up and out when a run begins, because
+and nowhere else: it comes up when those screens do and fades out when a run begins, because
 §4.3 builds a run around hearing where things are and music over that takes the one channel
-the game gives a player for tracking what is coming. The ending screens are silent for the
+the game gives a player for tracking what is coming.
+
+**The first time it comes up it comes up whole — at level, from the top of the track.** A
+fade over the opening of a track nobody has heard is a fade over the part that introduces
+it: the player is handed the second phrase and never the first. The **1.5 s** fade-in is for
+a *return* to the menu, where the track is mid-phrase because a run interrupted it and
+arriving rather than cutting is right. Nothing may eat the opening either — whatever plays
+while the track is muted and waiting for its route (below) is rewound, not skipped past. The ending screens are silent for the
 same reason — the jump-scare's sound (§5.3) is the last thing heard, and following it with a
 tune would answer it.
 

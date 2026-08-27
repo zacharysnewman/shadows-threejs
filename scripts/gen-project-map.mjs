@@ -21,6 +21,7 @@ import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { glbFacts } from './glb-facts.mjs';
 import { mp3Facts } from './mp3-facts.mjs';
+import { wavFacts } from './wav-facts.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = resolve(ROOT, 'docs/project-map.jsonl');
@@ -161,7 +162,8 @@ const records = files.map((path) => {
   // Audio is measured too, and for the same reason. Its line count came out at 30,065 and
   // its `spec` citations were scraped out of compressed audio.
   if (kind === 'audio') {
-    const facts = mp3Facts(readFileSync(resolve(ROOT, path)));
+    const bytes = readFileSync(resolve(ROOT, path));
+    const facts = extname(path) === '.wav' ? wavFacts(bytes) : mp3Facts(bytes);
     return facts ? { path, kind, ...facts } : { path, kind };
   }
 
