@@ -39,10 +39,33 @@ import {
   stampsFromJson,
   uniqueStampId,
 } from './stampLibrary';
+import {
+  DEFAULT_MAP,
+  PROJECT_MAPS,
+  type OpenMap,
+  type SavedMap,
+  canOverwrite,
+  deleteMap,
+  findMap,
+  isProjectMap,
+  loadProjectMap,
+  loadSavedMaps,
+  normaliseMapName,
+  putMap,
+  renameMap,
+  saveSavedMaps,
+  uniqueMapName,
+} from './mapLibrary';
 
 type Tool = 'paint' | 'erase' | 'rect' | 'entity' | 'stamp';
 
-/** Where a draft lives between sessions (§9.3). Not a save system; the export is the level. */
+/**
+ * Where the open document lives between sessions (§9.3).
+ *
+ * Not one of the saved maps: it is whatever is open, saved or not, so closing the browser
+ * mid-edit loses nothing. It records which map it came from, or reopening a draft would
+ * forget which map a later Save is meant to write to.
+ */
 const AUTOSAVE_KEY = 'shadows.editor.draft';
 /** Where a playtest hands the level to the game (§9.3). */
 export const PLAYTEST_KEY = 'shadows.editor.playtest';
@@ -69,6 +92,15 @@ export class EditorApp {
    * can only delete and re-make under a different name.
    */
   private capturingInto: string | null = null;
+  /** §9.3 — which map is open, or null for a level that has never been saved. */
+  private open: OpenMap | null = null;
+  /** §9.3 — this browser's maps. The project's are read-only and are not in here. */
+  private maps: SavedMap[] = loadSavedMaps();
+  /**
+   * §9.3 — `doc.version` as of the last save or open, so the menu can say whether there is
+   * anything to lose. Not a boolean: undoing back to the saved state is not a change.
+   */
+  private savedVersion = 0;
   private layer = 1;
   private tileId = 2;
   private entityType = 'SpiderEnemy';
@@ -82,7 +114,10 @@ export class EditorApp {
   private readonly palette: HTMLDivElement;
 
   constructor(parent: HTMLElement = document.body) {
-    this.doc = loadDraft() ?? EditorDocument.blank();
+    const draft = loadDraft();
+    this.doc = draft?.doc ?? EditorDocument.blank();
+    this.open = draft?.open ?? null;
+    this.savedVersion = this.doc.version;
     this.stampId = this.stamps.all[0]?.id ?? '';
 
     this.root = document.createElement('div');
@@ -119,6 +154,11 @@ export class EditorApp {
     // §9.4 — the level's pieces, without waiting for them. The editor is usable the moment
     // it opens and the project's stamps appear a moment later, which is the right way round:
     // a slow or missing `stamps.json` costs the pieces in it and never the tools.
+    // §9.3 — a fresh browser opens the project's default map rather than an empty grid.
+    // Only when there is no draft: work in progress outranks the default, and it is the
+    // one case where opening something would throw away an edit nobody asked to discard.
+    if (!draft) void this.openProject(DEFAULT_MAP, { silent: true });
+
     void loadProjectStamps(`${import.meta.env.BASE_URL}stamps.json`).then((stamps) => {
       if (stamps.length === 0) return;
       this.stamps.setProject(stamps);
@@ -187,6 +227,7 @@ export class EditorApp {
         button('Fit', () => this.canvas.fit()),
       ]),
       group([
+        button('Maps', () => this.showMaps(), 'maps'),
         button('Checks', () => this.showChecks(), 'checks'),
         button('Copy', () => void this.copy(), 'copy'),
         button('Stamps', () => this.showStampJson(), 'stamps'),
@@ -207,6 +248,9 @@ export class EditorApp {
         element.classList.toggle('is-on', name === `tool-${this.tool}`);
       }
       if (name === 'layer') element.textContent = this.layer === 1 ? 'Walls' : 'Floor';
+      // §9.3 — the open map's name on the button, because which level you are editing is
+      // not something to have to open a menu to find out. `•` is unsaved work.
+      if (name === 'maps') element.textContent = `Maps: ${this.openLabel()}`;
       if (name === 'undo') element.disabled = !this.doc.canUndo;
       if (name === 'redo') element.disabled = !this.doc.canRedo;
       if (name === 'checks') {
@@ -830,6 +874,247 @@ export class EditorApp {
     return wrap;
   }
 
+  // --- The map library (§9.3) ---------------------------------------------
+
+  /** The open map's name, with `•` for work that is not in the library yet. */
+  private openLabel(): string {
+    const name = this.open?.name ?? 'untitled';
+    return this.isDirty() ? `${name} •` : name;
+  }
+
+  private isDirty(): boolean {
+    return this.doc.version !== this.savedVersion;
+  }
+
+  /**
+   * Put a document on screen as `open` (§9.3). One path for every way a map arrives — the
+   * default at startup, a project map, one of this browser's — so "opening" means the same
+   * thing each time: the undo stack goes, and what is on screen is what was saved.
+   */
+  private openDocument(map: unknown, open: OpenMap | null): void {
+    this.doc.replace(EditorDocument.fromJson(map).toSnapshot());
+    this.open = open;
+    this.savedVersion = this.doc.version;
+    this.selected = null;
+    this.rectStart = null;
+    this.canvas.preview = null;
+    this.canvas.fit();
+    this.refreshToolbar();
+    // Written now rather than at the next edit: `frame` only autosaves when the document
+    // version moves, and opening or saving changes which map the draft belongs to without
+    // changing the document at all. A reload in between would come back under the old name.
+    saveDraft(this.doc, this.open);
+  }
+
+  /**
+   * §9.3 — open one of the project's maps, which are fetched rather than stored. A failure
+   * leaves what is open alone: falling back to a blank grid would be discarding the
+   * author's level because a network request did not land.
+   */
+  private async openProject(name: string, options: { silent?: boolean } = {}): Promise<void> {
+    const map = await loadProjectMap(name, import.meta.env.BASE_URL);
+    if (!map) {
+      if (!options.silent) this.flash(`Could not load ${name}`);
+      return;
+    }
+    this.openDocument(map, { source: 'project', name });
+    if (!options.silent) this.flash(`Opened ${name} · read-only, Save makes a copy`);
+  }
+
+  /** §9.3 — anything that would lose work asks first, and only when there is work to lose. */
+  private confirmDiscard(): boolean {
+    if (!this.isDirty()) return true;
+    return confirm(`${this.open?.name ?? 'This level'} has unsaved changes.\n\nDiscard them?`);
+  }
+
+  /**
+   * §9.3 — write the open document into this browser's library under `name`, which is the
+   * one operation that makes a map exist outside the draft.
+   */
+  private saveAs(name: string): void {
+    this.maps = putMap(this.maps, name, this.doc.toMapJson());
+    saveSavedMaps(this.maps);
+    this.open = { source: 'browser', name };
+    this.savedVersion = this.doc.version;
+    this.refreshToolbar();
+    saveDraft(this.doc, this.open);
+    this.flash(`Saved ${name}`);
+  }
+
+  /**
+   * §9.3 — the menu.
+   *
+   * A sheet like the rest of the editor's panels: on a phone a file dialog is not available
+   * and a row of chips is not enough, since a map has to be opened, renamed and deleted.
+   */
+  private showMaps(): void {
+    this.sheet.hidden = false;
+    this.sheet.textContent = '';
+
+    const title = document.createElement('div');
+    title.className = 'ed-sheet-title';
+    title.textContent = 'Maps';
+    this.sheet.append(title);
+
+    const hint = document.createElement('div');
+    hint.className = 'ed-hint';
+    hint.textContent = this.open
+      ? this.open.source === 'project'
+        ? `Editing ${this.open.name} — the project's, read-only. Saving makes a new map.`
+        : `Editing ${this.open.name}${this.isDirty() ? ' — unsaved changes' : ' — saved'}`
+      : 'Unsaved level. Give it a name to keep it in this browser.';
+    this.sheet.append(hint);
+
+    // --- Save --------------------------------------------------------------
+    const nameRow = document.createElement('div');
+    nameRow.className = 'ed-row';
+    nameRow.append(Object.assign(document.createElement('span'), { textContent: 'Name' }));
+    const input = document.createElement('input');
+    input.value = canOverwrite(this.open)
+      ? this.open!.name
+      : uniqueMapName(this.maps, this.open?.name ?? 'untitled');
+    input.placeholder = 'map name';
+    const save = document.createElement('button');
+    save.type = 'button';
+    save.textContent = 'Save';
+    save.addEventListener('click', () => {
+      const name = normaliseMapName(input.value);
+      if (name === null) {
+        // §9.3 — the project's names are taken. Saying so beats writing a second `example`
+        // into the list beside the one that cannot be changed.
+        this.flash(
+          isProjectMap(input.value.trim())
+            ? `${input.value.trim()} is the project's — pick another name`
+            : 'That name cannot be used',
+        );
+        return;
+      }
+      const existing = findMap(this.maps, name);
+      const replacing = existing && name.toLowerCase() !== this.open?.name.toLowerCase();
+      if (replacing && !confirm(`${existing.name} already exists.\n\nReplace it?`)) return;
+      this.saveAs(name);
+      this.showMaps();
+    });
+    nameRow.append(input, save);
+    this.sheet.append(nameRow);
+
+    // --- This browser's ----------------------------------------------------
+    const mine = document.createElement('div');
+    mine.className = 'ed-sheet-title';
+    mine.textContent = 'In this browser';
+    this.sheet.append(mine);
+
+    if (this.maps.length === 0) {
+      const none = document.createElement('div');
+      none.className = 'ed-hint';
+      none.textContent = 'Nothing saved here yet.';
+      this.sheet.append(none);
+    }
+
+    for (const map of this.maps) {
+      const row = document.createElement('div');
+      row.className = 'ed-row ed-maprow';
+
+      const openIt = document.createElement('button');
+      openIt.type = 'button';
+      openIt.className = 'ed-mapname';
+      openIt.textContent = map.name;
+      openIt.classList.toggle('is-on', this.open?.source === 'browser' && this.open.name === map.name);
+      openIt.addEventListener('click', () => {
+        if (!this.confirmDiscard()) return;
+        this.openDocument(map.map, { source: 'browser', name: map.name });
+        this.flash(`Opened ${map.name}`);
+        this.showMaps();
+      });
+
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.textContent = 'Rename';
+      rename.addEventListener('click', () => {
+        const to = prompt(`Rename ${map.name} to`, map.name);
+        if (to === null) return;
+        const next = renameMap(this.maps, map.name, to);
+        const named = normaliseMapName(to);
+        if (named === null || next === this.maps) {
+          this.flash(`Could not rename to "${to.trim()}"`);
+          return;
+        }
+        this.maps = next;
+        saveSavedMaps(this.maps);
+        if (this.open?.source === 'browser' && this.open.name === map.name) {
+          this.open = { source: 'browser', name: named };
+        }
+        this.refreshToolbar();
+        this.showMaps();
+      });
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'ed-danger';
+      remove.textContent = 'Delete';
+      remove.addEventListener('click', () => {
+        if (!confirm(`Delete ${map.name}?\n\nThis browser is the only place it exists.`)) return;
+        this.maps = deleteMap(this.maps, map.name);
+        saveSavedMaps(this.maps);
+        // What is on screen stays on screen: deleting the entry a document came from does
+        // not close it, it just leaves it unsaved again.
+        if (this.open?.source === 'browser' && this.open.name === map.name) {
+          this.open = null;
+          saveDraft(this.doc, null);
+        }
+        this.refreshToolbar();
+        this.showMaps();
+      });
+
+      row.append(openIt, rename, remove);
+      this.sheet.append(row);
+    }
+
+    // --- The project's -----------------------------------------------------
+    const theirs = document.createElement('div');
+    theirs.className = 'ed-sheet-title';
+    theirs.textContent = 'In the project';
+    const theirsHint = document.createElement('div');
+    theirsHint.className = 'ed-hint';
+    theirsHint.textContent = 'Read-only. Open one to work from it; saving writes a new map.';
+    this.sheet.append(theirs, theirsHint);
+
+    const chips = document.createElement('div');
+    chips.className = 'ed-row ed-mapchips';
+    for (const name of PROJECT_MAPS) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.textContent = name;
+      chip.classList.toggle('is-on', this.open?.source === 'project' && this.open.name === name);
+      chip.addEventListener('click', () => {
+        if (!this.confirmDiscard()) return;
+        void this.openProject(name).then(() => this.showMaps());
+      });
+      chips.append(chip);
+    }
+    this.sheet.append(chips);
+
+    const actions = document.createElement('div');
+    actions.className = 'ed-row';
+    const blank = document.createElement('button');
+    blank.type = 'button';
+    blank.textContent = 'New';
+    blank.addEventListener('click', () => {
+      if (!this.confirmDiscard()) return;
+      this.openDocument(EditorDocument.blank().toMapJson(), null);
+      this.flash('New level');
+      this.showMaps();
+    });
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.textContent = 'Close';
+    close.addEventListener('click', () => {
+      this.sheet.hidden = true;
+    });
+    actions.append(blank, close);
+    this.sheet.append(actions);
+  }
+
   // --- Getting it out ------------------------------------------------------
 
   /** §9.3 — the whole map.json as text, in one action. */
@@ -953,7 +1238,7 @@ export class EditorApp {
       // Autosaved here rather than at each call site, for the same reason history is
       // recorded in one place: undo and redo change the document too, and a draft saved
       // only where an edit happens comes back with the undone edit still in it.
-      saveDraft(this.doc);
+      saveDraft(this.doc, this.open);
     }
     this.statusBar.textContent = this.statusText();
     this.canvas.draw();
@@ -1060,19 +1345,34 @@ function isSolid(tileId: number): boolean {
   return [...FLOOR_TILES, ...OBSTACLE_TILES].find((t) => t.id === tileId)?.solid === true;
 }
 
-function saveDraft(doc: EditorDocument): void {
+function saveDraft(doc: EditorDocument, open: OpenMap | null): void {
   try {
-    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(doc.toMapJson()));
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ open, map: doc.toMapJson() }));
   } catch {
     // A full or disabled store is not a reason to stop editing.
   }
 }
 
-function loadDraft(): EditorDocument | null {
+function loadDraft(): { doc: EditorDocument; open: OpenMap | null } | null {
   try {
     const raw = localStorage.getItem(AUTOSAVE_KEY);
-    return raw ? EditorDocument.fromJson(JSON.parse(raw)) : null;
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    const wrapper = parsed as { open?: unknown; map?: unknown };
+    // A draft written before there was a library is the bare `map.json`. Read it as one
+    // rather than dropping it: it is unsaved work, and it is the only copy of it.
+    const map = wrapper?.map ?? parsed;
+    return { doc: EditorDocument.fromJson(map), open: readOpen(wrapper?.open) };
   } catch {
     return null;
   }
+}
+
+/** A stored `open` is only believed if it still describes a map that could exist (§9.3). */
+function readOpen(raw: unknown): OpenMap | null {
+  const open = raw as Partial<OpenMap> | null | undefined;
+  if (!open || typeof open.name !== 'string') return null;
+  if (open.source === 'project') return isProjectMap(open.name) ? { source: 'project', name: open.name } : null;
+  if (open.source === 'browser') return { source: 'browser', name: open.name };
+  return null;
 }

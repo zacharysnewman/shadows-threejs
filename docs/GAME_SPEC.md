@@ -1448,15 +1448,42 @@ unreadable notes in it.
 
 A switch has no such constraint: it needs to be reachable (§3.3), not legible.
 
-### 9.3 Getting a Level Out
+### 9.3 Saving, Loading and Getting a Level Out
 
+**Maps are saved and opened by name**, so more than one level can be worked on and any of
+them can be picked up again. Two sources, layered the way §9.4 layers stamps, and the
+precedence between them is the whole of the rule:
+
+- **The project's** — the map directories in `public/maps/`. Read-only. `example` is the
+  one a fresh browser opens.
+- **This browser's** — saved here, named, opened, renamed and deleted.
+
+- **A project map is never written over.** Saving out of one asks for a name and writes a
+  new map into this browser. `public/maps/` changes through a commit and a diff, which is
+  what makes those maps the same on every device and recoverable when a browser is cleared;
+  a save that could overwrite one would put the level everybody shares one tap from being
+  replaced by a draft. Opening a project map is how a level is worked *from* — its names are
+  taken, and a browser map cannot claim one.
+- **One name is one map.** Saving over an existing name replaces it rather than sitting
+  beside it, and says so first. The same rule §9.4 gives stamps, for the same reason: a list
+  with two things called the same thing is a list nobody can choose from.
+- **A fresh browser opens `example`**, not an empty grid. The default is a level that
+  already parses, already passes the audit and already has one of everything, which is a
+  better place to start than 32×32 of concrete — and it makes the read-only case the first
+  one an author meets, rather than a surprise the first time they press Save.
+- **The draft is what is open, not a map of its own.** Work in progress survives the browser
+  closing whether or not it has ever been saved, and it remembers which map it came from, so
+  a later Save knows what it is saving. A draft outranks the default: reopening the editor
+  never discards an edit to show a fresh copy of `example`.
 - **Copy to clipboard.** The whole `map.json` as text, in one action. On a phone this is the
   reliable path — no file system, no download permissions — and it pastes into a commit.
+  Saving in the browser and getting a level out are different acts: the first keeps a level
+  where it is being worked on, and the second is how it gets into the repository, which is
+  the only place a level becomes everybody's.
 - **Play it now.** The editor hands the level straight to the game without a round trip
-  through the repository, so a change can be tested in the seconds after it is made. This
-  is a debug affordance (§8.3) and is not a route a player can reach.
-- **Autosave.** Work in progress survives the browser being closed. It is not a save
-  system: the exported file is the level, and the autosave is a draft.
+  through the repository, so a change can be tested in the seconds after it is made. It
+  plays what is open, saved or not. This is a debug affordance (§8.3) and is not a route a
+  player can reach.
 
 ### 9.4 Stamps
 

@@ -1612,6 +1612,31 @@ That last one is the check that was missing: an action nobody consumes type-chec
 perfectly, so nothing but a source-level assertion could have caught it. (Its two
 source-level describes had been pasted in twice and ran as duplicates; one copy is gone.)
 
+*Added afterwards — a map library (§9.3).* The editor kept one autosaved draft and nothing
+else, so there was no way to keep two levels or to get back to one. It now saves and opens
+maps by name, layered the way §9.4 layers stamps: the project's maps in `public/maps/` are
+read-only and `example` is what a fresh browser opens, and this browser's are saved, renamed
+and deleted. Saving out of a project map names a new one — `public/maps/` changes through a
+commit, and a save that could overwrite it would put the level everybody shares one tap from
+a draft. `src/editor/mapLibrary.ts` is the model (pure, so the naming and precedence rules
+are testable), `EditorApp` the chrome. `EditorDocument` gained `replace`, which drops the
+undo stack: an undo across an open would take one map's edits back into another.
+
+The project's map list is derived from the tree by `import.meta.glob` rather than from a
+checked-in manifest — only the keys are read, so no map is bundled and none is fetched until
+it is opened, and there is no second generated file to go stale. The draft now records which
+map it belongs to and is rewritten when that changes, not only when the document does: saving
+and opening leave the document untouched, and a reload in between came back under the old
+name.
+
+*Verified in Chromium on a Pixel 7 profile* (`?edit`): a fresh browser opens `example`
+(`clean · 2306 tiles reachable`); saving out of it suggests `example 2` and refuses the name
+`example` outright; saving as `the yard` writes the library and the draft together; one edit
+puts `•` on the button; opening another map with unsaved work asks first; reopening `the
+yard` and reloading both come back to it. `tests/editor.test.ts` covers the rules underneath
+— overwrite precedence, name collisions case-insensitively, a corrupt stored library, and
+the dropped undo stack.
+
 ## Cross-Cutting
 
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit

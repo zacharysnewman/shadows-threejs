@@ -11,6 +11,21 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { EditorDocument } from '../src/editor/Document';
 import {
+  DEFAULT_MAP,
+  MAPS_KEY,
+  PROJECT_MAPS,
+  type SavedMap,
+  canOverwrite,
+  findMap,
+  loadSavedMaps,
+  mapsFromJson,
+  normaliseMapName,
+  putMap,
+  renameMap,
+  saveSavedMaps,
+  uniqueMapName,
+} from '../src/editor/mapLibrary';
+import {
   ENTITIES,
   FLOOR_TILES,
   OBSTACLE_TILES,
@@ -280,5 +295,103 @@ describe('the properties sheet (§9.1)', () => {
         expect(['target', 'group', 'own']).toContain(role);
       }
     }
+  });
+});
+
+describe('the map library (§9.3)', () => {
+  const store = (): Storage => {
+    const map = new Map<string, string>();
+    return {
+      get length() {
+        return map.size;
+      },
+      clear: () => map.clear(),
+      getItem: (k: string) => map.get(k) ?? null,
+      key: (i: number) => [...map.keys()][i] ?? null,
+      removeItem: (k: string) => void map.delete(k),
+      setItem: (k: string, v: string) => void map.set(k, v),
+    } as Storage;
+  };
+
+  const some = (name: string): SavedMap => ({ name, savedAt: 1, map: { layers: [] } });
+
+  it('ships the project maps it found on disk, `example` among them', () => {
+    // Derived from the tree at build time — a manifest nobody remembers to update is how
+    // this list would come to describe maps that are not there.
+    expect(PROJECT_MAPS).toContain(DEFAULT_MAP);
+    expect(PROJECT_MAPS).toContain('phase1-test');
+  });
+
+  it('never lets a save overwrite a project map (§9.3)', () => {
+    // The rule the whole thing rests on: `public/maps/` changes through a commit.
+    expect(canOverwrite({ source: 'project', name: DEFAULT_MAP })).toBe(false);
+    expect(canOverwrite({ source: 'browser', name: 'yard' })).toBe(true);
+    // Nothing open is not something to overwrite either — it has to be named first.
+    expect(canOverwrite(null)).toBe(false);
+  });
+
+  it("refuses a browser map named after one of the project's", () => {
+    // Two different things under one label in the same list, one of which cannot be
+    // changed, is a menu that cannot be read.
+    expect(normaliseMapName(DEFAULT_MAP)).toBeNull();
+    expect(normaliseMapName('  ')).toBeNull();
+    expect(normaliseMapName('  the   yard ')).toBe('the yard');
+  });
+
+  it('suggests a free name rather than one that is taken', () => {
+    const maps = [some('yard'), some('yard 2')];
+    expect(uniqueMapName(maps, 'yard')).toBe('yard 3');
+    expect(uniqueMapName(maps, 'shed')).toBe('shed');
+    // Saving out of a project map: the obvious name is exactly the unavailable one.
+    expect(uniqueMapName([], DEFAULT_MAP)).toBe(`${DEFAULT_MAP} 2`);
+  });
+
+  it('replaces a map of the same name rather than sitting beside it (§9.3)', () => {
+    const first = putMap([], 'yard', { v: 1 });
+    const second = putMap(first, 'YARD', { v: 2 });
+    expect(second).toHaveLength(1);
+    expect(second[0]!.map).toEqual({ v: 2 });
+    // Case-insensitively, or `Yard` and `yard` are two rows and neither is findable.
+    expect(findMap(second, 'yard')?.name).toBe('YARD');
+  });
+
+  it('renames in place, and refuses a name that is taken or unusable', () => {
+    const maps = [some('yard'), some('shed')];
+    expect(renameMap(maps, 'yard', 'lot').map((m) => m.name)).toEqual(['lot', 'shed']);
+    expect(renameMap(maps, 'yard', 'shed').map((m) => m.name)).toEqual(['yard', 'shed']);
+    expect(renameMap(maps, 'yard', DEFAULT_MAP).map((m) => m.name)).toEqual(['yard', 'shed']);
+    // Renaming to what it already is is not a clash with itself.
+    expect(renameMap(maps, 'yard', 'Yard').map((m) => m.name)).toEqual(['Yard', 'shed']);
+  });
+
+  it('survives a stored library that is not one', () => {
+    // A half-written entry costs that entry and never the editor.
+    expect(mapsFromJson(null)).toEqual([]);
+    expect(mapsFromJson('nonsense')).toEqual([]);
+    expect(mapsFromJson([{ name: 'ok', map: { a: 1 } }, { name: '' }, { map: {} }])).toHaveLength(1);
+    // A stored map that took a project name is dropped rather than shadowing it.
+    expect(mapsFromJson([{ name: DEFAULT_MAP, map: {} }])).toEqual([]);
+  });
+
+  it('round-trips through storage, and reads an unwritable one as empty', () => {
+    const s = store();
+    saveSavedMaps([some('yard')], s);
+    expect(loadSavedMaps(s).map((m) => m.name)).toEqual(['yard']);
+    expect(loadSavedMaps(null)).toEqual([]);
+    s.setItem(MAPS_KEY, '{oh no');
+    expect(loadSavedMaps(s)).toEqual([]);
+  });
+
+  it('drops the undo stack when a map is opened over another (§9.3)', () => {
+    // An undo across an open would take one map's edits back into another.
+    const doc = EditorDocument.blank(8, 8);
+    doc.edit((draft) => {
+      draft.layers[1]![0] = 2;
+    });
+    expect(doc.canUndo).toBe(true);
+
+    doc.replace(EditorDocument.blank(6, 6).toSnapshot());
+    expect(doc.canUndo).toBe(false);
+    expect(doc.width).toBe(6);
   });
 });

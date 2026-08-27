@@ -60,6 +60,15 @@ export const EDITOR_STYLE = `<style>
   border: 1px solid rgba(255,255,255,0.14); background: #171b24; color: #e8e4dc; font: inherit; }
 .ed-danger { color: #ff9a8f !important; border-color: rgba(255,154,143,0.4) !important; }
 
+/* §9.3 — the map library. The name is the target: it is what a thumb goes for, so it takes
+   the row and the two small actions sit at the end where they are not hit by accident. */
+.ed-maprow > .ed-mapname { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.ed-row button.is-on { background: #2b6cb0; border-color: #4a90d9; }
+/* The project's maps are a set that fits on one line and scrolls when it does not. */
+.ed-mapchips { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ed-mapchips button { flex: 0 0 auto; }
+
 .ed-facing { display: flex; gap: 6px; flex: 1; }
 .ed-facing button { min-width: 44px; min-height: 42px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.14); background: #171b24; color: #e8e4dc; font: inherit; }

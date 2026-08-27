@@ -162,6 +162,26 @@ export class EditorDocument {
     this._version += 1;
   }
 
+  /** The whole document, for saving it or opening another one over it (§9.3). */
+  toSnapshot(): DocumentSnapshot {
+    return clone(this.snapshot);
+  }
+
+  /**
+   * Open another document over this one (§9.3).
+   *
+   * **The undo stack is dropped, not kept.** An undo across an open would take one map's
+   * edits back into another and leave a document that is neither — and the map that was
+   * open is in the library or in the repository, which is a better place to get it back
+   * from than a stack.
+   */
+  replace(snapshot: DocumentSnapshot): void {
+    this.snapshot = clone(snapshot);
+    this.past.length = 0;
+    this.future.length = 0;
+    this._version += 1;
+  }
+
   /** §9.3 — the level, in exactly the shape §2's loader reads. */
   toMapJson(): unknown {
     return {
