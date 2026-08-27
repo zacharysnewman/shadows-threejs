@@ -82,6 +82,26 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **A media element is the device's media unless it is put on the graph.** An
+  `HTMLAudioElement` left to itself takes a phone's lock-screen transport controls, shows in
+  the notification shade, and stops whatever the player was already listening to — correct
+  for a music app, wrong for a game. Routing it through `createMediaElementSource` makes it
+  one more node in the graph the rest of the sound comes out of. The music streams through
+  an element rather than a decoded buffer only because a four-minute track is ~110 MB of PCM;
+  the element is a compromise, and putting it on the graph is what pays for it.
+- **ZzFX's `filter` is a high-pass when positive.** Reaching for a positive number to take
+  the top off a sound removes its *bottom* instead — ZzFX builds one biquad from
+  `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form. Negative is the
+  low-pass, and the corner is twice the number either way. It reads as the sound simply
+  being thin, so it is diagnosed by measuring the low-band share rather than by listening.
+- **A source stopped on the render loop is restarted by the render loop.** `SpiderVoices`
+  and `LampVoices` re-`play()` their emitters whenever the thing they speak for is doing
+  something, and they update outside the simulation guard. Silencing the world on death
+  stopped them for exactly one frame. It was invisible for as long as death suspended the
+  whole `AudioContext` — the sources were playing into a suspended context — and only became
+  audible once the context had to stay alive so the jump-scare could have a sound. Anything
+  that silences the world has to stop the updates too, not just the sources.
+
 - **A tree short enough to see whole is a tree that roofs the floor.** The instinct from
   §3.2's 72° pitch is that a 26 m trunk is a dark bar rather than a shape, so a wood should
   be planted from something you can see the top of. It is the wrong way round: a crown below
@@ -166,12 +186,15 @@ Do not run `playwright install`.
 The recipe that works:
 
 ```js
-await page.goto('http://localhost:5173/shadows-threejs/?debug&map=phase3-test');
+await page.goto('http://localhost:5173/shadows-threejs/?debug&map=phase3-test&overlay=0');
 await page.click('.shell-play');                       // §8.1 — the only door into a run
 await page.waitForFunction(() => window.shadows?.player);
-await page.keyboard.press('KeyH');                     // hide the readout, it covers a third
-                                                       // of the screen
 ```
+
+`&overlay=0` starts the readout hidden — it covers a third of the screen otherwise, and
+`?map=` is debug-only so there is no arming one without the other. `H` still toggles it, and
+under `?debug` it also carries a `×` to dismiss and a `dbg` handle to bring it back, which
+is the path that exists on a phone.
 
 **Every in-page path carries the base**, in dev exactly as in production (`vite.config.ts`
 sets it so a base-path mistake surfaces locally). A dynamic `import('/src/…')` or
@@ -206,6 +229,17 @@ Then, from `window.shadows` (dev builds only, republished on every restart):
 The handle carries: `clock, input, loaded, player, rig, flashlight, environment, audio,
 testEmitter, occluders, enemies, objectives, props, gates, hud, notes, voices, monsterSteps,
 lampVoices, rng, illumination, night, audit, frameStats`.
+
+**`music` and `restart` are the shell's, not the run's**, and are on the handle from the
+moment the page loads rather than from the first run — which is the point of them, since the
+music plays on the title screen and a handle that only existed inside a run could not reach
+it. A run's own entries are merged over these when one is built.
+
+`shadows.music` is also the only way to see what the menu's music is doing: `new Audio()`
+makes a *detached* element, so it is not in the DOM and `document.querySelector('audio')`
+finds nothing. `music.silent` is the one worth knowing — the graph playing nothing, which is
+what an older iOS Safari does with `createMediaElementSource` and which looks exactly like a
+track that failed to load.
 
 **The rig camera is locked to the player** (§3.2) — it centres them everywhere, including
 hard into a corner, so a screen position means the same thing wherever the player is
@@ -282,6 +316,10 @@ hovered tile, `Y` disable enemies, `I` draw the monster's body (§5.2 says never
 the battery to 5%, `L` power every light group, `J` heal, `G` walkability, `C` colliders,
 `M` entity markers, `P` pause, `.` step one tick, `[` `]` time scale, `R` restart, `T` the
 tuning panel, `H` hide the readout.
+
+None of them exists on a phone, where the only debug chrome is the readout's own two tap
+targets (`×` and `dbg`). `?overlay=0` starts it hidden; `?debug=0` turns the harness off
+outright, and takes `?map=` down with it.
 
 ## The suite
 

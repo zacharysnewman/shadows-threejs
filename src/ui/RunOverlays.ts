@@ -18,7 +18,9 @@
  *
  * The two jump-scares are deliberately unalike (§5.3): the spider's is red and convulsive,
  * the monster's is a black screen with a shape arriving out of it. The player has to know
- * which mistake they made, because the two mistakes have nothing in common.
+ * which mistake they made, because the two mistakes have nothing in common — but the shape
+ * is the same silhouette in both, because §5.2 makes that outline the monster's entire
+ * visual design and the player has spent the run learning it.
  */
 
 import { HEALTH, RUN } from '../config';
@@ -31,6 +33,33 @@ export interface VictorySummary {
   notesRead: number;
   notesTotal: number;
 }
+
+/**
+ * The shape both jump-scares are made of (§5.2, §5.3).
+ *
+ * A spider, because that is the silhouette the run teaches: §5.2 gives the Shadow Monster
+ * the spider's model at twice the size and says the silhouette is its entire visual design,
+ * so the shape that arrives out of the black has to be one the player half-recognises. The
+ * two scares differ in colour, scale and how they move, not in what they are of.
+ *
+ * Inline SVG rather than art: it is a silhouette, it has to be crisp at any size on any
+ * screen, and it is one flat colour driven by `currentColor` — which is how the same markup
+ * serves a near-black shape on red and a pure-black one on a dying glow.
+ */
+const SPIDER_SILHOUETTE = `
+<svg class="run-scare-shape" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+  <g fill="none" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M43 41 L24 23 L7 27" /><path d="M41 47 L17 40 L1 47" />
+    <path d="M41 54 L18 59 L3 71" /><path d="M44 59 L27 72 L16 88" />
+    <path d="M57 41 L76 23 L93 27" /><path d="M59 47 L83 40 L99 47" />
+    <path d="M59 54 L82 59 L97 71" /><path d="M56 59 L73 72 L84 88" />
+  </g>
+  <ellipse cx="50" cy="63" rx="14" ry="17" fill="currentColor" />
+  <ellipse cx="50" cy="43" rx="9.5" ry="9" fill="currentColor" />
+  <path d="M44 36 L39 27 M56 36 L61 27" stroke="currentColor" stroke-width="3.5"
+        stroke-linecap="round" />
+</svg>`;
 
 export class RunOverlays {
   readonly root: HTMLDivElement;
@@ -58,6 +87,10 @@ export class RunOverlays {
     this.scare = document.createElement('div');
     this.scare.className = 'run-scare';
     this.scare.hidden = true;
+    // §5.2 — the shape is the spider's, because the silhouette is the whole visual design
+    // of the monster and it is the one the player has spent the run learning. Built once
+    // and re-coloured by the class, so a death does not construct anything.
+    this.scare.innerHTML = `<div class="run-scare-glow"></div>${SPIDER_SILHOUETTE}`;
 
     this.endingCard = document.createElement('div');
     this.endingCard.className = 'run-ending-card';
@@ -118,10 +151,14 @@ export class RunOverlays {
   showJumpScare(cause: DeathCause): void {
     this.scare.hidden = false;
     this.scare.className = `run-scare is-${cause === 'SpiderEnemy' ? 'spider' : 'monster'}`;
-    // Restarted rather than left running, so a second run's scare plays from the top.
-    this.scare.style.animation = 'none';
-    void this.scare.offsetWidth;
-    this.scare.style.removeProperty('animation');
+    // Restarted rather than left running, so a second run's scare plays from the top. The
+    // layer itself no longer animates — scaling it would scale the black it is drawn on,
+    // and §5.3 wants the screen black *and then* the shape arriving out of it.
+    for (const element of this.scare.querySelectorAll<HTMLElement>('*')) {
+      element.style.animation = 'none';
+      void element.offsetWidth;
+      element.style.removeProperty('animation');
+    }
   }
 
   /** §5.3 — the jump-scare resolves to this, and there is no respawn. */
@@ -194,22 +231,57 @@ const STYLE = `<style>
   background: radial-gradient(ellipse at center,
     rgba(120, 8, 8, 0) 22%, rgba(120, 8, 8, 0.42) 58%, rgba(58, 0, 0, 0.9) 100%); }
 
-.run-scare { position: absolute; inset: 0; display: grid; place-items: center; }
-.run-scare.is-spider { background: #7d0d0d; animation: scare-spider 1.5s steps(3, end) both; }
-.run-scare.is-spider::after { content: ''; width: 46vmin; height: 46vmin; border-radius: 50%;
-  background: radial-gradient(circle at 40% 38%, #2a0505 0 32%, #4a0a0a 55%, rgba(74,10,10,0) 72%);
-  box-shadow: 0 0 22vmin 8vmin rgba(0,0,0,0.55) inset; }
-.run-scare.is-monster { background: #000; animation: scare-monster 1.5s ease-in both; }
-.run-scare.is-monster::after { content: ''; width: 30vmin; height: 62vmin; border-radius: 44%;
-  background: radial-gradient(ellipse at 50% 40%, rgba(214,210,200,0.9) 0 34%, rgba(120,118,112,0.25) 72%, rgba(0,0,0,0) 100%); }
+/* §5.3 — the two scares are unalike on purpose: the player has to read which mistake they
+   made. Both are the same silhouette (§5.2); what differs is the colour, the ground it
+   arrives on, and how it moves. The layer itself never animates — scaling it would scale
+   the ground with it, and both of these are a shape moving against a still ground. */
+.run-scare { position: absolute; inset: 0; overflow: hidden; }
+.run-scare-shape { position: absolute; left: 50%; top: 50%; width: 96vmin; height: 96vmin;
+  margin: -48vmin 0 0 -48vmin; transform-origin: 50% 52%; }
+.run-scare-glow { position: absolute; inset: 0; }
+
+/* Red and convulsive: it is already on you, and it is thrashing. The steps() is the
+   convulsion — an eased scale reads as a zoom, which is a camera move, not an animal. */
+.run-scare.is-spider { background: #6e0c0c; animation: scare-flash 0.25s steps(2, end) 6 both; }
+.run-scare.is-spider .run-scare-glow {
+  background: radial-gradient(circle at 50% 46%, rgba(255,90,60,0.30) 0 22%,
+    rgba(120,10,10,0) 62%); }
+.run-scare.is-spider .run-scare-shape { color: #170202;
+  animation: scare-spider 1.5s steps(6, end) both; }
+
+/* A black screen with a shape arriving out of it. The shape is pure black and is visible
+   only where it crosses the last of the light, so it does not fade in — it occludes, and by
+   the time it fills the screen there is nothing left to see. That is the monster: the only
+   way it was ever visible was as a shadow, and this is the last one. */
+.run-scare.is-monster { background: #000; }
+.run-scare.is-monster .run-scare-glow {
+  background: radial-gradient(circle at 50% 48%, rgba(176,198,214,0.34) 0 14%,
+    rgba(96,120,140,0.14) 38%, rgba(20,26,32,0) 70%);
+  animation: scare-glow 1.5s ease-in both; }
+.run-scare.is-monster .run-scare-shape { color: #000;
+  animation: scare-monster 1.5s cubic-bezier(0.55, 0, 0.85, 0.35) both; }
+
 @keyframes scare-spider {
-  0% { transform: scale(0.35); opacity: 0.2; }
-  100% { transform: scale(1.35); opacity: 1; }
+  0%   { transform: scale(0.9) translate(0, 0) rotate(-2deg); }
+  25%  { transform: scale(1.25) translate(-3%, 2%) rotate(3deg); }
+  50%  { transform: scale(1.15) translate(4%, -2%) rotate(-4deg); }
+  75%  { transform: scale(1.5) translate(-2%, 3%) rotate(2deg); }
+  100% { transform: scale(1.9) translate(2%, -1%) rotate(-1deg); }
 }
+@keyframes scare-flash {
+  0%   { background-color: #6e0c0c; }
+  100% { background-color: #9d1414; }
+}
+/* One accelerating rush, out of nothing and into the whole screen. */
 @keyframes scare-monster {
-  0% { transform: scale(0.15); opacity: 0; }
-  70% { opacity: 1; }
-  100% { transform: scale(2.4); opacity: 1; }
+  0%   { transform: scale(0.12); }
+  100% { transform: scale(4.2); }
+}
+/* The light it was arriving out of, going with it. */
+@keyframes scare-glow {
+  0%   { opacity: 1; }
+  70%  { opacity: 0.85; }
+  100% { opacity: 0; }
 }
 
 .run-ending { position: absolute; inset: 0; display: grid; place-items: center;

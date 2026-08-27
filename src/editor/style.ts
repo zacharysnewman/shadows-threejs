@@ -56,9 +56,24 @@ export const EDITOR_STYLE = `<style>
 .ed-row > span { flex: 0 0 34%; color: #9aa3ae; font-size: 13px; }
 .ed-row input { flex: 1; min-height: 42px; padding: 0 10px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.14); background: #0e1118; color: #e8e4dc; font: inherit; }
+/* A flex item will not shrink below its intrinsic width without this, and an input's is set
+   by its size attribute — so one long label pushes the row past the sheet and clips every
+   label in the panel against the left edge. */
+.ed-row input, .ed-row select { min-width: 0; }
 .ed-row button { min-height: 42px; padding: 0 14px; border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.14); background: #171b24; color: #e8e4dc; font: inherit; }
 .ed-danger { color: #ff9a8f !important; border-color: rgba(255,154,143,0.4) !important; }
+
+/* §9.3 — the map library. A native select, because on a phone it opens as the platform's
+   own picker: a scrollable list of every map, in one thumb-sized control. */
+.ed-select { flex: 1; min-height: 44px; padding: 0 10px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.14); background: #0e1118; color: #e8e4dc; font: inherit; }
+/* Wide and short: a map is drawn whole into it, and the sheet has a height budget. */
+.ed-preview { display: block; width: 100%; box-sizing: border-box; height: 150px;
+  margin-bottom: 6px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.12); background: #0a0c11; }
+.ed-preview-caption { margin-bottom: 10px; }
+.ed-row button:disabled { opacity: 0.35; }
 
 .ed-facing { display: flex; gap: 6px; flex: 1; }
 .ed-facing button { min-width: 44px; min-height: 42px; border-radius: 8px;

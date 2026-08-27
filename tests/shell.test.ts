@@ -7,12 +7,9 @@
  * here.
  *
  * And the same rule read the other way round: what debug mode is allowed to be the *only*
- * way to reach. A key the player has been given has to work without `?debug`, which is a
- * wiring question rather than a behavioural one, so it is checked against the source.
- *
- * And the same rule read the other way: what debug mode is allowed to be the *only* way to
- * reach. A key the player is given has to work without `?debug`, which is a wiring question
- * rather than a behavioural one, so it is checked against the source.
+ * way to reach. A key the player has been given has to work without `?debug`, and the debug
+ * chrome has to be reachable by nothing else — both are wiring questions rather than
+ * behavioural ones, so they are checked against the source.
  */
 
 import { readFileSync } from 'node:fs';
@@ -134,6 +131,37 @@ describe('debug mode (§8.3)', () => {
     expect(playtest.debug).toBe(true);
   });
 
+  it('is off when the URL writes the flag out as off, not only when it is absent', () => {
+    // §8.3 — `?debug=0` is how somebody turns a flag off, and a flag that read presence
+    // alone made it unsayable: every value below armed the whole harness.
+    for (const off of ['0', 'false', 'off', 'no', 'OFF', ' False ']) {
+      const options = parseShellOptions(`?debug=${encodeURIComponent(off)}&map=phase7-test`);
+      expect(options.debug, off).toBe(false);
+      expect(options.map, off).toBeNull();
+      expect(options.overlay, off).toBe(false);
+    }
+
+    for (const on of ['', '=1', '=yes', '=true']) {
+      expect(parseShellOptions(`?debug${on}`).debug, on).toBe(true);
+    }
+
+    expect(parseShellOptions('?edit=0').edit).toBe(false);
+    expect(parseShellOptions('?edit').edit).toBe(true);
+  });
+
+  it('starts the readout hidden on ?overlay=0 without disarming anything else (§8.3)', () => {
+    // The point of it: `?map=` is debug-only, so a custom map on a phone used to come with
+    // a readout over it and no key to press.
+    const quiet = parseShellOptions('?debug&map=phase7-test&overlay=0');
+    expect(quiet.overlay).toBe(false);
+    expect(quiet.debug).toBe(true);
+    expect(quiet.map).toBe('phase7-test');
+
+    expect(parseShellOptions('?debug').overlay).toBe(true);
+    // Nothing to show when the harness is not armed at all.
+    expect(parseShellOptions('?overlay=1').overlay).toBe(false);
+  });
+
   it('opens the editor without arming the debug harness (§9)', () => {
     // Authoring a level is not debugging a run: the editor is reachable on its own.
     const options = parseShellOptions('?edit');
@@ -175,35 +203,74 @@ describe("the player's keys are not the debug harness's (§8.3)", () => {
   });
 });
 
-describe("the player's keys are not the debug harness's (§8.3)", () => {
-  /** `src/Run.ts` with comment lines dropped, so a mention in prose is not a use. */
-  function runCode(): string {
-    return readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8')
+describe('the readout\'s touch controls are debug-only (§8.3)', () => {
+  /** `src/main.ts` with comment lines dropped, so a mention in prose is not a use. */
+  function shellCode(): string {
+    return readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8')
       .split('\n')
       .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
       .join('\n');
   }
 
-  it('reads every action it binds a key for, from the run and not from `debugKey`', () => {
-    // The bug this holds shut: `flashlight` was bound to `F` and to gamepad `X`, and
-    // nothing outside `debugKey` ever read it. `main.ts` registers the debug listener only
-    // under `?debug`, so the torch had no key at all in normal play — a state the type
-    // system is perfectly happy with, because a `Set` nobody queries still type-checks.
-    const code = runCode();
-
-    for (const action of ACTION_NAMES) {
-      const consumed =
-        code.includes(`wasPressed('${action}')`) || code.includes(`isHeld('${action}')`);
-      expect(consumed, `nothing in the run reads the '${action}' action`).toBe(true);
-    }
+  it('arms the tap targets only under debug, and never for a player', () => {
+    // The readout is built either way and hidden for a player, so the buttons that toggle
+    // it would be too — a `dbg` handle sitting over the corner of a player's screen, with
+    // the whole harness one tap behind it. Nothing else may call this.
+    const code = shellCode();
+    const calls = code.match(/enableTouchToggle\(\)/g) ?? [];
+    expect(calls.length).toBe(1);
+    expect(code).toContain('if (options.debug) overlay.enableTouchToggle();');
   });
 
-  it('does not also toggle the torch from the debug keys', () => {
-    // Both paths at once is not a harmless duplicate: `debugKey` is a second listener, so
-    // under `?debug` one press would toggle twice and the beam would never come on.
-    const debugKeys = runCode().split('function debugKey(')[1] ?? '';
-    expect(debugKeys).not.toContain('KeyF');
-    // Not vacuous — the other debug keys are still in there.
-    expect(debugKeys).toContain('KeyB');
+  it('starts the readout from `overlay`, which is false whenever debug is off', () => {
+    // `setVisible(options.debug)` would ignore `?overlay=0` and put the readout back up.
+    expect(shellCode()).toContain('overlay.setVisible(options.overlay)');
+    expect(parseShellOptions('?overlay=1').overlay).toBe(false);
+  });
+});
+
+describe('the readout fits the screen it is on (§8.3)', () => {
+  const source = readFileSync(new URL('../src/debug/DebugOverlay.ts', import.meta.url), 'utf8');
+
+  it('wraps its rows instead of running them off the side of a phone', () => {
+    // The bug this holds shut: `white-space:pre` does not wrap, so any row longer than the
+    // box ran off the right of the glass and took its value with it — on a phone that was
+    // most of the interesting rows, and it read as the readout simply not reporting them.
+    expect(source).toContain('white-space:pre-wrap');
+    expect(source).not.toContain("'white-space:pre'");
+    // And the box itself is bounded by the viewport, not only by a character count: 46ch
+    // is wider than a phone.
+    expect(source).toContain('max-width:min(46ch, calc(100vw - 24px))');
+  });
+
+  it('hangs a folded row under its value, not under its label', () => {
+    // Every row is an 8-character label, a space, then a value. A fold that resumed at
+    // column 0 would read as a new row with a blank label.
+    expect(source).toContain('padding-left:9ch;text-indent:-9ch');
+  });
+});
+
+describe('rows that outlive a run (§8.3)', () => {
+  it('does not clear the shell\'s rows when a run clears its own', () => {
+    // `Run.dispose` calls `clearRows` because a run's rows close over its objects and must
+    // go when it does. The shell's close over things that outlive every run — the menu's
+    // music among them — so clearing those deletes the readout's only view of them after
+    // the first restart, which reads as the row never having worked.
+    const overlay = readFileSync(new URL('../src/debug/DebugOverlay.ts', import.meta.url), 'utf8');
+    const clear = /clearRows\(\): void \{([^}]*)\}/.exec(overlay)?.[1] ?? '';
+    expect(clear).toContain('this.rows.clear()');
+    expect(clear).not.toContain('shellRows');
+    // And the readout actually reads them, or a persistent row is one nobody ever sees.
+    expect(overlay).toContain('...this.rows, ...this.shellRows');
+  });
+
+  it('puts the music on the shell rows and the shell handle, not on a run', () => {
+    const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+    expect(main).toContain("overlay.addShellRow('music'");
+    // Published before the first run: the music plays on the title screen, and a handle
+    // that only existed inside a run could not reach it.
+    expect(main).toContain('const shellHandle = {');
+    const run = readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8');
+    expect(run).not.toContain('addShellRow');
   });
 });

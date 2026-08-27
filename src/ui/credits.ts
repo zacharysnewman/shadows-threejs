@@ -42,7 +42,7 @@ const line = (
   role: string | null = null,
 ): CreditLine => ({ name, by, url, role });
 
-/** §8.2 — design, then art, then code, in that order. */
+/** §8.2 — design, then art, then music, then code, in that order. */
 export function creditSections(): CreditSection[] {
   return [
     {
@@ -54,6 +54,12 @@ export function creditSections(): CreditSection[] {
       // §8.2 — every kit, including the ones whose licence asks for nothing. A project that
       // credits only what it is forced to has misunderstood why the licence is free.
       lines: PREFAB_KITS.map((kit) => line(kit.kit, kit.author, kit.url, null)),
+    },
+    {
+      heading: 'Music',
+      // §8.1 — one track, and it is credited on the same grounds as the art: the screen
+      // says who made what, whether or not anything obliged it to.
+      lines: [line(CREDITS.music.name, CREDITS.music.author)],
     },
     {
       heading: 'Code',

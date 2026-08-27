@@ -1583,13 +1583,172 @@ was no way to switch the beam on in normal play at all, on any device. `Run.fram
 `input.wasPressed('flashlight')` now, beside `interact`, and `debugKey` no longer handles
 `F` (two paths would toggle twice under `?debug` and the beam would never come on).
 
+*Fixed afterwards — the readout could not be got rid of on a phone.* `H` toggles it and a
+key is not a control on a phone, so the only way out was a keyboard. Worse, `?map=` is gated
+behind `?debug`, so testing a custom map *forced* the readout on, and on a phone it covers
+the whole screen rather than the third it covers on a desktop. Two things closed it: the
+readout carries its own tap targets under `?debug` (a `×` to dismiss, a 44 px `dbg` handle to
+bring it back, both `stopPropagation`-ing their `pointerdown` like the action buttons do, or
+dismissing it would anchor a movement stick and walk the player away), and `?overlay=0`
+starts it hidden with the rest of the harness armed. `parseShellOptions` also stopped reading
+flags by presence alone: `?debug=0` had been arming the harness, which is the opposite of
+what anyone writing it means.
+
+*Fixed at the same time — the readout ran off the side of a phone.* `white-space:pre` does
+not wrap, so every row longer than the box was clipped by the glass: `frames`, `entities`,
+`nearest`, `audio` and `MONSTER` all lost their values on a 412 px screen, which reads as the
+readout not reporting them rather than as a layout bug. It now wraps, is bounded by
+`min(46ch, calc(100vw - 24px))` rather than by a character count alone, and each row is its
+own element with a `9ch` hanging indent so a folded line resumes under the value instead of
+under an apparently blank label. The elements are pooled and reused — 58 rows rebuilt ten
+times a second is churn for nothing. Measured on a Pixel 7 profile: 58 rows, 0 past the
+viewport edge, `scrollWidth` equal to `clientWidth`.
+
+*Verified in Chromium on a Pixel 7 profile* (`?debug&map=phase1-test`): the readout fills the
+screen, tapping `×` clears it to the `dbg` handle, the player's position is unchanged across
+the tap (`(3.00, 3.00)` before and after — the stick was not anchored), and tapping `dbg`
+brings it back. `?debug&map=phase1-test&overlay=0` starts on a clean screen with the handle
+in the corner and the map still loaded. `?debug=0&map=phase1-test` arms nothing and shows no
+handle; a plain load shows no debug chrome at all. The DOM behaviour is browser-only — the
+suite has no jsdom — so `tests/shell.test.ts` holds the invariant instead: `enableTouchToggle`
+is called exactly once and only under `options.debug`.
+
 `tests/shell.test.ts` covers the rules that rot quietly: the credits against `package.json`
 (add a dependency without crediting it and the test fails naming it — checked by adding
 `prettier` and watching it fail), debug being off by default, including that `?map=` and
 `?seed=` are ignored without it and that a map name cannot climb out of `maps/`, and —
 after the above — that every action `Input` binds a key for is actually read by the run.
 That last one is the check that was missing: an action nobody consumes type-checks
-perfectly, so nothing but a source-level assertion could have caught it.
+perfectly, so nothing but a source-level assertion could have caught it. (Its two
+source-level describes had been pasted in twice and ran as duplicates; one copy is gone.)
+
+*Added afterwards — a map library (§9.3).* The editor kept one autosaved draft and nothing
+else, so there was no way to keep two levels or to get back to one. It now saves and opens
+maps by name, layered the way §9.4 layers stamps: the project's maps in `public/maps/` are
+read-only and `example` is what a fresh browser opens, and this browser's are saved, renamed
+and deleted. Saving out of a project map names a new one — `public/maps/` changes through a
+commit, and a save that could overwrite it would put the level everybody shares one tap from
+a draft. `src/editor/mapLibrary.ts` is the model (pure, so the naming and precedence rules
+are testable), `EditorApp` the chrome. `EditorDocument` gained `replace`, which drops the
+undo stack: an undo across an open would take one map's edits back into another.
+
+The project's map list is derived from the tree by `import.meta.glob` rather than from a
+checked-in manifest — only the keys are read, so no map is bundled and none is fetched until
+it is opened, and there is no second generated file to go stale. The draft now records which
+map it belongs to and is rewritten when that changes, not only when the document does: saving
+and opening leave the document untouched, and a reload in between came back under the old
+name.
+
+The menu is a selector, a preview and the actions on what is selected, rather than a row per
+map: choosing shows what a map is without opening it, and `src/editor/preview.ts` draws the
+whole thing in the sheet at whatever zoom fits. Its fit is separated from its drawing and
+tested, because a preview that overflows its box is a preview that looks like a map with
+nothing along the bottom.
+
+*Verified in Chromium on a Pixel 7 profile* (`?edit`): a fresh browser opens `example`
+(`clean · 2306 tiles reachable`); saving out of it suggests `example 2` and refuses the name
+`example` outright; saving as `the yard` writes the library and the draft together; one edit
+puts `•` on the button; opening another map with unsaved work asks first; reopening `the
+yard` and reloading both come back to it. Selecting `phase8-test` draws its preview
+(`34×24 · 10 entities · read-only`) and leaves what is open alone; `Rename` and `Delete` are
+disabled for the project's maps and live for this browser's. `tests/editor.test.ts` covers
+the rules underneath — overwrite precedence, name collisions case-insensitively, a corrupt
+stored library, the dropped undo stack, and the preview's fit.
+
+*A trap, paid for here.* `.ed-row input` was `flex: 1` with no `min-width: 0`, so it would
+not shrink below the input's intrinsic width. One label longer than the panel had ever
+carried pushed the row 52 px past the sheet and clipped **every** label in the panel against
+the left edge — which reads as a broken sheet, not as one row being too wide. Any row with a
+long label had the same bug waiting in it.
+
+*Fixed afterwards — the monster's jump-scare was a white thing.* It was a soft pale ellipse
+scaling up on black: abstract, unreadable as anything, and the opposite of the creature it
+was for. §5.2 makes the monster a spider-shaped shadow and says the silhouette is its entire
+visual design, so a pale blob contradicted it twice — by drawing a body, and by drawing it
+lit. Both scares are now the same inline-SVG spider silhouette (`SPIDER_SILHOUETTE`), told
+apart the way §5.3 requires: the spider's is near-black on red, already on top of the player,
+thrashing in discrete jerks; the monster's is pure black on black, visible only where it
+crosses the last of the light, arriving in one accelerating rush.
+
+The layer itself no longer animates. Scaling `.run-scare` scaled the ground it was drawn on,
+so the black screen §5.3 asks for zoomed and faded in rather than being there from the first
+frame with the shape arriving out of it — which is most of why the old one read as a floating
+blob rather than as something approaching.
+
+*Verified in Chromium on a Pixel 7 profile*, mounting `RunOverlays` on its own and pinning
+the animations at 0.1 s, 0.5 s, 1.0 s and 1.45 s. Mean frame brightness (0–255): the
+monster's goes 18.0 → 0.2 (max 7), so it ends fully black and resolves cleanly into the
+game-over screen; the spider's holds 113.9 → 110.2 red throughout. Unmistakably different at
+a glance, which is the criterion §5.3 actually sets. *A trap for the next person:* a paused
+`Animation` is detached from the CSS lifecycle and survives the class change, so capturing
+both scares from one page bleeds one into the other — a fresh page per capture is needed.
+
+*Fixed afterwards — death had no sound.* `Run.resolveEnding` suspended the whole audio
+context, so the loudest moment in the game was silent. §5.3 now gives each cause a sound,
+unalike for the same reason the overlays are: `death_spider` is bright, dry and convulsive —
+three stabs on an uneven beat, the shape the scare draws — and `death_monster` is one low
+impact with a long decay and nothing bright in it, running the length of the 1.5 s hold. The
+world is silenced by stopping its sources (`AudioCore.silenceWorld`) rather than by
+suspending the context, which is what leaves room for the scare to have a voice.
+
+Measured by the same band-share technique `footstep_heavy` is tested with: the monster's
+sound has 49% of its energy below ~150 Hz against the spider's 3%, and the spider has 68% of
+its energy above ~1 kHz against the monster's 3%. Fourteen times lower one way, twenty-six
+times brighter the other — the pair separates by ear alone, which is the point, since a
+player may be looking away when it lands.
+
+*Two traps, both paid for here.* ZzFX's `filter` is a **high-pass** when positive (its biquad
+is built from `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form), so the
+first attempt at darkening the monster's sound thinned it instead. And `SpiderVoices` and
+`LampVoices` update on the render loop outside the simulation guard, re-`play()`ing their
+emitters the frame after the world was silenced — invisible for as long as death suspended
+the context, and audible the moment it had to stay alive. Both are in `docs/ORIENTATION.md`.
+
+*Verified in Chromium on a Pixel 7 profile* through real deaths on `phase8-test` and
+`phase7-test`: playing sources go 2 → 1 → 0 for the monster and 4 → 1 → 0 for the spider —
+the world silenced to exactly the death sound, then the sound running out — with the context
+reporting `running` throughout and the right scare class up in each case.
+
+*Added afterwards — the menu has music.* §8.1 gains one track, looping, on the title and the
+credits and nowhere else, fading in when those screens come up and out when a run begins. A
+run stays silent under it on purpose: §4.3 builds a run around hearing where things are, and
+music takes the one channel the game gives a player for tracking what is coming. The ending
+screens too — the jump-scare's sound (§5.3) is the last thing heard, and a tune after it
+would answer it. `Falling Through Glass`, by Zack Newman, credited under a new **Music**
+heading (§8.2) on the same grounds as the art.
+
+Two decisions worth keeping:
+
+- **It streams rather than decodes.** 4:48 at 48 kHz stereo is ~110 MB held as PCM, so it
+  cannot go through the `SoundBank` like every other sound. `tests/audio.test.ts` asserts
+  that figure from the file itself, so the check fails if anyone later moves the track into
+  the bank.
+- **It plays on the game's graph, not the device's media flow.** A bare `HTMLAudioElement`
+  is *media* to a phone — lock-screen transport, notification shade, and it stops whatever
+  the player was already listening to. `createMediaElementSource` on the listener's context
+  makes it one more node in the graph the rest of the sound comes out of.
+
+*On the pitch bug.* iOS takes the context's sample rate from whatever the audio is routed
+through, so a raw `AudioBuffer` built at an assumed rate plays at the wrong speed and pitch.
+That trap is real and this project already guards it — `SoundBank.synthesiseBuffer` builds at
+`context.sampleRate` — but it does not reach the music: a media element source is resampled
+by the graph, as decoded files are. What iOS *does* threaten here is
+`createMediaElementSource` itself, silent on Safari for years and only dependable from
+iOS 15, which is why `Music.silent` exists and why it has a readout row: a graph playing
+nothing looks exactly like a track that failed to load. **Not verified on real iOS** — there
+is no device in this environment — so that remains outstanding.
+
+The project map indexed the mp3 as 30,065 "lines" with `§` citations scraped out of
+compressed audio. `scripts/mp3-facts.mjs` now measures audio the way `glb-facts.mjs`
+measures models: bytes, duration from the file's stated frame count, rate and channels.
+
+*Verified in Chromium on a Pixel 7 profile*, on the real gesture path with no autoplay
+override: before any input the music is stopped at volume 0 (asked, refused, waiting);
+tapping `Credits` — a gesture that is not `Play` — starts it and fades it to 0.45 with
+`silent` false, so the graph is carrying it; `Play` fades it out and pauses it for the run.
+With `Play` as the very first gesture it starts and stops without the volume rising, so
+there is no blip. The `music` readout row survives a restart, which is what `addShellRow`
+is for.
 
 ## Cross-Cutting
 

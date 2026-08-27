@@ -826,6 +826,8 @@ readable at any distance, and worth reading before the pool goes dark.
 - A paused simulation (§6) silences positional sources: a world that is not advancing must
   not still be walking towards the player. The listener and the context stay alive, so
   unpausing resumes rather than restarts.
+- Death silences the world the same way, and for the same reason, but keeps the context
+  running so the jump-scare's own sound can play over it (§5.3).
 
 ## 5. Enemy Design & AI Specification
 
@@ -1136,6 +1138,30 @@ player a reaction where the design gives them none.
   arriving out of it. What has to hold, whatever the art becomes, is that the two are not
   confusable at a glance — the player has to know which mistake they made, because the two
   mistakes have nothing in common.
+
+  **The shape is a spider's silhouette in both.** §5.2 gives the monster the spider's model
+  at twice the size and makes the silhouette its entire visual design, so the thing arriving
+  out of the black has to be that outline — a player killed by the monster should recognise
+  what reached them. An abstract shape would be the one place in the game that shows this
+  creature as something other than a spider-shaped shadow, which is the whole of what they
+  have been taught to look for.
+
+  The two are told apart by colour, ground and motion rather than by subject: the spider's
+  is near-black on red, already on top of the player and thrashing in discrete jerks; the
+  monster's is pure black on black, visible only where it crosses the last of the light, and
+  it arrives in one accelerating rush that ends with the screen fully dark. Nothing about the
+  monster's is *lit* — a pale shape would contradict §5.2 twice over, by drawing its body and
+  by drawing it bright.
+- **The world goes quiet and the scare does not.** The world's sources stop — a spider still
+  chittering over the jump-scare is a world that has not noticed the player is dead — but the
+  audio context stays alive, because the scare has a voice of its own. Suspending the context
+  outright leaves the loudest moment in the game silent.
+- **One death sound per cause, unalike for the same reason the overlays are.** The spider's
+  is bright, dry and convulsive: stabs on an uneven beat, the shape the scare draws. The
+  monster's is one low impact with a long decay and nothing bright in it at all, running the
+  length of the hold — the scare is the light going out, and a sound with a top end would be
+  a second thing arriving rather than everything leaving. The pair has to separate by ear
+  alone, in case the player is looking away from the screen when it lands.
 - The hold is real time, not simulation time: the world has already stopped.
 - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
   game-over screen, and the only continuation is a new game from the level start with all
@@ -1311,6 +1337,24 @@ which is why a run must not begin without passing through the title, however tem
 `?skip` would be. Loading a specific map for testing is a debug affordance (§8.3), not a
 route into the game.
 
+**The menu has music, and a run does not.** One track, looping, on the title and the credits
+and nowhere else: it fades in when those screens come up and out when a run begins, because
+§4.3 builds a run around hearing where things are and music over that takes the one channel
+the game gives a player for tracking what is coming. The ending screens are silent for the
+same reason — the jump-scare's sound (§5.3) is the last thing heard, and following it with a
+tune would answer it.
+
+**It is game audio, not the device's.** It plays through the same graph as everything else,
+so it is mixed with the game's sound, suspended with it, and takes no lock-screen transport
+controls and nothing the player was already listening to. A media element left to itself is
+*media* to a phone, which is right for a music app and wrong for a game.
+
+**It waits for a gesture rather than failing.** The menu is on screen before there has been
+one, so the first attempt to play is refused — that is the expected first answer, not an
+error, and the reply to it is to start on the next input. It is also **streamed rather than
+decoded**: a track of this length held as PCM is memory measured in hundreds of megabytes,
+which is not a thing to spend on a menu.
+
 ### 8.2 Credits
 
 The credits screen names, in this order:
@@ -1319,6 +1363,7 @@ The credits screen names, in this order:
 - **Art:** each kit and its author (§1), linked to where it came from. Every kit is named,
   including the ones whose licence asks for nothing: a project that credits only what it is
   forced to has misunderstood why the licence is free.
+- **Music:** the menu's track and who wrote it (§8.1), on the same grounds as the art.
 - **Code:** the libraries and build tools the game is built on, and who wrote them.
 
 **Attributions, not licence terms.** The screen says who made what. It does not print
@@ -1343,6 +1388,16 @@ playing a different game than the one this specifies.
 - Without it: no readout, no debug keys, and the map is the level.
 - With it: everything the Cross-Cutting debug harness describes, exactly as now, plus a
   link to the editor (§9) on the title screen.
+- **A flag whose value says off is off.** `?debug=0`, `=false`, `=off` and `=no` turn it
+  off; naming it with no value, or any other value, turns it on. Writing `=0` is the
+  obvious way to disable a flag, and one that quietly meant the opposite would read as a
+  harness there is no way out of.
+- **`?overlay=0` starts the readout hidden**, with the rest of the harness armed. Testing a
+  map means `?debug`, because that is what unlocks `?map=` — so without this, wanting a
+  custom map and not wanting a wall of diagnostics over it is not a thing the URL can say.
+- **The readout is dismissible by touch.** `H` toggles it, and a key is not a control on a
+  phone (§3.1): under debug it carries a tap target to dismiss it and leaves one behind to
+  bring it back. The same rule as the on-screen action buttons, for the same reason.
 - **The editor is not behind it.** `?edit` opens on its own, because authoring a level is
   not debugging a run — the person doing it wants a tool, not a diagnostic readout over
   their level. What debug mode decides is whether a *player* is offered the door.
@@ -1438,15 +1493,47 @@ unreadable notes in it.
 
 A switch has no such constraint: it needs to be reachable (§3.3), not legible.
 
-### 9.3 Getting a Level Out
+### 9.3 Saving, Loading and Getting a Level Out
 
+**Maps are saved and opened by name**, so more than one level can be worked on and any of
+them can be picked up again. Two sources, layered the way §9.4 layers stamps, and the
+precedence between them is the whole of the rule:
+
+- **The project's** — the map directories in `public/maps/`. Read-only. `example` is the
+  one a fresh browser opens.
+- **This browser's** — saved here, named, opened, renamed and deleted.
+
+- **A project map is never written over.** Saving out of one asks for a name and writes a
+  new map into this browser. `public/maps/` changes through a commit and a diff, which is
+  what makes those maps the same on every device and recoverable when a browser is cleared;
+  a save that could overwrite one would put the level everybody shares one tap from being
+  replaced by a draft. Opening a project map is how a level is worked *from* — its names are
+  taken, and a browser map cannot claim one.
+- **One name is one map.** Saving over an existing name replaces it rather than sitting
+  beside it, and says so first. The same rule §9.4 gives stamps, for the same reason: a list
+  with two things called the same thing is a list nobody can choose from.
+- **A fresh browser opens `example`**, not an empty grid. The default is a level that
+  already parses, already passes the audit and already has one of everything, which is a
+  better place to start than 32×32 of concrete — and it makes the read-only case the first
+  one an author meets, rather than a surprise the first time they press Save.
+- **The draft is what is open, not a map of its own.** Work in progress survives the browser
+  closing whether or not it has ever been saved, and it remembers which map it came from, so
+  a later Save knows what it is saving. A draft outranks the default: reopening the editor
+  never discards an edit to show a fresh copy of `example`.
+- **A map is chosen, previewed, then opened.** The library offers every map in one selector
+  and draws the chosen one whole — its tiles and where its entities sit — before anything
+  happens to what is on screen. Opening replaces the level being edited, so it is worth being
+  sure first; and a list of names cannot answer the question somebody has the menu open to
+  ask, which is which of these is the one with the two monsters in it.
 - **Copy to clipboard.** The whole `map.json` as text, in one action. On a phone this is the
   reliable path — no file system, no download permissions — and it pastes into a commit.
+  Saving in the browser and getting a level out are different acts: the first keeps a level
+  where it is being worked on, and the second is how it gets into the repository, which is
+  the only place a level becomes everybody's.
 - **Play it now.** The editor hands the level straight to the game without a round trip
-  through the repository, so a change can be tested in the seconds after it is made. This
-  is a debug affordance (§8.3) and is not a route a player can reach.
-- **Autosave.** Work in progress survives the browser being closed. It is not a save
-  system: the exported file is the level, and the autosave is a draft.
+  through the repository, so a change can be tested in the seconds after it is made. It
+  plays what is open, saved or not. This is a debug affordance (§8.3) and is not a route a
+  player can reach.
 
 ### 9.4 Stamps
 

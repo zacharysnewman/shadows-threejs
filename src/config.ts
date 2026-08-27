@@ -580,6 +580,21 @@ export const FOG = {
  * be locatable by ear, which is a question of how loudness falls off with distance and of
  * nothing else.
  */
+/**
+ * §8.1 — the menu music. Not part of `AUDIO`: none of that applies to it, because it has no
+ * position, no distance model and no place in a run (see `src/audio/Music.ts`).
+ */
+export const MUSIC = {
+  /** The track, under `public/audio/music/`. */
+  file: 'falling-through-glass.mp3',
+  /** Well under the game's own sounds: this plays where nothing has to be heard over it. */
+  volume: 0.45,
+  /** §8.1 — it arrives rather than starts, so the first gesture is not also a cue. */
+  fadeInSeconds: 1.5,
+  /** Shorter: a run beginning should not have the menu still audible under it. */
+  fadeOutSeconds: 0.8,
+} as const;
+
 export const AUDIO = {
   /** Master gain. A mix level, not a spec value; the options UI (Phase 10) will own it. */
   masterVolume: 0.8,
@@ -1121,6 +1136,8 @@ export const CREDITS = {
   /** Matches `index.html`'s `<title>`; the title screen renders this one. */
   title: 'Shadows',
   designer: 'Zack Newman',
+  /** §8.1 — the menu's music. `MUSIC.file` is the same track; this is who made it. */
+  music: { name: 'Falling Through Glass', author: 'Zack Newman' },
   /** Shipped in the bundle. */
   libraries: [
     { package: 'three', name: 'three.js', author: 'mrdoob and contributors', licence: 'MIT', role: 'rendering, scene graph, glTF loading' },

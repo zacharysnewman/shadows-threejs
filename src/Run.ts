@@ -343,8 +343,18 @@ export async function createRun(
       if (outcome.die(player.killedBy ?? 'SpiderEnemy')) {
         overlays.showJumpScare(outcome.cause!);
         // The world has stopped, so its sound stops with it: a spider still chittering
-        // over the jump-scare is a world that has not noticed the player is dead.
-        audio.setPaused(true);
+        // over the jump-scare is a world that has not noticed the player is dead. The
+        // context stays alive, because the scare has a voice of its own — suspending it
+        // (as this used to) left the loudest moment in the game silent.
+        audio.silenceWorld();
+        // §5.3 — one per cause, and unalike for the same reason the two overlays are: the
+        // player has to know which mistake they made. Centred on the player, who is within
+        // a metre of whatever reached them.
+        audio.playAt(
+          outcome.cause === 'SpiderEnemy' ? 'death_spider' : 'death_monster',
+          player.position.x,
+          player.position.y,
+        );
         console.info(`[run] died to ${outcome.cause} at ${clock.elapsed.toFixed(1)}s`);
       }
       return;
@@ -968,8 +978,15 @@ export async function createRun(
     player.render(clock.alpha, realDelta);
     // §7 — the render delta, not the tick: an animation is a presentation effect.
     enemies.render(clock.alpha, realDelta);
-    voices.update();
-    lampVoices.update();
+    // §5.3 — only while the world is live. These re-`play()` their emitters whenever the
+    // thing they speak for is doing something, so running them past the end of the run
+    // restarts the chitter and the ballast a frame after death silenced them. That was
+    // invisible while death suspended the whole context: the sources were playing into a
+    // suspended context and nobody could hear the difference.
+    if (outcome.simulating) {
+      voices.update();
+      lampVoices.update();
+    }
     paths.update();
     // Bound to the interpolated position, not the tick position: a beam that stepped at
     // 60 Hz while the player moved smoothly would visibly swim around them.
