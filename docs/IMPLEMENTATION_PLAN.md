@@ -1263,6 +1263,47 @@ call, so it is also the first whose §7 budget cannot be argued from draw calls 
 step counts are in `config.ts` and the density sliders are in the tuner precisely because
 that judgement has to be made on real hardware.
 
+*The art pass got its knobs.* The tuner reached every value a *balance* pass moves and none
+that an *art* pass does: §2's ground, the wood at the boundary and the kit's own models were
+all decided at load and unreachable from a running game. All three are on the panel now, and
+a colour is a swatch rather than a slider — three channels interleaved onto one axis put a
+red beside a green, and a value nobody can aim at is not tunable.
+
+Each of the three had to be pushed a different way, and the difference is the whole of the
+work. The models carry their authored albedo on the material (`ModelMaterials`) so a push
+derives from the art rather than from the last push — otherwise a drag compounds and only a
+reload puts it back. The generated tree's colours are baked into a vertex attribute, because
+one material is what makes a band of ten thousand one draw (§2), so a push rewrites the
+attribute; it is fifty triangles' worth of floats, which is why it can afford to run on every
+change. The ground is rasterised into a texture, which cannot, so it is re-filled in place —
+keeping the one material the floor and the surround are already drawn with — and coalesced to
+the end of a drag. It also skips a rebuild that would produce identical pixels, which is what
+stops a nudge to the player's walk speed costing a re-rasterisation.
+
+*Sent back to the spec.* §2 gave the ground surface in prose and left every value of it in
+`config.ts`; it now states the earth's three colours, its relief and its stones, and the
+wood's trunk and crown, because those are what a pass moves. It also gained *Model
+surfacing*: the kit's art is drawn as authored, with one identity-by-default set of look
+values over it, and characters deliberately excluded — the player's body has its own
+readability allowance written to the same channel (§3.1), and a channel with two owners is a
+value that depends on which of them ran last.
+
+*Verified in a browser* (`?debug&map=example`, tone mapping raised and fog off to see a
+surface at all), driving the panel's own controls rather than the config behind them:
+
+| Case | Measured |
+| --- | --- |
+| Dry earth to `#2f7d3a` | ground texture re-uploaded, 47.4% of pixels changed, mean 7.21/765, max 516 |
+| The same push | one material, `ground:dirt`, still shared by the floor's instanced meshes and the surround plane |
+| A colour-only change | the normal map's bytes identical — relief is cut from the height field, which knows nothing about colour |
+| Walk speed moved instead | ground texture version unchanged: no rebuild |
+| Rebuild cost | 143–193 ms in this browser (255 ms in the node suite), which is why it waits for the drag to stop |
+| Trunk `#ffffff`, canopy `#ffcc00` | the surround's tree geometry repainted in place: vertex 0 `[1, 0, 0]`, last vertex `[1, 0.604, 0]` — trunk and crown split correctly |
+| Albedo tint `#3050ff` | the four kit prefab materials in the map (walls, fence, gate, landmark tree) tinted; the lamps, props, torch and both characters untouched, as §2 says |
+| `reset` | every surface back bit-identical — screenshot difference against the untuned frame, mean 0, max 3 |
+
+Frame rate is not among them, for the reason it never is here.
+
 *Outstanding — the phase's actual content.*
 
 - **The real level.** Authored in the external editors §1 names and dropped into

@@ -163,6 +163,44 @@ detail read as noise, not grass, and a good-looking earth beat a bad-looking one
   boundary*): a seamless, high-resolution ground texture is a large file, and the kit's own
   floor art is a slab atlas never meant to be walked over by the acre.
 
+What the earth is made of — the values a tuning pass moves (§8.3):
+
+- **Earth from `#4a3a2b` damp to `#7d6446` dry**, with `#342a1f` in the hollows water stands
+  in, at full roughness. It is mottled by the same field the relief is cut from, so a dry
+  patch is a raised one.
+- **24 mm of relief** at its deepest, 35% of that the fine grain over the slower clods under
+  it, exaggerated ×2.5 into the normal map (and ×1 again by the material's own normal
+  scale). Small, because this is beaten earth and not rubble — and *measured*, which is the
+  point: a height field in metres over a texel of known size is a real slope, so a
+  millimetre-scale clod lights like one.
+- **Stones lying on it**: a lattice of 22 cells across each repeat, 22% of them holding a
+  stone, 18–55 mm across, standing 45% of its own radius proud of the ground and covering
+  55% of the ground's colour at its centre — a grey drawn per stone between `#6e6a60` and
+  `#a09c90`, because one grey repeated is a pattern. They are smoother than the earth (0.55
+  against 1.0): a stone catching a highlight is how a moving beam finds one at all, and they
+  are the only thing on an otherwise even surface for it to find.
+
+### Model surfacing
+
+The kit's models are drawn as they were authored. Over that sits one set of look values —
+a tint on the albedo, a readability lift, and scales on roughness and metalness — and every
+one of them is an identity by default: white, zero, one, one.
+
+They exist because §4 is played at an ambient where a surface is its own albedo multiplied
+by very little, so "is this kit too dark to read, or is the night too dark" is a question
+about two values at once and is only answerable by moving one against the other with a run
+in front of you (§8.3).
+
+- **The lift is a fraction of each surface's own colour**, never a flat grey added to
+  everything — the same rule §3.1 lifts the player by. At this ambient a flat emissive is
+  most of what an unlit surface is, and every material comes out one pale grey. It is added
+  to whatever the art already glowed with, so a fixture modelled lit stays lit.
+- **Characters are not surfaced this way.** The player's body has its own readability
+  allowance (§3.1) written to the same channel, and a channel with two owners is a value
+  that depends on which of them ran last.
+- **The generated ground and the generated tree are not models**, and a tint here does not
+  reach them. Their colour is their own (*Ground surface*, *Beyond the boundary*).
+
 ### Three ways a map says "put a thing here"
 
 A tile is 2 m. Most of the world is that size or repeats at it, but a goal is 3 m wide, a
@@ -294,6 +332,12 @@ back the camera rule the whole of aiming rests on.
 
   It is also available to a map as the `tree_small` prefab, for a wood that wants a crown
   the player can see rather than one above the camera.
+- **A trunk of `#5c2f1c` under a crown of `#1c7328`, at 0.27 roughness.** They are the kit
+  tree's own two hues taken down — that tree is `#934625` under a near-neon `#00e72a`, which
+  works for a canopy the camera rarely sees and would be a wall of it across a whole map. At
+  these the boundary reads as the same species as a wood planted inside it. The colours are
+  carried per vertex rather than per material, so however many thousands are planted they
+  are still one draw.
 - **Scenery and nothing else.** They are outside the map, so they are outside walkability,
   outside the collider set, outside the audit, and outside every light's reach. They cast
   no shadows: a shadow on the ground means a light is on something (§4), and nothing out
@@ -1535,11 +1579,20 @@ The distinction is not a build flag. `window.shadows` is already stripped from p
 builds; this is about what a *development* build shows by default, so that running the game
 and testing the game are different acts rather than the same one.
 
-**The balance tuner.** Debug mode carries a panel of sliders over the values §11's tuning
-pass has to settle — the speeds, the reaction times, the beam and the night, and the look
-values §4 gives the dark: how thick the air inside a beam is, inside a lamp's cone, and how
-far the player's own body is lifted off black — writing them into the running game as they
-move, and remembering them in the browser between sessions.
+**The balance tuner.** Debug mode carries a panel over the values §11's tuning pass has to
+settle — the speeds, the reaction times, the beam and the night; the look values §4 gives
+the dark, being how thick the air inside a beam is, inside a lamp's cone, and how far the
+player's own body is lifted off black; and the surfaces §2 builds rather than loads, being
+the earth's colours and its relief, the wood's trunk and crown, and the tint and lift the
+kit's own models are drawn through — writing them into the running game as they move, and
+remembering them in the browser between sessions.
+
+A colour gets a swatch rather than a slider: the three channels interleaved onto one axis
+put a red next to a green, and a value nobody can aim at is not tunable. Most of these land
+in the frame they are moved in. §2's ground is the exception — it is rasterised into a
+texture rather than read per frame, so it is re-generated once the slider stops moving
+rather than on every step of a drag, which is a quarter of a second of arithmetic either
+way.
 It is hidden until asked for even under `?debug`, because two panels at once is most of the
 screen; the readout is the one worth leaving up.
 

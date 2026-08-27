@@ -249,6 +249,33 @@ export const SURROUND = {
 } as const;
 
 /**
+ * §2 — how the kit's own models are surfaced, over the top of what they were authored with.
+ *
+ * Every value here is an identity by default: a white tint, no lift, and scales of one
+ * render a prefab and a character exactly as the artist made them. They exist because the
+ * game is played at §4's night ambient, where a model is its own albedo multiplied by very
+ * little, and "is this kit too dark to read or is the ambient too low" is a question that
+ * is only answerable by moving one against the other.
+ *
+ * The lift is a fraction of each surface's *own* colour, never a flat grey added to
+ * everything — the same rule §3.1 lifts the player by, and for the same reason: a flat
+ * emissive is the same shade wherever it lands, so at this ambient it swamps a kit's
+ * palette and every surface comes out one pale grey.
+ *
+ * The generated ground and the generated tree are not models and are not touched by this:
+ * their colour is `GROUND` and `TREES`, which is where a tuning session moves it.
+ */
+export const MODELS = {
+  /** Multiplied into every loaded model's base colour. */
+  albedoTint: 0xffffff,
+  /** Fraction of a model's own colour added back as emissive, so unlit art keeps a shape. */
+  readabilityLift: 0,
+  /** Scales on what the kit authored, so 1 is the surface as it came. */
+  roughnessScale: 1,
+  metalnessScale: 1,
+} as const;
+
+/**
  * §8.3 — the debug floodlight: what the ambient is turned up to for *looking* at the world.
  *
  * Not a design value and deliberately not near one. It is high enough that §2's ground and
@@ -257,6 +284,19 @@ export const SURROUND = {
  */
 export const FLOODLIGHT = {
   ambientIntensity: 40,
+} as const;
+
+/**
+ * §8.3 — the tuner's own machinery. Not a design value and nothing in a run reads it.
+ *
+ * §2's ground is rasterised from `GROUND` rather than loaded, so a colour or a relief moved
+ * on a slider means re-generating a 512² texture — a quarter of a second, which is nothing
+ * once and unusable thirty times a second. So a ground change waits for the slider to stop
+ * moving: long enough that a drag rebuilds once at the end of it, short enough that letting
+ * go and seeing the ground change reads as one action.
+ */
+export const TUNER = {
+  groundRebuildDelayMs: 180,
 } as const;
 
 /** §7 — shadow budget. Shadows are a mechanic, so these are design constraints. */

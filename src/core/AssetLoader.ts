@@ -28,6 +28,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { GROUND, PREFAB_FIT, PREFAB_FOOTING } from '../config';
 import { GENERATED_PREFABS } from './GeneratedPrefabs';
+import { applyModelLook } from './ModelMaterials';
 import { groundMaterial, type GroundSurface } from './GroundTextures';
 
 export interface Prefab {
@@ -332,6 +333,11 @@ export class AssetLoader {
       );
       merged = BufferGeometryUtils.mergeGeometries(perMaterial, true) ?? perMaterial[0]!;
     }
+
+    // §2 — the kit's own albedo, with the look values over the top of it. Done here so
+    // every path that draws a prefab gets it: the map, the editor's preview, and the
+    // landmarks all come through this loader.
+    for (const material of materials) applyModelLook(material);
 
     const height = normalisePrefab(merged, name, fit);
     // Fitted, the contact height is y = 0 by construction, so this is the footing measured

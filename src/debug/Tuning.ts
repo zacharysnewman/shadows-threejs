@@ -23,7 +23,7 @@
  * `TuningPanel` is the part that needs one.
  */
 
-import { AMBIENT, ENEMY, FLASHLIGHT, LIGHT_SHAFT, MOON, PLAYER } from '../config';
+import { AMBIENT, ENEMY, FLASHLIGHT, GROUND, LIGHT_SHAFT, MODELS, MOON, PLAYER, TREES } from '../config';
 import { ENEMY_PROFILES } from '../enemies/Enemy';
 
 /** Where a run's overridden values live between sessions. */
@@ -47,6 +47,16 @@ export interface Tunable {
    * once when something was constructed. `Run` re-pushes these; the panel says so.
    */
   needsPush?: boolean;
+  /**
+   * What the value *is*, which is the only thing the panel needs to know to draw it: a
+   * number gets a slider, a colour gets a swatch.
+   *
+   * A colour is still a number — `0xrrggbb`, exactly as `config.ts` writes it — so
+   * everything that stores, restores, compares and copies a tunable is unchanged by this.
+   * A hex on a slider is the alternative and it is unusable: the three channels are
+   * interleaved into one axis, so the value either side of a green is a red.
+   */
+  kind?: 'number' | 'colour';
 }
 
 /**
@@ -75,6 +85,18 @@ function field(
       for (const [mirror, mirrorName] of mirrors) write(mirror, mirrorName, value);
     },
   };
+}
+
+/**
+ * A colour on one config object. Sliders bracket a number; a colour's range is the whole of
+ * `0x000000`–`0xffffff` and the panel gives it a swatch instead.
+ */
+function colour(
+  spec: Omit<Tunable, 'get' | 'set' | 'min' | 'max' | 'step' | 'kind'>,
+  target: object,
+  name: string,
+): Tunable {
+  return field({ ...spec, min: 0, max: 0xffffff, step: 1, kind: 'colour' }, target, name);
 }
 
 const SPIDER = ENEMY.spider;
@@ -423,6 +445,85 @@ export const TUNABLES: readonly Tunable[] = [
     MOON,
     'intensity',
   ),
+
+  // §2's ground is rasterised from these at load, so every one of them is a texture that
+  // has to be built again — which is what `needsPush` means here and why the rebuild waits
+  // for the slider to settle (`requestGroundRebuild`).
+  colour({ key: 'ground.dirtDark', group: 'Ground', label: 'earth · damp', needsPush: true }, GROUND, 'dirtDark'),
+  colour({ key: 'ground.dirtLight', group: 'Ground', label: 'earth · dry', needsPush: true }, GROUND, 'dirtLight'),
+  colour({ key: 'ground.dirtDamp', group: 'Ground', label: 'earth · hollows', needsPush: true }, GROUND, 'dirtDamp'),
+  field(
+    { key: 'ground.dirtRoughness', group: 'Ground', label: 'earth roughness', min: 0, max: 1, step: 0.01, needsPush: true },
+    GROUND,
+    'dirtRoughness',
+  ),
+  colour({ key: 'ground.pebbleDark', group: 'Ground', label: 'stone · dark', needsPush: true }, GROUND, 'pebbleDark'),
+  colour({ key: 'ground.pebblePale', group: 'Ground', label: 'stone · pale', needsPush: true }, GROUND, 'pebblePale'),
+  field(
+    { key: 'ground.pebbleRoughness', group: 'Ground', label: 'stone roughness', min: 0, max: 1, step: 0.01, needsPush: true },
+    GROUND,
+    'pebbleRoughness',
+  ),
+  field(
+    { key: 'ground.pebbleOpacity', group: 'Ground', label: 'stone colour depth', min: 0, max: 1, step: 0.01, needsPush: true },
+    GROUND,
+    'pebbleOpacity',
+  ),
+  field(
+    { key: 'ground.pebbleCoverage', group: 'Ground', label: 'stone coverage', min: 0, max: 1, step: 0.01, needsPush: true },
+    GROUND,
+    'pebbleCoverage',
+  ),
+  // The relief values, which are the ones §2 says decide whether a beam raking the floor
+  // reads as light falling on ground at all.
+  field(
+    { key: 'ground.dirtRelief', group: 'Ground', label: 'relief depth', min: 0, max: 0.08, step: 0.002, unit: 'm', needsPush: true },
+    GROUND,
+    'dirtRelief',
+  ),
+  field(
+    { key: 'ground.grainRelief', group: 'Ground', label: 'grain share', min: 0, max: 1, step: 0.01, needsPush: true },
+    GROUND,
+    'grainRelief',
+  ),
+  field(
+    { key: 'ground.normalStrength', group: 'Ground', label: 'normal strength', min: 0, max: 8, step: 0.1, needsPush: true },
+    GROUND,
+    'normalStrength',
+  ),
+  field(
+    { key: 'ground.normalScale', group: 'Ground', label: 'normal scale', min: 0, max: 3, step: 0.05, needsPush: true },
+    GROUND,
+    'normalScale',
+  ),
+
+  // §2's generated tree: the surround's thousands and any map that places `tree_small`.
+  colour({ key: 'trees.trunk', group: 'Trees', label: 'trunk', needsPush: true }, TREES, 'trunkColour'),
+  colour({ key: 'trees.canopy', group: 'Trees', label: 'canopy', needsPush: true }, TREES, 'canopyColour'),
+  field(
+    { key: 'trees.roughness', group: 'Trees', label: 'roughness', min: 0, max: 1, step: 0.01, needsPush: true },
+    TREES,
+    'roughness',
+  ),
+
+  // §2's kit art, over the top of what it was authored with. Every default is an identity,
+  // so a session that does not touch these is a session drawing the kit as it came.
+  colour({ key: 'models.tint', group: 'Models', label: 'albedo tint', needsPush: true }, MODELS, 'albedoTint'),
+  field(
+    { key: 'models.lift', group: 'Models', label: 'readability lift', min: 0, max: 0.5, step: 0.005, needsPush: true },
+    MODELS,
+    'readabilityLift',
+  ),
+  field(
+    { key: 'models.roughness', group: 'Models', label: 'roughness ×', min: 0, max: 2, step: 0.05, needsPush: true },
+    MODELS,
+    'roughnessScale',
+  ),
+  field(
+    { key: 'models.metalness', group: 'Models', label: 'metalness ×', min: 0, max: 2, step: 0.05, needsPush: true },
+    MODELS,
+    'metalnessScale',
+  ),
 ];
 
 /**
@@ -441,7 +542,11 @@ export function defaultFor(key: string): number | undefined {
 /** Clamp to the slider's range and snap to its step, so a stored value cannot be silly. */
 export function coerce(tunable: Tunable, value: number): number {
   if (!Number.isFinite(value)) return DEFAULTS.get(tunable.key) ?? tunable.min;
-  return Math.min(tunable.max, Math.max(tunable.min, value));
+  const clamped = Math.min(tunable.max, Math.max(tunable.min, value));
+  // A colour is a packed `0xrrggbb` and a fractional one is not a colour: a stored 0.5
+  // would be read back as a hex the swatch cannot show and the game would run on a value
+  // nothing displays.
+  return tunable.kind === 'colour' ? Math.round(clamped) : clamped;
 }
 
 export type TuningValues = Record<string, number>;

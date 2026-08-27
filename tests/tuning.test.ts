@@ -111,9 +111,41 @@ describe('the tunables (§8.3)', () => {
       'torch.haze',
       'night.lampHaze',
       'player.readable',
+      // §2 — the surfaces the same pass reaches for: the ground it is played on, the wood
+      // at the edge of it, and the kit's own art over the top of what it was authored with.
+      'ground.dirtLight',
+      'ground.dirtRelief',
+      'trees.canopy',
+      'models.tint',
     ]) {
       expect(TUNABLES.map((entry) => entry.key)).toContain(key);
     }
+  });
+
+  it('keeps every colour a whole `0xrrggbb`, whatever it is handed', () => {
+    // A colour is stored as the number `config.ts` writes, so everything that persists,
+    // compares and copies a tunable is unchanged by it — but a *fractional* one is not a
+    // colour at all: the swatch cannot show it and the game runs on a value nothing
+    // displays. A hand-edited entry is the way one arrives.
+    for (const entry of TUNABLES.filter((t) => t.kind === 'colour')) {
+      expect(entry.min).toBe(0);
+      expect(entry.max).toBe(0xffffff);
+      expect(Number.isInteger(defaultFor(entry.key)), `${entry.key} default`).toBe(true);
+      expect(coerce(entry, 0x4a3a2b + 0.5)).toBe(0x4a3a2c);
+      expect(coerce(entry, -12)).toBe(0);
+      expect(coerce(entry, 0xffffff * 3)).toBe(0xffffff);
+    }
+  });
+
+  it('carries a colour through storage as the hex it was', () => {
+    const earth = tunable('ground.dirtLight');
+    earth.set(0x123456);
+    const storage = fakeStorage();
+    saveTuning(overriddenTuning(), storage);
+    resetTuning();
+    expect(earth.get()).toBe(defaultFor('ground.dirtLight'));
+    applyTuning(loadTuning(storage));
+    expect(earth.get()).toBe(0x123456);
   });
 
   it('writes through to the config the game reads, not to a copy', () => {

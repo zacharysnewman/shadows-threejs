@@ -40,7 +40,7 @@
  */
 
 import * as THREE from 'three';
-import { GROUND } from '../config';
+import { GROUND, TUNER } from '../config';
 
 /** §2 — the one generated ground. Every floor role and the surround wear it. */
 export type GroundSurface = 'dirt';
@@ -255,10 +255,28 @@ export function groundAt(u: number, v: number, out: Sample): void {
  * under a moving light, which is the hardest kind to find and the only kind this game has.
  */
 export function buildGroundMaps(size = GROUND.textureSize): GroundMaps {
+  const maps: GroundMaps = {
+    size,
+    albedo: new Uint8Array(size * size * 4),
+    normal: new Uint8Array(size * size * 4),
+    roughness: new Uint8Array(size * size * 4),
+  };
+  fillGroundMaps(maps);
+  return maps;
+}
+
+/**
+ * The same arithmetic, written into maps that already exist.
+ *
+ * Separate from the allocation because §8.3's tuner moves the ground's colours and its
+ * relief while the game is running, and the material those maps belong to is shared by
+ * every floor tile and by the surround (below). Re-filling the arrays the textures were
+ * built over and re-uploading them keeps that one material's identity — a new material
+ * would have to be found and re-assigned everywhere it had already been handed out.
+ */
+export function fillGroundMaps(maps: GroundMaps): void {
+  const { size, albedo, normal, roughness } = maps;
   const heights = new Float32Array(size * size);
-  const albedo = new Uint8Array(size * size * 4);
-  const normal = new Uint8Array(size * size * 4);
-  const roughness = new Uint8Array(size * size * 4);
   const sample: Sample = { height: 0, r: 0, g: 0, b: 0, roughness: 1 };
   const texelMetres = GROUND.metresPerRepeat / size;
 
@@ -305,13 +323,28 @@ export function buildGroundMaps(size = GROUND.textureSize): GroundMaps {
       normal[i + 3] = 255;
     }
   }
-
-  return { size, albedo, normal, roughness };
 }
 
 /* --------------------------------------------------------------- material */
 
 let cached: THREE.MeshStandardMaterial | null = null;
+/** The pixels behind `cached`'s textures, kept so the tuner can re-fill them (§8.3). */
+let cachedMaps: GroundMaps | null = null;
+/** A coalesced rebuild waiting for the tuner's slider to settle (`requestGroundRebuild`). */
+let pendingRebuild: ReturnType<typeof setTimeout> | null = null;
+/** What `cachedMaps` was rasterised from, so a rebuild that would change nothing is skipped. */
+let builtFrom = '';
+
+/**
+ * Every `GROUND` value the pixels depend on, as one string.
+ *
+ * The tuner calls back on *any* change (§8.3), so without this a nudge to the player's walk
+ * speed would spend a quarter of a second re-rasterising a texture that came out identical.
+ * The sampler settings are in it too, because they are pushed by the same call.
+ */
+function groundSignature(): string {
+  return JSON.stringify(GROUND);
+}
 
 function texture(data: Uint8Array, size: number, colourSpace: string): THREE.DataTexture {
   const map = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
@@ -345,6 +378,8 @@ export function groundMaterial(_surface: GroundSurface = 'dirt'): THREE.MeshStan
   if (cached) return cached;
 
   const maps = buildGroundMaps();
+  cachedMaps = maps;
+  builtFrom = groundSignature();
   const material = new THREE.MeshStandardMaterial({
     map: texture(maps.albedo, maps.size, THREE.SRGBColorSpace),
     normalMap: texture(maps.normal, maps.size, THREE.NoColorSpace),
@@ -360,6 +395,51 @@ export function groundMaterial(_surface: GroundSurface = 'dirt'): THREE.MeshStan
   applyWorldUv(material);
   cached = material;
   return material;
+}
+
+/**
+ * Re-generate the ground from `GROUND` as it stands now (§8.3).
+ *
+ * Every value the texture is built from is tunable while the game is running, and none of
+ * them can reach a texture that was rasterised at load. The pixels are re-filled in the
+ * arrays the textures already point at, so nothing is re-allocated and nothing has to be
+ * handed out again — the floor's instanced mesh and the surround plane are drawn with the
+ * one shared material either way.
+ *
+ * `normalScale` is the material's own rather than the texture's, so it is pushed here too;
+ * `anisotropy` is a sampler setting and moves with the same push.
+ *
+ * A no-op before the ground exists: a tuner change that arrives before the first map has
+ * loaded has nothing to rebuild, and the load will read the new values anyway.
+ */
+export function rebuildGroundMaterial(): void {
+  if (!cached || !cachedMaps) return;
+  const signature = groundSignature();
+  if (signature === builtFrom) return;
+  builtFrom = signature;
+  fillGroundMaps(cachedMaps);
+  for (const map of [cached.map, cached.normalMap, cached.roughnessMap]) {
+    if (!map) continue;
+    map.anisotropy = GROUND.anisotropy;
+    map.needsUpdate = true;
+  }
+  cached.normalScale.set(GROUND.normalScale, GROUND.normalScale);
+}
+
+/**
+ * Re-generate the ground once the tuner's sliders have stopped moving (§8.3).
+ *
+ * A rebuild is a quarter of a second of arithmetic, and a slider drag fires a change per
+ * frame — run eagerly it would rebuild dozens of times to show the one state anybody
+ * wanted, and the drag itself would move in steps. Coalescing to the last change in a burst
+ * is what makes a colour on a slider feel like a colour on a slider.
+ */
+export function requestGroundRebuild(delayMs = TUNER.groundRebuildDelayMs): void {
+  if (pendingRebuild !== null) clearTimeout(pendingRebuild);
+  pendingRebuild = setTimeout(() => {
+    pendingRebuild = null;
+    rebuildGroundMaterial();
+  }, delayMs);
 }
 
 /**
@@ -405,10 +485,16 @@ function applyWorldUv(material: THREE.MeshStandardMaterial): void {
 
 /** Tests and the debug harness; a run builds this once and keeps it. */
 export function disposeGroundMaterials(): void {
+  if (pendingRebuild !== null) {
+    clearTimeout(pendingRebuild);
+    pendingRebuild = null;
+  }
   if (!cached) return;
   cached.map?.dispose();
   cached.normalMap?.dispose();
   cached.roughnessMap?.dispose();
   cached.dispose();
   cached = null;
+  cachedMaps = null;
+  builtFrom = '';
 }

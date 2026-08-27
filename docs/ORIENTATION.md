@@ -38,7 +38,7 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 
 | Directory | Owns |
 | --- | --- |
-| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `GeneratedPrefabs` (art built rather than loaded — §2's small tree), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
+| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `GeneratedPrefabs` (art built rather than loaded — §2's small tree, and its repaint), `GroundTextures` (§2's earth, rasterised and re-rasterisable), `ModelMaterials` (§2's look values over the kit's own albedo), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
 | `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks` (instanced per prefab — §7), `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
 | `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision` (the only thing holding the player on the map now), `CameraRig` (locked to the player; `groundFootprint` is what sizes §2's surround), `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
 | `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
@@ -70,6 +70,12 @@ Ownership rules worth knowing before editing:
 - **At rest, skinning moves no vertex.** `tests/autoRig.test.ts` asserts it under the
   loader's wrapper nodes, which is the only nesting where a wrong answer differs from a
   right one.
+- **A tuner push derives from the art, never from the last push.** §2's surfaces are
+  *written onto* the thing that draws them — a tint onto a loaded material, colours into a
+  tree's vertex attribute, earth into a texture's pixels — so a push that reads the current
+  state and multiplies it again keeps darkening after the slider has stopped, and only a
+  reload puts it back. Every one of them keeps what it was authored with (`ModelMaterials`
+  on the material's own `userData`, so a `clone()` carries it) and re-derives from that.
 - **The spec, the config, the tests and `project-map.jsonl` move together.** A behaviour
   change touching only one of them is incomplete; the map has a test that enforces its half.
 - **String-pulling can undo a route's whole reason for existing.** `findPath` straightens
@@ -292,9 +298,18 @@ The frame is much wider than it is deep, and the far end of a 12 m beam is usual
 past the top of it. If a measurement needs geometry both near and far, put it left-to-right
 across the screen rather than up-screen, or shorten the beam through the tuner.
 
-Driving the tuner's sliders is the shipped path for anything marked `needsPush`: find the
-`input[type=range]` whose **`parentElement`** text contains the label (not `closest('div')` —
-that matches the whole panel), set `value` and dispatch an `input` event.
+Driving the tuner's controls is the shipped path for anything marked `needsPush`: find the
+`input` whose **`parentElement`** text contains the label (not `closest('div')` — that
+matches the whole panel), set `value` and dispatch an `input` event. A colour row is an
+`input[type=color]` rather than a range, and its value is `'#rrggbb'`, not a number.
+
+**A ground value does not land when you dispatch the event.** §2's ground is rasterised into
+a texture, so the tuner coalesces it: the rebuild runs a fraction of a second after the
+*last* change, and a measurement taken in the same tick reads the old ground. Wait for it,
+or call `rebuildGroundMaterial()` directly. It also skips a rebuild that would produce the
+same pixels, which is what stops every unrelated slider costing a quarter of a second — so a
+harness that pokes `GROUND` behind the tuner's back and then asks for a rebuild gets one,
+and one that pokes nothing gets nothing.
 
 **Anything about *light* has to be measured on real frames.** The beam is placed on the
 render side (see *A frame, in order*), so driving the simulation with `clock.advance()` in a
