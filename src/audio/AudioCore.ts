@@ -23,7 +23,13 @@ import { AUDIO_PROFILES, type DistanceProfile, type ProfileName } from './profil
 import { isLooping, SoundBank, type SoundName } from './SoundBank';
 import { Music } from './Music';
 
-export type AudioState = 'unavailable' | 'suspended' | 'running' | 'closed';
+/**
+ * `interrupted` is iOS's own, and not in the standard's list: a phone call or a page opened
+ * behind another tab leaves a context there, where it produces nothing and reads as neither
+ * suspended nor running. Naming it is what lets the readout say so rather than call it a
+ * state it has never heard of.
+ */
+export type AudioState = 'unavailable' | 'suspended' | 'running' | 'interrupted' | 'closed';
 
 /**
  * A long-lived source bound to something that moves — an enemy's footsteps, a lamp's buzz.
@@ -129,18 +135,29 @@ export class AudioCore {
     console.info(`[audio] context ${context.state} from the title screen`);
   }
 
+  /**
+   * §4.3 — start the context on the next input, and keep asking until it is running.
+   *
+   * One gesture is not always one answer: iOS can hold a context in `interrupted` (a call,
+   * a page opened behind another tab) where `resume` resolves with nothing changed, and a
+   * listener that disarmed itself on the first try would leave a session silent for good.
+   * So it re-arms on anything but a running context.
+   */
   armGesture(): void {
-    if (!this.listener || this.gestureArmed) return;
+    const context = this.listener?.context;
+    if (!context || this.gestureArmed || context.state === 'running') return;
     this.gestureArmed = true;
 
-    const context = this.listener.context;
-    if (context.state === 'running') return;
-
     const resume = (): void => {
-      void context.resume().then(() => {
-        console.info(`[audio] context ${context.state} after user gesture`);
-      });
       for (const type of GESTURE_EVENTS) window.removeEventListener(type, resume);
+      this.gestureArmed = false;
+      void context.resume().then(
+        () => {
+          console.info(`[audio] context ${context.state} after user gesture`);
+          this.armGesture();
+        },
+        () => this.armGesture(),
+      );
     };
     for (const type of GESTURE_EVENTS) window.addEventListener(type, resume, { once: true });
   }
@@ -259,7 +276,13 @@ export class AudioCore {
   }
 }
 
-export const GESTURE_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const;
+/**
+ * What counts as the user gesture audio waits on (§4.3). `pointerdown` covers a tap on
+ * everything with pointer events; `touchend` and `click` are there for Safari, which has
+ * not always taken the beginning of a touch as an activation, and a menu whose music starts
+ * on the second tap is a menu whose music looks broken.
+ */
+export const GESTURE_EVENTS = ['pointerdown', 'touchstart', 'touchend', 'click', 'keydown'] as const;
 
 function applyProfile(source: THREE.PositionalAudio, profile: DistanceProfile): void {
   source.setDistanceModel(profile.model);

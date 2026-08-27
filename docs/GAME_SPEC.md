@@ -1389,6 +1389,24 @@ error, and the reply to it is to start on the next input. It is also **streamed 
 decoded**: a track of this length held as PCM is memory measured in hundreds of megabytes,
 which is not a thing to spend on a menu.
 
+**Two gates open on that input: the audio context, and the track.** Both are asked for in
+the same gesture and neither is waited on there — Safari counts a gesture as spent across an
+`await`, so a track asked for on the far side of one is a track asked for with no gesture
+behind it. What *does* wait is putting the track on the graph: a phone makes a permanently
+silent node of a track attached to a context that has never run, so it joins the graph on
+the far side of the first resume and stays muted until it does. A gesture that leaves the
+context still not running is not the end of it either — a phone can hold a context
+interrupted, and the next input has to be able to start it again.
+
+**Where the graph will not carry it, it plays as the device's media rather than not at
+all.** The graph's own output is read back for **2 s**, sampled every **0.25 s**, before it
+is believed: a track that opens quietly is not a dead route. A menu that shows every sign of
+playing and makes no sound is the worst of the two failures, so the reply to a route that
+carries nothing is to give it up and let the track out as plain media — at the price of the
+lock-screen transport, and of the level, since a phone holds a media element at the device's
+own volume and the fade out becomes a cut. The debug readout (§8.3) says which of the two is
+carrying it, because nothing else can.
+
 ### 8.2 Credits
 
 The credits screen names, in this order:

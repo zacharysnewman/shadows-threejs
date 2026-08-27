@@ -593,6 +593,14 @@ export const MUSIC = {
   fadeInSeconds: 1.5,
   /** Shorter: a run beginning should not have the menu still audible under it. */
   fadeOutSeconds: 0.8,
+  /** §8.1 — how often the graph's own output is read while it is proving it carries the track. */
+  routeProbeSeconds: 0.25,
+  /**
+   * §8.1 — how long the graph is given to carry the track before the music falls back to
+   * plain media playback. Long enough that a track opening quietly is not mistaken for a
+   * dead route, short enough that a player is not left with a silent menu.
+   */
+  routeProofSeconds: 2,
 } as const;
 
 export const AUDIO = {

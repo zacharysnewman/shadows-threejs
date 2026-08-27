@@ -92,6 +92,20 @@ Each of these looked like bad art or bad luck rather than a bug.
   one more node in the graph the rest of the sound comes out of. The music streams through
   an element rather than a decoded buffer only because a four-minute track is ~110 MB of PCM;
   the element is a compromise, and putting it on the graph is what pays for it.
+- **...and a media element put on a context that has never run is silent on iOS, for good.**
+  This is what a silent menu on a phone actually was: the element played, the phone showed a
+  media indicator, and `createMediaElementSource` — built in `Music`'s constructor, which
+  runs while the menu is still waiting for its first tap — carried nothing. The symptom is
+  indistinguishable from a track that failed to load, from a muted phone, and from a context
+  that never resumed, which is why `Music` now reports its `route` and the readout carries
+  the context's state next to it. Three rules came out of it, and each is load-bearing:
+  the element joins the graph only once the context reports `running`; the context and the
+  element are asked for in the same gesture and neither is awaited, because Safari counts a
+  gesture as spent across an `await`; and a gesture that leaves the context not running
+  re-arms rather than giving up, because iOS has an `interrupted` state the standard does
+  not. Where the graph still carries nothing after two seconds of reading its own output,
+  the music gives up and plays as plain media — an element already on the graph cannot come
+  back off it, so that fallback is a second element.
 - **ZzFX's `filter` is a high-pass when positive.** Reaching for a positive number to take
   the top off a sound removes its *bottom* instead — ZzFX builds one biquad from
   `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form. Negative is the
@@ -257,9 +271,11 @@ the loop is alive, not that it is redrawing at the cap.
 
 `shadows.music` is also the only way to see what the menu's music is doing: `new Audio()`
 makes a *detached* element, so it is not in the DOM and `document.querySelector('audio')`
-finds nothing. `music.silent` is the one worth knowing — the graph playing nothing, which is
-what an older iOS Safari does with `createMediaElementSource` and which looks exactly like a
-track that failed to load.
+finds nothing. `music.route` is the one worth knowing — `graph` is the intended path,
+`waiting` is an element held off a context that has not started, and `media` is the graph
+having been given up on. The readout's `music` row prints it beside the context's own state,
+which is the pair that tells a silent phone apart from a silent route; the run's `audio` row
+is no help here, because it is not on screen where the music plays.
 
 **The rig camera is locked to the player** (§3.2) — it centres them everywhere, including
 hard into a corner, so a screen position means the same thing wherever the player is
