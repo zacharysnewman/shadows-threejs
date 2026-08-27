@@ -25,9 +25,24 @@
 
 import { ZZFX } from 'zzfx';
 
+/**
+ * The player's step, as four recordings rather than one (§4.3).
+ *
+ * A single sample replayed at every footfall is the thing an ear picks out fastest, and
+ * §4.3 has the player walking for the whole run. One is chosen per step (`FootstepVariants`
+ * in `src/audio/Footsteps.ts`), which is the only reason the bank needs a name per variant
+ * rather than a name per sound.
+ */
+export const PLAYER_FOOTSTEPS = [
+  'footstep_light_1',
+  'footstep_light_2',
+  'footstep_light_3',
+  'footstep_light_4',
+] as const;
+
 export const SOUND_NAMES = [
   'test_ping',
-  'footstep_light',
+  ...PLAYER_FOOTSTEPS,
   'footstep_heavy',
   'chitter',
   'lamp_buzz',
@@ -37,6 +52,16 @@ export const SOUND_NAMES = [
 ] as const;
 
 export type SoundName = (typeof SOUND_NAMES)[number];
+
+/**
+ * Sounds that ship as `.wav` rather than `.mp3`.
+ *
+ * The player's steps are the first assets here that are not MP3, and they are WAV for a
+ * reason worth keeping: an MP3 decoder prepends its own padding, and these four are aligned
+ * on their transients to a fixed 40 ms so that a random pick cannot move the cadence
+ * (`public/audio/README.md`). Losslessly cut, they are 40 KB for the set.
+ */
+const WAV_SOUNDS: ReadonlySet<string> = new Set<string>(PLAYER_FOOTSTEPS);
 
 export interface SynthesisedSound {
   data: Float32Array<ArrayBuffer>;
@@ -75,6 +100,15 @@ const TRIANGLE = 1;
 const SAW = 2;
 const NOISE_SHAPE = 3;
 
+/** The player's step (§4.3): a light scuff with a short body. */
+const FOOTSTEP_LIGHT: Recipe = {
+  seconds: 0.3,
+  loop: false,
+  shots: [
+    { at: 0, params: [1, 0, 260, 0.002, 0.02, 0.09, TRIANGLE, 1.2, -60, 0, 0, 0, 0, 1.4, 0, 0, 0, 0.6, 0.05, 0, 900] },
+  ],
+};
+
 const RECIPES: Readonly<Record<SoundName, Recipe>> = {
   /**
    * The locator (Cross-Cutting: debug harness): two short chirps and a gap, looping.
@@ -90,14 +124,13 @@ const RECIPES: Readonly<Record<SoundName, Recipe>> = {
     ],
   },
 
-  /** The player's step (§4.3): a light scuff with a short body. */
-  footstep_light: {
-    seconds: 0.3,
-    loop: false,
-    shots: [
-      { at: 0, params: [1, 0, 260, 0.002, 0.02, 0.09, TRIANGLE, 1.2, -60, 0, 0, 0, 0, 1.4, 0, 0, 0, 0.6, 0.05, 0, 900] },
-    ],
-  },
+  // The player's step (§4.3). All four variants fall back to the *same* placeholder, and
+  // deliberately: the variation is what the recordings are for, and four synthesised
+  // near-misses would only make a broken deploy sound like a working one.
+  footstep_light_1: FOOTSTEP_LIGHT,
+  footstep_light_2: FOOTSTEP_LIGHT,
+  footstep_light_3: FOOTSTEP_LIGHT,
+  footstep_light_4: FOOTSTEP_LIGHT,
 
   /**
    * The Shadow Monster's step (§5.2, §4.3): the same gesture an octave and a half down,
@@ -269,7 +302,7 @@ export class SoundBank {
   }
 
   private async fetchBuffer(name: SoundName): Promise<AudioBuffer | null> {
-    const url = `${this.baseUrl}${name}.mp3`;
+    const url = `${this.baseUrl}${name}.${WAV_SOUNDS.has(name) ? 'wav' : 'mp3'}`;
     try {
       // Same content-type check the prefab loader uses: a dev server answers an unknown
       // path with `index.html` and a 200, so the status alone proves nothing.

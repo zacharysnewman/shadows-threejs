@@ -45,7 +45,7 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 | `src/enemies/` | `Enemy` (shared state machine, speeds, A\*, avoidance), `Spider`, `ShadowMonster`, `EnemyManager` (spawning + the one contact test), `Gait`, `CharacterRig` |
 | `src/nav/` | `AStar` (8-connected, no corner-squeezing, then string-pulled; optional per-tile enter cost and a separate grid to straighten against), `raycast` (segment vs boxes on X/Z), `LitGrid` (§5's light-as-terrain views — pure, knows nothing about lights) |
 | `src/world/` | `Objectives` (the run's whole state), `Gates`, `Interaction`, `Notes`, `Props`, `RunOutcome` |
-| `src/audio/` | `AudioCore` (listener on the *player*, pooled sources), `SoundBank` (ZzFX-synthesised placeholders), `profiles`, `Footsteps` |
+| `src/audio/` | `AudioCore` (listener on the *player*, pooled sources), `SoundBank` (real files where they exist, ZzFX-synthesised placeholders where they do not), `profiles`, `Footsteps` (`FootstepCadence` — *when* a step lands; `FootstepVariants` — *which* recording it is), `Music` |
 | `src/ui/`, `src/editor/`, `src/debug/` | HUD and run overlays; `TitleScreen` and its `MenuBackdrop` (§8.1's oily-water film — the one thing outside `main.ts` that drives its own `rAF`, and only while the shell's screens are up); the level editor (§9); the readout, overlays, tuner and frame stats |
 
 Ownership rules worth knowing before editing:
@@ -80,6 +80,12 @@ Ownership rules worth knowing before editing:
   anyway, which looks like the cost not working.
 - **`TuningPanel` writes a group heading whenever the group changes as it walks `TUNABLES`,**
   so entries for one group must stay contiguous or the panel prints the heading twice.
+- **A sound whose file is missing does not fail — it falls back to a synthesised
+  placeholder.** That is the point of `SoundBank`, and it means a renamed or deleted asset
+  leaves the game still making *a* noise in the right place at the right time, just not the
+  one anybody chose. Nothing in a run says so; `AudioCore.bank.placeholders` is the only
+  readout that does. `tests/audio.test.ts` asserts a file exists on disk for every name in
+  `PLAYER_FOOTSTEPS`, because those are the ones a player hears a few hundred times a run.
 
 ## Traps already paid for
 
@@ -328,6 +334,29 @@ behind.
 
 Screenshot differencing is how the look values were settled: capture with a value at 0 and at
 its default, difference per pixel, and report the max as well as the mean — a leak is local.
+
+**Measuring audio here has two traps, and both look like the sound being broken.** The
+container has no audio device, and the null sink that stands in for one changes what a tap
+can see:
+
+- **An `AnalyserNode` hung off `listener.gain` as a side branch reads pure silence** — not a
+  quiet sound, exactly zero, even with an oscillator driving it. Nothing without a path to
+  the destination is pulled. Splice the tap *into* the chain instead: disconnect
+  `listener.gain`, connect it to the tap, connect the tap to `ctx.destination`, and put it
+  back afterwards.
+- **A one-shot shorter than about a fifth of a second cannot be caught live at all.** The
+  sink renders in irregular bursts, so `ctx.currentTime` runs ahead of wall clock in jumps
+  and a 0.1 s buffer lands between them. A 0.55 s sound captures cleanly through the same
+  tap, which is what makes this look like the short sound being silent rather than the
+  capture missing it. Firing it repeatedly and taking a maximum does not rescue it either.
+
+So **level and panning for short sounds are rendered in an `OfflineAudioContext`**, not
+measured live: the game's own decoded buffer out of `bank.get(name)`, a `PannerNode` built
+from `AUDIO_PROFILES`, the listener 1.4 m above the source, and `AUDIO.masterVolume` on a
+gain. It is exact and it repeats. The check that it is honest is a source 8 m to the side,
+which renders a left/right bias of ±0.607 against the ±0.59/−0.60 Phase 4 measured off the
+live graph. What is still worth doing live is everything about *when*: `AudioCore.playAt`
+takes a wrapper cleanly, and firing, cadence and stride are all measurable that way.
 `pngjs` reads the captures; there is no PIL here.
 
 ## Which map exercises what

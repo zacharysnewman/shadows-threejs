@@ -611,6 +611,12 @@ export const AUDIO = {
    * so this only has to cover footsteps, interactions and the like happening at once.
    */
   poolSize: 16,
+  /**
+   * §4.3 — ground covered between the player's own footsteps, one per foot. Driven by
+   * distance and not by a timer, so a player held against a wall makes no noise however
+   * hard they walk into it.
+   */
+  playerStrideMetres: 0.95,
   /** §4.3 — every source unless it names another profile. */
   defaultProfile: {
     model: 'linear',

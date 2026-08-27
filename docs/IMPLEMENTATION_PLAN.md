@@ -252,8 +252,41 @@ either alone.
 
 *Left to later phases.* Nothing on the map makes a sound of its own yet — the emitters an
 enemy holds are Phase 5's to create, and `footstep_heavy` and `chitter` are sitting in the
-bank waiting for them. Real audio files replace the synthesised placeholders in Phase 11,
-changing nothing above `SoundBank`.
+bank waiting for them. Real audio files replace the synthesised placeholders as they arrive.
+
+*The player's step is a recording now, and it did reach above `SoundBank`.* This phase
+expected a real file to be a drop-in — same name, same call, better sound. Four of them
+are not: §4.3 now asks for a variant per footfall and no two consecutive steps alike, which
+is a name per variant in the bank, a picker on the run's seed (`FootstepVariants`), and a
+choice at the call site. The swap is transparent for any sound that stays *one* sound;
+a set of variants is a behaviour change, and belongs in the spec rather than in an asset
+folder. The cut the four recordings needed, and why, is in `public/audio/README.md`.
+
+*Verified.* Walked on `phase2-test` with a tap on `AudioCore.playAt`:
+
+| | Measured |
+| --- | --- |
+| Steps fired over one walk | 154, every one played |
+| Consecutive repeats | **0** |
+| Spread over the four | 41 / 43 / 39 / 31 |
+| Stride between steps | median **0.950 m**, against §4.3's 0.95 |
+| Loaded from disk | all four; `bank.placeholders` lists only the seven still synthesised |
+| Decoded | mono, 0.078–0.118 s, peak 0.499–0.501 |
+
+Level and placement were rendered through an `OfflineAudioContext` carrying the game's own
+buffers, `AUDIO_PROFILES.default` and the real master gain — not measured off the live
+graph, for the reason in `ORIENTATION.md`:
+
+| | Peak | Bias |
+| --- | --- | --- |
+| The four variants, at the player | 0.306 – 0.334 (**1.09×** spread) | 0.000, centred |
+| `footstep_heavy`, same distance | 0.857 | 0.000 |
+| A step 8 m east / 8 m west | 0.160 | **+0.607** / **−0.607** |
+
+The last row is the cross-check on the method: Phase 4 measured +0.59/−0.60 off the live
+graph at that distance, so the offline render agrees with the device path where the device
+path can be measured. Every variant is comfortably under the monster's step, which is what
+§4.3 asks for and what the player's steps cannot get from distance — they play at zero.
 
 ## Phase 5 — Navigation & Enemy Base
 

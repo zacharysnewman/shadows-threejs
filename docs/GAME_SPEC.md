@@ -818,9 +818,22 @@ readable at any distance, and worth reading before the pool goes dark.
   further out than anything else on the map, because hearing is the only way to track it
   before it is close enough to cast a readable shadow.
 - The player's own footsteps sound on a cadence driven by ground actually covered, not by a
-  timer: a player held against a wall makes no noise however hard they walk into it. They
-  are quieter and higher than the Shadow Monster's (§5.2) and always centred on the
-  listener, so they can never be mistaken for something approaching.
+  timer: a player held against a wall makes no noise however hard they walk into it. One
+  step per **0.95 m** covered — one foot, then the other. They are quieter and higher than
+  the Shadow Monster's (§5.2) and always centred on the listener, so they can never be
+  mistaken for something approaching.
+- **The player's step is four recordings, not one, and no two consecutive steps use the
+  same one.** The player walks for the whole run, and a single sample on repeat is the
+  first thing an ear picks out — the repetition becomes more audible than the footstep. The
+  variant is drawn from the run seed like every other randomised value (Cross-Cutting:
+  determinism), so a replayed seed walks in the same order. Drawing uniformly over all four
+  would repeat one step in four, which is exactly the artefact the set exists to remove, so
+  the draw is over the *other* three: still even across the set, and never twice running.
+- The four are cut to one footfall each and aligned so the audible strike sits at the same
+  offset in every one, because a variant whose step arrives later is a variant that moves
+  the cadence. Being quieter than the Shadow Monster is a property of the recordings
+  themselves: the player's steps play at zero distance and never attenuate, so there is no
+  distance left to make them quieter.
 - Browser autoplay policy requires a user gesture before audio starts; the title screen's
   first input resumes the `AudioContext`.
 - A paused simulation (§6) silences positional sources: a world that is not advancing must
