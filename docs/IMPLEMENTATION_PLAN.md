@@ -1651,6 +1651,32 @@ carried pushed the row 52 px past the sheet and clipped **every** label in the p
 the left edge — which reads as a broken sheet, not as one row being too wide. Any row with a
 long label had the same bug waiting in it.
 
+*Fixed afterwards — the monster's jump-scare was a white thing.* It was a soft pale ellipse
+scaling up on black: abstract, unreadable as anything, and the opposite of the creature it
+was for. §5.2 makes the monster a spider-shaped shadow and says the silhouette is its entire
+visual design, so a pale blob contradicted it twice — by drawing a body, and by drawing it
+lit. Both scares are now the same inline-SVG spider silhouette (`SPIDER_SILHOUETTE`), told
+apart the way §5.3 requires: the spider's is near-black on red, already on top of the player,
+thrashing in discrete jerks; the monster's is pure black on black, visible only where it
+crosses the last of the light, arriving in one accelerating rush.
+
+The layer itself no longer animates. Scaling `.run-scare` scaled the ground it was drawn on,
+so the black screen §5.3 asks for zoomed and faded in rather than being there from the first
+frame with the shape arriving out of it — which is most of why the old one read as a floating
+blob rather than as something approaching.
+
+*Verified in Chromium on a Pixel 7 profile*, mounting `RunOverlays` on its own and pinning
+the animations at 0.1 s, 0.5 s, 1.0 s and 1.45 s. Mean frame brightness (0–255): the
+monster's goes 18.0 → 0.2 (max 7), so it ends fully black and resolves cleanly into the
+game-over screen; the spider's holds 113.9 → 110.2 red throughout. Unmistakably different at
+a glance, which is the criterion §5.3 actually sets. *A trap for the next person:* a paused
+`Animation` is detached from the CSS lifecycle and survives the class change, so capturing
+both scares from one page bleeds one into the other — a fresh page per capture is needed.
+
+*Still outstanding.* Death has no sound: `Run.resolveEnding` pauses the world's audio and
+nothing plays over the scare. §5.3 does not ask for one, so this is noted rather than
+invented.
+
 ## Cross-Cutting
 
 - **Debug harness, from Phase 1 on.** Walkability overlay, entity state labels, lit/unlit

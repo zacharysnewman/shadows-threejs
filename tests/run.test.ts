@@ -160,3 +160,47 @@ describe('the frame loop (§7)', () => {
     expect(main.match(/requestAnimationFrame/g)?.length).toBe(2); // the loop, and its start
   });
 });
+
+describe('the two jump-scares (§5.3)', () => {
+  const source = readFileSync(new URL('../src/ui/RunOverlays.ts', import.meta.url), 'utf8');
+
+  it('draws the spider\'s silhouette, which is what the monster is too (§5.2)', () => {
+    // §5.2 — the monster is the spider's model at twice the size, and the silhouette is its
+    // entire visual design. What replaced a pale blob has to be that shape, or the scare is
+    // showing the player something the run never taught them.
+    expect(source).toContain('SPIDER_SILHOUETTE');
+    // Eight legs, counted inside the group that holds them so the fangs are not one of
+    // them. A silhouette with the wrong number is not the shape the run taught.
+    const legGroup = /<g fill="none"[\s\S]*?<\/g>/.exec(source)?.[0] ?? '';
+    expect(legGroup).not.toBe('');
+    expect(legGroup.match(/<path /g)?.length).toBe(8);
+  });
+
+  it('gives the two causes presentations that are not confusable at a glance', () => {
+    // §5.3 — the player has to read which mistake they made, and the mistakes have nothing
+    // in common. Collapsing these onto one animation or one ground is the regression.
+    for (const rule of ['.run-scare.is-spider', '.run-scare.is-monster']) {
+      expect(source, rule).toContain(rule);
+    }
+    expect(source).toContain('scare-spider');
+    expect(source).toContain('scare-monster');
+
+    // The spider's ground is red and the monster's is black — measured here as the two
+    // being different at all, which is the part a refactor can silently break.
+    const spider = /\.run-scare\.is-spider \{([^}]*)\}/.exec(source)?.[1] ?? '';
+    const monster = /\.run-scare\.is-monster \{([^}]*)\}/.exec(source)?.[1] ?? '';
+    expect(spider).not.toBe('');
+    expect(monster).not.toBe('');
+    expect(spider).not.toBe(monster);
+    expect(monster).toContain('#000');
+  });
+
+  it('animates the shape inside the layer, not the layer itself', () => {
+    // The bug this holds shut: animating `.run-scare` scales the ground it is drawn on, so
+    // the black screen §5.3 asks for zooms and fades in instead of being there from the
+    // first frame with the shape arriving out of it.
+    const layerRule = /\.run-scare \{([^}]*)\}/.exec(source)?.[1] ?? '';
+    expect(layerRule).not.toContain('animation');
+    expect(source).toContain('.run-scare.is-monster .run-scare-shape');
+  });
+});

@@ -1136,6 +1136,20 @@ player a reaction where the design gives them none.
   arriving out of it. What has to hold, whatever the art becomes, is that the two are not
   confusable at a glance — the player has to know which mistake they made, because the two
   mistakes have nothing in common.
+
+  **The shape is a spider's silhouette in both.** §5.2 gives the monster the spider's model
+  at twice the size and makes the silhouette its entire visual design, so the thing arriving
+  out of the black has to be that outline — a player killed by the monster should recognise
+  what reached them. An abstract shape would be the one place in the game that shows this
+  creature as something other than a spider-shaped shadow, which is the whole of what they
+  have been taught to look for.
+
+  The two are told apart by colour, ground and motion rather than by subject: the spider's
+  is near-black on red, already on top of the player and thrashing in discrete jerks; the
+  monster's is pure black on black, visible only where it crosses the last of the light, and
+  it arrives in one accelerating rush that ends with the screen fully dark. Nothing about the
+  monster's is *lit* — a pale shape would contradict §5.2 twice over, by drawing its body and
+  by drawing it bright.
 - The hold is real time, not simulation time: the world has already stopped.
 - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
   game-over screen, and the only continuation is a new game from the level start with all
