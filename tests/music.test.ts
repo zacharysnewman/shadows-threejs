@@ -22,12 +22,20 @@ import { Music } from '../src/audio/Music';
 
 class FakeParam {
   value = 0;
+  /**
+   * What was *asked* for, in order. The fake lands a ramp instantly, so the resulting value
+   * cannot tell a fade from a jump — and whether the first start fades is the whole
+   * question in `the first start (§8.1)` below.
+   */
+  readonly calls: { kind: 'set' | 'ramp'; value: number }[] = [];
   cancelScheduledValues(): void {}
   setValueAtTime(value: number): void {
+    this.calls.push({ kind: 'set', value });
     this.value = value;
   }
   /** The curve is the graph's business; a test about routes wants the level it lands on. */
   linearRampToValueAtTime(value: number): void {
+    this.calls.push({ kind: 'ramp', value });
     this.value = value;
   }
 }
@@ -111,6 +119,8 @@ class FakeAudio {
   loop = false;
   preload = '';
   playsInline = false;
+  /** Where in the track it is. The fix rewinds this, so the fake has to carry it. */
+  currentTime = 0;
 
   constructor(readonly src: string) {
     FakeAudio.built.push(this);
@@ -259,6 +269,95 @@ describe('the route to the speakers (§8.1)', () => {
     expect(music.route).toBe('graph');
     expect(music.silent).toBe(false);
     expect(FakeAudio.built).toHaveLength(1);
+  });
+});
+
+describe('the first start (§8.1)', () => {
+  /** Every level the gain was *asked* to go to, as a fade or as a jump. */
+  const asks = (context: { gain: { gain: FakeParam } }): string[] =>
+    context.gain.gain.calls.map((c) => `${c.kind}:${c.value.toFixed(2)}`);
+
+  it('goes straight to level rather than fading across the opening', async () => {
+    const { music, context } = build();
+    FakeAudio.allowPlay = true;
+    music.start();
+    await flush();
+    await context.allowResume();
+
+    expect(music.volume).toBeCloseTo(MUSIC.volume);
+    // The point of the test: no ramp *up* anywhere in it. A fade over the first bars is a
+    // fade over the only part of the track that introduces itself.
+    expect(asks(context)).not.toContain(`ramp:${MUSIC.volume.toFixed(2)}`);
+    expect(asks(context)).toContain(`set:${MUSIC.volume.toFixed(2)}`);
+  });
+
+  it('fades in on a return to the menu, where the track is mid-phrase', async () => {
+    const { music, context } = build();
+    FakeAudio.allowPlay = true;
+    music.start();
+    await flush();
+    await context.allowResume();
+
+    // A run begins and ends: the menu comes back to a track a run interrupted.
+    music.stop();
+    context.gain.gain.calls.length = 0;
+    music.start();
+    await flush();
+
+    expect(asks(context)).toContain(`ramp:${MUSIC.volume.toFixed(2)}`);
+    expect(music.volume).toBeCloseTo(MUSIC.volume);
+  });
+
+  it('still fades out, which is a run beginning and not a track being introduced', async () => {
+    const { music, context } = build();
+    FakeAudio.allowPlay = true;
+    music.start();
+    await flush();
+    await context.allowResume();
+    context.gain.gain.calls.length = 0;
+
+    music.stop();
+    expect(asks(context)).toContain('ramp:0.00');
+  });
+
+  it('rewinds whatever played while it was muted and waiting for its route', async () => {
+    const { music, context } = build();
+    FakeAudio.allowPlay = true;
+    music.start();
+    await flush();
+
+    // Playing, but off the graph and muted: the context has been asked and has not
+    // answered. Nothing here reaches the speakers.
+    const element = FakeAudio.built[0]!;
+    expect(element.paused).toBe(false);
+    expect(element.muted).toBe(true);
+    element.currentTime = 0.9;
+
+    await context.allowResume();
+
+    // Nine tenths of a second nobody could hear is nine tenths of the opening, and it is
+    // given back rather than skipped past.
+    expect(element.currentTime).toBe(0);
+    expect(element.muted).toBe(false);
+    expect(music.route).toBe('graph');
+  });
+
+  it('does not rewind a return to the menu, which resumes where it was paused', async () => {
+    const { music, context } = build();
+    FakeAudio.allowPlay = true;
+    music.start();
+    await flush();
+    await context.allowResume();
+
+    const element = FakeAudio.built[0]!;
+    element.currentTime = 42;
+    music.stop();
+    music.start();
+    await flush();
+
+    // Already on the graph, so there is no muted window to give back — and rewinding a
+    // track the player has been listening to would restart it under them.
+    expect(element.currentTime).toBe(42);
   });
 });
 

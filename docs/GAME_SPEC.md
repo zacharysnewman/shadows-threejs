@@ -1385,9 +1385,16 @@ which is why a run must not begin without passing through the title, however tem
 route into the game.
 
 **The menu has music, and a run does not.** One track, looping, on the title and the credits
-and nowhere else: it fades in when those screens come up and out when a run begins, because
+and nowhere else: it comes up when those screens do and fades out when a run begins, because
 §4.3 builds a run around hearing where things are and music over that takes the one channel
-the game gives a player for tracking what is coming. The ending screens are silent for the
+the game gives a player for tracking what is coming.
+
+**The first time it comes up it comes up whole — at level, from the top of the track.** A
+fade over the opening of a track nobody has heard is a fade over the part that introduces
+it: the player is handed the second phrase and never the first. The **1.5 s** fade-in is for
+a *return* to the menu, where the track is mid-phrase because a run interrupted it and
+arriving rather than cutting is right. Nothing may eat the opening either — whatever plays
+while the track is muted and waiting for its route (below) is rewound, not skipped past. The ending screens are silent for the
 same reason — the jump-scare's sound (§5.3) is the last thing heard, and following it with a
 tune would answer it.
 

@@ -589,7 +589,11 @@ export const MUSIC = {
   file: 'falling-through-glass.mp3',
   /** Well under the game's own sounds: this plays where nothing has to be heard over it. */
   volume: 0.45,
-  /** §8.1 — it arrives rather than starts, so the first gesture is not also a cue. */
+  /**
+   * §8.1 — for a *return* to the menu, where the track is mid-phrase because a run
+   * interrupted it. The first start does not use this: a fade across the opening of a
+   * track nobody has heard yet is a fade across the part that introduces it.
+   */
   fadeInSeconds: 1.5,
   /** Shorter: a run beginning should not have the menu still audible under it. */
   fadeOutSeconds: 0.8,
