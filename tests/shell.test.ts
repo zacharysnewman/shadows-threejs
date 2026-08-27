@@ -228,3 +228,24 @@ describe('the readout\'s touch controls are debug-only (§8.3)', () => {
     expect(parseShellOptions('?overlay=1').overlay).toBe(false);
   });
 });
+
+describe('the readout fits the screen it is on (§8.3)', () => {
+  const source = readFileSync(new URL('../src/debug/DebugOverlay.ts', import.meta.url), 'utf8');
+
+  it('wraps its rows instead of running them off the side of a phone', () => {
+    // The bug this holds shut: `white-space:pre` does not wrap, so any row longer than the
+    // box ran off the right of the glass and took its value with it — on a phone that was
+    // most of the interesting rows, and it read as the readout simply not reporting them.
+    expect(source).toContain('white-space:pre-wrap');
+    expect(source).not.toContain("'white-space:pre'");
+    // And the box itself is bounded by the viewport, not only by a character count: 46ch
+    // is wider than a phone.
+    expect(source).toContain('max-width:min(46ch, calc(100vw - 24px))');
+  });
+
+  it('hangs a folded row under its value, not under its label', () => {
+    // Every row is an 8-character label, a space, then a value. A fold that resumed at
+    // column 0 would read as a new row with a blank label.
+    expect(source).toContain('padding-left:9ch;text-indent:-9ch');
+  });
+});

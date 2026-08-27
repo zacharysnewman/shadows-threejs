@@ -1594,6 +1594,16 @@ starts it hidden with the rest of the harness armed. `parseShellOptions` also st
 flags by presence alone: `?debug=0` had been arming the harness, which is the opposite of
 what anyone writing it means.
 
+*Fixed at the same time — the readout ran off the side of a phone.* `white-space:pre` does
+not wrap, so every row longer than the box was clipped by the glass: `frames`, `entities`,
+`nearest`, `audio` and `MONSTER` all lost their values on a 412 px screen, which reads as the
+readout not reporting them rather than as a layout bug. It now wraps, is bounded by
+`min(46ch, calc(100vw - 24px))` rather than by a character count alone, and each row is its
+own element with a `9ch` hanging indent so a folded line resumes under the value instead of
+under an apparently blank label. The elements are pooled and reused — 58 rows rebuilt ten
+times a second is churn for nothing. Measured on a Pixel 7 profile: 58 rows, 0 past the
+viewport edge, `scrollWidth` equal to `clientWidth`.
+
 *Verified in Chromium on a Pixel 7 profile* (`?debug&map=phase1-test`): the readout fills the
 screen, tapping `×` clears it to the `dbg` handle, the player's position is unchanged across
 the tap (`(3.00, 3.00)` before and after — the stick was not anchored), and tapping `dbg`

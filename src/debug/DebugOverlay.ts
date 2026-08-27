@@ -29,6 +29,9 @@ export class DebugOverlay {
   private readonly dismissEl: HTMLButtonElement;
   private readonly restoreEl: HTMLButtonElement;
   private touchToggle = false;
+  /** Reused row elements for the two blocks. See `renderRows`. */
+  private readonly statRows: HTMLDivElement[] = [];
+  private readonly bindingRows: HTMLDivElement[] = [];
 
   /** Exponentially smoothed frame time in ms; a raw per-frame number is unreadable. */
   private smoothedFrameMs = 16.7;
@@ -49,8 +52,13 @@ export class DebugOverlay {
       'border-radius:6px',
       'padding:8px 10px',
       'pointer-events:none',
-      'white-space:pre',
-      'max-width:46ch',
+      // `pre` alone clips: a row longer than the box does not wrap, it just runs off the
+      // right of a phone and takes its value with it. `pre-wrap` keeps the columns and
+      // lets the long rows fold; `max-width` is whichever of the two is smaller, so the
+      // box never reaches past the glass.
+      'white-space:pre-wrap',
+      'overflow-wrap:anywhere',
+      'max-width:min(46ch, calc(100vw - 24px))',
     ].join(';');
 
     this.statsEl = document.createElement('div');
@@ -145,6 +153,40 @@ export class DebugOverlay {
     this.rows.delete(label);
   }
 
+  /**
+   * Draw `lines` into `container`, one element per row, reusing the elements between
+   * refreshes — twenty-eight rows rebuilt ten times a second is churn for nothing.
+   *
+   * A row rather than one block of text because of the hanging indent: every line here is
+   * an 8-character label, a space, then a value, and a folded row has to resume under the
+   * value. `text-indent` applies to the first line of a *block*, so each row has to be one.
+   */
+  private static renderRows(
+    container: HTMLElement,
+    pool: HTMLDivElement[],
+    lines: readonly string[],
+  ): void {
+    while (pool.length < lines.length) {
+      const row = document.createElement('div');
+      // The label is 8 wide and the value starts at 9; `ch` is a character in a monospace
+      // face, so the negative indent puts the first line back at the label.
+      row.style.cssText = 'padding-left:9ch;text-indent:-9ch';
+      pool.push(row);
+      container.appendChild(row);
+    }
+    for (let i = 0; i < pool.length; i += 1) {
+      const row = pool[i]!;
+      const line = lines[i];
+      if (line === undefined) {
+        row.style.display = 'none';
+        continue;
+      }
+      row.style.removeProperty('display');
+      // Compared before assigning: writing the same string still invalidates layout.
+      if (row.textContent !== line) row.textContent = line;
+    }
+  }
+
   /** Register a key binding so the overlay documents the debug harness it exposes. */
   addBinding(keys: string, label: string): void {
     this.bindings.push({ keys, label });
@@ -180,13 +222,15 @@ export class DebugOverlay {
     for (const [label, provider] of this.rows) {
       lines.push(`${label.padEnd(8)} ${provider()}`);
     }
-    this.statsEl.textContent = lines.join('\n');
+    DebugOverlay.renderRows(this.statsEl, this.statRows, lines);
   }
 
   private renderBindings(): void {
-    this.bindingsEl.textContent = this.bindings
-      .map((b) => `${b.keys.padEnd(8)} ${b.label}`)
-      .join('\n');
+    DebugOverlay.renderRows(
+      this.bindingsEl,
+      this.bindingRows,
+      this.bindings.map((b) => `${b.keys.padEnd(8)} ${b.label}`),
+    );
   }
 
   dispose(): void {
