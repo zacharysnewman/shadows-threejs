@@ -21,7 +21,9 @@ order, and the order is not incidental:
    paused clock.
 3. `clock.advance(realDelta)` — the fixed 60 Hz simulation, only while the run is playing.
 4. `player.render(alpha, delta)` → `enemies.render` → voices, paths.
-5. `flashlight.update(...)` — from the *interpolated* player position.
+5. `flashlight.update(...)` — from the *interpolated* player position, and from the
+   pointer's ground point `updateAim` set earlier this frame (null when there is none to
+   follow — §4.1's pointer-aimed pitch falls back to the derived declination then).
 6. `flashlight.carry(player.reachFor(...))` — the arms are solved against the beam after it
    has been placed, never before.
 7. `night.follow`, `audio.update`, `occluders.update` — all from the interpolated position.
@@ -38,7 +40,7 @@ dependent; putting a visual on the tick reintroduces the 60 Hz staircase.
 
 | Directory | Owns |
 | --- | --- |
-| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `GeneratedPrefabs` (art built rather than loaded — §2's small tree, and its repaint), `GroundTextures` (§2's earth, rasterised and re-rasterisable), `ModelMaterials` (§2's look values over the kit's own albedo), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Rng`, URL options |
+| `src/core/` | `SimClock`, `Viewport` (renderer/scene/camera), `Input`, `AssetLoader` (prefabs, merged), `GeneratedPrefabs` (art built rather than loaded — §2's small tree, and its repaint), `GroundTextures` (§2's earth, rasterised and re-rasterisable), `ModelMaterials` (§2's look values over the kit's own albedo), `CharacterLoader` (skinned, cloned per instance), `OccluderFade`, `Damped` (critically damped scalar smoothing — the camera rig's follow and the flashlight's pointer-aimed pitch both ease on it), `Rng`, URL options |
 | `src/map/` | `validate` (fatal vs warning), `MapLoader`, `MapGeometry` (instanced), `colliders` (greedy merge), `WalkabilityGrid`, `EntityRegistry`, `Landmarks` (instanced per prefab — §7), `Surround` (§2's ground and trees *outside* the map — scenery only), `audit` (is the level finishable) |
 | `src/player/` | `Player` (tick is pure arithmetic; render is the only scene-graph part), `collision` (the only thing holding the player on the map now), `CameraRig` (locked to the player; `groundFootprint` is what sizes §2's surround), `Health`, `autoRig` (rig derived from a mesh), `ArmIk` |
 | `src/lighting/` | `Flashlight` + `Battery`, `EnvironmentLights`, `Ambient` (night rig), `Illumination` (`sample` per entity, `litAt` per point), `LitTiles` (per-tile, memoised per path search), `flicker`, `LightShaft`, `TorchBody`, `LampVoices` |
@@ -255,7 +257,11 @@ Then, from `window.shadows` (dev builds only, republished on every restart):
 - `flashlight.held = true` — skip the §6.1 pick-up on maps that author one.
 - `player.moveTo(x, z)` — teleport without smoothing.
 - `player.aimTowards(x, z)` plus `input.aimSource = 'stick'` — aim exactly, without the
-  pointer overwriting it on the next frame.
+  pointer overwriting it on the next frame. This also skips §4.1's pointer-aimed pitch, since
+  that only fires with `aimSource === 'pointer'` — to measure the pitch itself, drive real
+  `pointermove` events (or set `input.pointerNdcX/Y` and `input.aimSource = 'pointer'`
+  directly) and read `flashlight.target.position`, not the player's `aim`, which never
+  carries pitch.
 - `clock.timeScale = 0` — hold the world still while rendering carries on. Better than the
   `Y` key, which removes the enemies rather than stopping them.
 - `environment.toggleAll()` — power every lamp group.

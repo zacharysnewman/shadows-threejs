@@ -11,11 +11,19 @@
  * the first few metres, which under a pitched top-down camera (§3.2) reads as a hole
  * around the player rather than as a torch.
  *
- * The declination is derived, not chosen: tilt the axis until the cone's *upper* edge
- * meets the ground exactly at the beam's range. Any flatter and the top of the cone sails
- * over the floor and is spent on walls; any steeper and the pool stops short of the range
- * §4.1 gives it. What falls out is a pool running from a little over a metre in front of
- * the player out to the full 12 m.
+ * The *derived* declination — the fallback, with no pointer to follow — tilts the axis
+ * until the cone's *upper* edge meets the ground exactly at the beam's range. Any flatter
+ * and the top of the cone sails over the floor and is spent on walls; any steeper and the
+ * pool stops short of the range §4.1 gives it. What falls out is a pool running from a
+ * little over a metre in front of the player out to the full 12 m.
+ *
+ * With a settled pointer aim, `update` pitches the beam at the ground point under the
+ * cursor instead: the same axis, aimed further out or pulled in along it, clamped so the
+ * beam can neither point behind the player nor flatten past the spec's range. The point
+ * comes from the caller pre-projected onto the y=0 plane — this class never raycasts the
+ * scene, so a tree under the cursor cannot pitch the beam at the sky the way an occluder
+ * hit would. Eased on the render delta (`FLASHLIGHT.pointerAim.smoothingTime`) rather than
+ * snapped, so the pitch does not visibly step at display refresh rate.
  *
  * The beam also originates just clear of the player's capsule rather than at its centre.
  * A light inside the player's own mesh is shadowed by it, and the player's shoulders throw
@@ -42,9 +50,38 @@
 
 import * as THREE from 'three';
 import { FLASHLIGHT, LIGHT_SHAFT, RENDER } from '../config';
+import { Damped } from '../core/Damped';
 import { Battery } from './Battery';
 import { LightShaft } from './LightShaft';
 import { TorchBody } from './TorchBody';
+
+/**
+ * Distance along the beam axis to the ground point under the cursor, clamped to what the
+ * declination can usably reach (§4.1).
+ *
+ * Projected onto the axis rather than measured directly to the point: `hold.lateral` and
+ * the yaw trim already turn the origin and the axis off the player's aim, so the distance a
+ * *pitch* is derived from has to be measured along the axis the beam actually travels along
+ * — otherwise those two knobs would fight the cursor for where the beam points. Only the
+ * along-axis component matters; the cursor's sideways offset from the beam says nothing
+ * about how steeply the beam should decline; that is decided by yaw, not pitch.
+ *
+ * Pure arithmetic on the four numbers involved, so the clamp can be checked without a
+ * scene, a camera, or a light (§ testing).
+ */
+export function pointerAimDistance(
+  originX: number,
+  originZ: number,
+  axisX: number,
+  axisZ: number,
+  targetX: number,
+  targetZ: number,
+  nearDistance: number,
+  farDistance: number,
+): number {
+  const along = (targetX - originX) * axisX + (targetZ - originZ) * axisZ;
+  return Math.min(farDistance, Math.max(nearDistance, along));
+}
 
 export class Flashlight {
   readonly battery = new Battery();
@@ -71,8 +108,20 @@ export class Flashlight {
   /** §4.1 — the thing in the hand the beam comes out of. */
   private readonly body = new TorchBody();
 
-  /** Ground distance the beam axis is aimed at; see the declination note above. */
-  private aimDistance = 0;
+  /**
+   * Ground distance the beam axis is aimed at when there is no pointer to follow — see the
+   * declination note above. The fallback `distance` eases towards, and (with no pointer
+   * ever aimed) the only value it ever takes.
+   */
+  private derivedAimDistance = 0;
+  /**
+   * The distance actually placed each frame — the pointer's ground point, projected and
+   * clamped by `pointerAimDistance`, or `derivedAimDistance` with no pointer to follow.
+   * Eased rather than snapped so the pitch does not step at display refresh rate; `refresh`
+   * snaps it, so a config change lands immediately rather than easing in from wherever it
+   * was.
+   */
+  private readonly distance = new Damped();
   /** The target the `SpotLight` was constructed with, kept only so it can be removed. */
   private readonly defaultTarget: THREE.Object3D;
 
@@ -134,7 +183,10 @@ export class Flashlight {
       0.02,
       Math.PI / 2 - 0.02,
     );
-    this.aimDistance = hold.height / Math.tan(declination);
+    this.derivedAimDistance = hold.height / Math.tan(declination);
+    // A config change lands on the next `update` rather than easing in from wherever the
+    // pointer last left it — the tuner's slider is meant to be felt immediately (§8.3).
+    this.distance.snap(this.derivedAimDistance);
 
     // The spec's range is how far the beam reaches along the ground; the light's own range
     // is the slant distance from the mount to that point.
@@ -165,8 +217,24 @@ export class Flashlight {
   /**
    * Place the beam. Called per rendered frame from the interpolated player position, so
    * the light does not visibly step at the 60 Hz tick rate.
+   *
+   * `pointerGround` is the ground point under the cursor, on the y=0 plane and nothing
+   * else — never a raycast against the scene, or a tree under the cursor would pitch the
+   * beam at the sky instead of the ground it stands on (§4.1). Null falls back to the
+   * derived declination: no pointer, a stick or gamepad aiming instead, or the aim not
+   * settled (mid-sprint or sweeping back from one, §3.1) — the caller decides which.
+   * `realDeltaSeconds` is the render delta the pitch eases towards it on; 0 leaves the
+   * distance wherever it already was, which is what every caller that does not carry a
+   * delta (tests, a paused frame) gets for free.
    */
-  update(playerX: number, playerZ: number, aimX: number, aimZ: number): void {
+  update(
+    playerX: number,
+    playerZ: number,
+    aimX: number,
+    aimZ: number,
+    pointerGround: { x: number; z: number } | null = null,
+    realDeltaSeconds = 0,
+  ): void {
     const hold = FLASHLIGHT.hold;
     // Screen-right of the aim direction, which is the player's right: the camera never
     // yaws (§3.2), so `+x` is right on screen and this is the hand the torch is in.
@@ -186,11 +254,26 @@ export class Flashlight {
 
     this.origin.set(originX, hold.height, originZ);
     this.light.position.copy(this.origin);
-    this.target.position.set(
-      originX + beamX * this.aimDistance,
-      0,
-      originZ + beamZ * this.aimDistance,
+
+    const targetDistance = pointerGround
+      ? pointerAimDistance(
+          originX,
+          originZ,
+          beamX,
+          beamZ,
+          pointerGround.x,
+          pointerGround.z,
+          FLASHLIGHT.pointerAim.nearDistance,
+          FLASHLIGHT.range,
+        )
+      : this.derivedAimDistance;
+    const distance = this.distance.step(
+      targetDistance,
+      FLASHLIGHT.pointerAim.smoothingTime,
+      realDeltaSeconds,
     );
+
+    this.target.position.set(originX + beamX * distance, 0, originZ + beamZ * distance);
     this.target.updateMatrixWorld();
     this.axis.subVectors(this.target.position, this.origin).normalize();
 

@@ -390,6 +390,35 @@ export const TUNABLES: readonly Tunable[] = [
     'yawTrimDegrees',
   ),
 
+  // §4.1 — pointer aim: the declination follows the ground point under a settled cursor
+  // instead of the derived, fixed decline. Read every frame, so neither knob needs a push.
+  field(
+    {
+      key: 'torch.pointerNear',
+      group: 'Flashlight',
+      label: 'pointer aim · near clamp',
+      min: 0.5,
+      max: 6,
+      step: 0.1,
+      unit: 'm',
+    },
+    FLASHLIGHT.pointerAim,
+    'nearDistance',
+  ),
+  field(
+    {
+      key: 'torch.pointerSmoothing',
+      group: 'Flashlight',
+      label: 'pointer aim · smoothing',
+      min: 0,
+      max: 0.5,
+      step: 0.01,
+      unit: 's',
+    },
+    FLASHLIGHT.pointerAim,
+    'smoothingTime',
+  ),
+
   field(
     {
       key: 'torch.haze',

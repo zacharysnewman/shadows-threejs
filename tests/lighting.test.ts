@@ -18,7 +18,7 @@ import {
   reachableLitCounts,
   selectShadowCasters,
 } from '../src/lighting/EnvironmentLights';
-import { Flashlight } from '../src/lighting/Flashlight';
+import { Flashlight, pointerAimDistance } from '../src/lighting/Flashlight';
 import { LightShaft } from '../src/lighting/LightShaft';
 import type { EnvironmentLightEntity } from '../src/map/types';
 
@@ -233,6 +233,98 @@ describe('Flashlight', () => {
 
     expect(flashlight.toggle()).toBe(false);
     expect(flashlight.on).toBe(false);
+  });
+
+  it('pitches the beam at the ground point under a settled pointer (§4.1)', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    // Aimed east; well within the near/far clamp, so the point is reached exactly.
+    flashlight.update(0, 0, 1, 0, { x: 4, z: 0 }, 10);
+
+    expect(flashlight.target.position.x).toBeCloseTo(4, 4);
+    expect(flashlight.target.position.z).toBeCloseTo(0, 4);
+    expect(flashlight.target.position.y).toBe(0);
+  });
+
+  it('pitches without turning the beam, even off the aim line the cursor sits on', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    // Aimed north (`0,-1`); the cursor sits to the right of that line, not on it.
+    flashlight.update(0, 0, 0, -1, { x: 3, z: -4 }, 10);
+
+    // Still aimed straight along the origin's own axis — the sideways offset changed how
+    // far out the beam reaches, not which way it points.
+    expect(flashlight.target.position.x).toBeCloseTo(flashlight.light.position.x, 4);
+    expect(flashlight.target.position.z).toBeLessThan(flashlight.light.position.z);
+  });
+
+  it('clamps the pitch so a cursor at or behind the player cannot aim the beam past vertical', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    flashlight.update(0, 0, 1, 0, { x: -5, z: 0 }, 10);
+
+    const reach = flashlight.target.position.x - flashlight.light.position.x;
+    expect(reach).toBeCloseTo(FLASHLIGHT.pointerAim.nearDistance, 4);
+  });
+
+  it('clamps the pitch to the beam range so a distant cursor cannot flatten it past that', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    flashlight.update(0, 0, 1, 0, { x: 500, z: 0 }, 10);
+
+    const reach = flashlight.target.position.x - flashlight.light.position.x;
+    expect(reach).toBeCloseTo(FLASHLIGHT.range, 4);
+  });
+
+  it('falls back to the derived declination with no ground point to follow', () => {
+    // Same assertion as "declines the cone..." above, with the new parameters at their
+    // defaults — the pointer-aim path must not change the beam when nothing feeds it.
+    const flashlight = new Flashlight(new THREE.Scene());
+    flashlight.update(0, 0, 1, 0, null, 10);
+
+    const declination = Math.atan2(
+      FLASHLIGHT.hold.height,
+      flashlight.target.position.x - flashlight.light.position.x,
+    );
+    const halfAngle = THREE.MathUtils.degToRad(FLASHLIGHT.coneAngleDegrees / 2);
+    const far = FLASHLIGHT.hold.height / Math.tan(declination - halfAngle);
+    expect(far).toBeCloseTo(FLASHLIGHT.range, 1);
+  });
+
+  it('eases the pointer-aimed pitch in rather than snapping to it', () => {
+    const flashlight = new Flashlight(new THREE.Scene());
+    const reach = (): number => flashlight.target.position.x - flashlight.light.position.x;
+
+    flashlight.update(0, 0, 1, 0);
+    const start = reach();
+
+    // A second instance settled on the same target, to learn where a fully-eased pitch
+    // lands without re-deriving the projection arithmetic here.
+    const settled = new Flashlight(new THREE.Scene());
+    settled.update(0, 0, 1, 0, { x: 4, z: 0 }, 10);
+    const converged = settled.target.position.x - settled.light.position.x;
+
+    flashlight.update(0, 0, 1, 0, { x: 4, z: 0 }, FLASHLIGHT.pointerAim.smoothingTime);
+    const eased = reach();
+
+    expect(eased).toBeGreaterThan(start);
+    expect(eased).toBeLessThan(converged);
+  });
+});
+
+describe('pointerAimDistance', () => {
+  it('measures how far the ground point projects along the beam axis', () => {
+    expect(pointerAimDistance(0, 0, 1, 0, 5, 0, 2, 12)).toBeCloseTo(5);
+  });
+
+  it('ignores how far to the side of the axis the point sits', () => {
+    // The lateral offset changes nothing: only the along-axis component decides the pitch,
+    // which is what keeps this a pitch rather than a second yaw.
+    expect(pointerAimDistance(0, 0, 1, 0, 5, 100, 2, 12)).toBeCloseTo(5);
+  });
+
+  it('clamps to the near distance when the point is behind the origin', () => {
+    expect(pointerAimDistance(0, 0, 1, 0, -5, 0, 2, 12)).toBe(2);
+  });
+
+  it('clamps to the far distance when the point is beyond it', () => {
+    expect(pointerAimDistance(0, 0, 1, 0, 500, 0, 2, 12)).toBe(12);
   });
 });
 

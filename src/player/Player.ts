@@ -88,7 +88,7 @@ export class Player {
    * caught up and aiming is direct again.
    */
   private readonly aimGoal = new THREE.Vector2();
-  private turningAim = false;
+  private _turningAim = false;
   /**
    * Whether `aimGoal` holds anything to turn towards. False for the gap between releasing a
    * sprint and the player's next aim input: the beam holds where the sprint left it rather
@@ -124,6 +124,18 @@ export class Player {
   /** While true, aim follows movement and pointer input is refused (§3.1). */
   get sprinting(): boolean {
     return this._sprinting;
+  }
+
+  /**
+   * True while `aim` is following direct input this frame — not locked to the direction of
+   * travel by a sprint, and not still sweeping back towards a goal once one ends (§3.1).
+   * The flashlight's pointer-aimed pitch (§4.1) only trusts the cursor's ground point while
+   * this holds; the rest of the time `aim` is turning towards something other than where
+   * the player is looking, so pitching the beam at the cursor would fight the same lock the
+   * yaw already respects.
+   */
+  get aimSettled(): boolean {
+    return !this._sprinting && !this._turningAim;
   }
 
   get speed(): number {
@@ -203,17 +215,17 @@ export class Player {
     // the beam into it.
     if (this._sprinting) {
       this.aimGoal.set(moveX / intent, moveZ / intent);
-      this.turningAim = true;
+      this._turningAim = true;
       this.hasAimGoal = true;
     } else if (wasSprinting) {
       // Releasing arms the turn back, but with no goal yet: the beam holds where the sprint
       // left it until the player points somewhere, and then sweeps. Without this the
       // sprint's own turn completes, control returns to direct aiming, and the next pointer
       // sample cuts the beam round in a single frame — the whip §3.1 rules out.
-      this.turningAim = true;
+      this._turningAim = true;
       this.hasAimGoal = false;
     }
-    if (this.turningAim && this.hasAimGoal) this.turnAimTowardsGoal(dt);
+    if (this._turningAim && this.hasAimGoal) this.turnAimTowardsGoal(dt);
 
     this.health.tick(dt);
   }
@@ -232,7 +244,7 @@ export class Player {
     if (this._sprinting) return;
     if (Math.hypot(x, z) < 1e-4) return;
 
-    if (this.turningAim) {
+    if (this._turningAim) {
       // Sprinting, or still recovering from one: this becomes the goal the turn is heading
       // for rather than the aim itself, so the beam sweeps round instead of cutting.
       this.aimGoal.set(x, z).normalize();
@@ -258,7 +270,7 @@ export class Player {
 
     if (Math.abs(delta) <= maximum) {
       this.aim.copy(this.aimGoal);
-      this.turningAim = false;
+      this._turningAim = false;
       return;
     }
 
