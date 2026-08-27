@@ -6,6 +6,10 @@
  * Rows are pull-based: a system registers a label and a getter, and the overlay samples
  * it a few times a second. Nothing has to push updates, and a system that goes away just
  * unregisters.
+ *
+ * §8.3 — it can also be dismissed by touch. `H` toggles it, and a key is not a control on a
+ * phone (§3.1), so under debug the readout carries a tap target to dismiss it and leaves one
+ * behind to bring it back.
  */
 
 export type RowProvider = () => string;
@@ -21,6 +25,10 @@ export class DebugOverlay {
   private readonly bindingsEl: HTMLDivElement;
   private readonly rows = new Map<string, RowProvider>();
   private readonly bindings: Binding[] = [];
+  /** The `×` on the readout and the handle that brings it back; both debug-only. */
+  private readonly dismissEl: HTMLButtonElement;
+  private readonly restoreEl: HTMLButtonElement;
+  private touchToggle = false;
 
   /** Exponentially smoothed frame time in ms; a raw per-frame number is unreadable. */
   private smoothedFrameMs = 16.7;
@@ -50,7 +58,75 @@ export class DebugOverlay {
     this.bindingsEl.style.cssText = 'margin-top:6px;opacity:0.62';
 
     this.root.append(this.statsEl, this.bindingsEl);
-    parent.appendChild(this.root);
+
+    this.dismissEl = this.tapTarget('\u00d7', 'hide the debug readout', () => this.setVisible(false));
+    this.dismissEl.style.position = 'absolute';
+    this.dismissEl.style.top = '2px';
+    this.dismissEl.style.right = '2px';
+    this.root.appendChild(this.dismissEl);
+
+    // A sibling rather than a child, because the readout it restores is `display:none`.
+    this.restoreEl = this.tapTarget('dbg', 'show the debug readout', () => this.setVisible(true));
+    this.restoreEl.style.position = 'fixed';
+    this.restoreEl.style.top = '8px';
+    this.restoreEl.style.left = '8px';
+    this.restoreEl.style.zIndex = '10';
+
+    parent.append(this.root, this.restoreEl);
+  }
+
+  /**
+   * A tap target for the readout's own controls. 44 px because that is the floor everything
+   * touchable in this project is built to (`src/editor/style.ts`), with the glyph drawn
+   * smaller than the target it sits in.
+   */
+  private tapTarget(glyph: string, label: string, onTap: () => void): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = glyph;
+    // Named for what it does: `×` and `dbg` are legible on the glass and not to a reader.
+    button.setAttribute('aria-label', label);
+    button.style.cssText = [
+      'width:44px',
+      'height:44px',
+      'display:none',
+      'align-items:center',
+      'justify-content:center',
+      'border:1px solid rgba(120,180,140,0.25)',
+      'border-radius:6px',
+      'background:rgba(6,10,8,0.72)',
+      'color:#cfe3d0',
+      'font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace',
+      // The root is `pointer-events:none` so the readout never eats a click meant for the
+      // game; these two are the exception, and have to opt back in.
+      'pointer-events:auto',
+      'touch-action:none',
+      '-webkit-tap-highlight-color:transparent',
+    ].join(';');
+    button.addEventListener('pointerdown', (event) => {
+      // The same stop the on-screen action buttons need (`src/core/Input.ts`): without it
+      // the tap also reaches the window listener and anchors a movement stick under the
+      // readout, so dismissing it walks the player away.
+      event.stopPropagation();
+      onTap();
+    });
+    return button;
+  }
+
+  /**
+   * §8.3 — arm the touch controls, which only debug mode does. A player never sees either
+   * of them: the readout they toggle is not something a player can reach.
+   */
+  enableTouchToggle(): void {
+    this.touchToggle = true;
+    // Reserves the corner the `\u00d7` sits in, so it covers a padded edge and not the frame time.
+    this.root.style.paddingRight = '50px';
+    this.syncTouchTargets();
+  }
+
+  private syncTouchTargets(): void {
+    this.dismissEl.style.display = this.touchToggle && this.visible ? 'flex' : 'none';
+    this.restoreEl.style.display = this.touchToggle && !this.visible ? 'flex' : 'none';
   }
 
   addRow(label: string, provider: RowProvider): void {
@@ -88,6 +164,7 @@ export class DebugOverlay {
   setVisible(visible: boolean): void {
     this.visible = visible;
     this.root.style.display = visible ? 'block' : 'none';
+    this.syncTouchTargets();
   }
 
   /** Called once per rendered frame with the real frame delta in seconds. */
@@ -114,5 +191,6 @@ export class DebugOverlay {
 
   dispose(): void {
     this.root.remove();
+    this.restoreEl.remove();
   }
 }

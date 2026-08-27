@@ -1343,6 +1343,16 @@ playing a different game than the one this specifies.
 - Without it: no readout, no debug keys, and the map is the level.
 - With it: everything the Cross-Cutting debug harness describes, exactly as now, plus a
   link to the editor (§9) on the title screen.
+- **A flag whose value says off is off.** `?debug=0`, `=false`, `=off` and `=no` turn it
+  off; naming it with no value, or any other value, turns it on. Writing `=0` is the
+  obvious way to disable a flag, and one that quietly meant the opposite would read as a
+  harness there is no way out of.
+- **`?overlay=0` starts the readout hidden**, with the rest of the harness armed. Testing a
+  map means `?debug`, because that is what unlocks `?map=` — so without this, wanting a
+  custom map and not wanting a wall of diagnostics over it is not a thing the URL can say.
+- **The readout is dismissible by touch.** `H` toggles it, and a key is not a control on a
+  phone (§3.1): under debug it carries a tap target to dismiss it and leaves one behind to
+  bring it back. The same rule as the on-screen action buttons, for the same reason.
 - **The editor is not behind it.** `?edit` opens on its own, because authoring a level is
   not debugging a run — the person doing it wants a tool, not a diagnostic readout over
   their level. What debug mode decides is whether a *player* is offered the door.

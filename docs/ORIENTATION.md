@@ -166,12 +166,15 @@ Do not run `playwright install`.
 The recipe that works:
 
 ```js
-await page.goto('http://localhost:5173/shadows-threejs/?debug&map=phase3-test');
+await page.goto('http://localhost:5173/shadows-threejs/?debug&map=phase3-test&overlay=0');
 await page.click('.shell-play');                       // §8.1 — the only door into a run
 await page.waitForFunction(() => window.shadows?.player);
-await page.keyboard.press('KeyH');                     // hide the readout, it covers a third
-                                                       // of the screen
 ```
+
+`&overlay=0` starts the readout hidden — it covers a third of the screen otherwise, and
+`?map=` is debug-only so there is no arming one without the other. `H` still toggles it, and
+under `?debug` it also carries a `×` to dismiss and a `dbg` handle to bring it back, which
+is the path that exists on a phone.
 
 **Every in-page path carries the base**, in dev exactly as in production (`vite.config.ts`
 sets it so a base-path mistake surfaces locally). A dynamic `import('/src/…')` or
@@ -282,6 +285,10 @@ hovered tile, `Y` disable enemies, `I` draw the monster's body (§5.2 says never
 the battery to 5%, `L` power every light group, `J` heal, `G` walkability, `C` colliders,
 `M` entity markers, `P` pause, `.` step one tick, `[` `]` time scale, `R` restart, `T` the
 tuning panel, `H` hide the readout.
+
+None of them exists on a phone, where the only debug chrome is the readout's own two tap
+targets (`×` and `dbg`). `?overlay=0` starts it hidden; `?debug=0` turns the harness off
+outright, and takes `?map=` down with it.
 
 ## The suite
 

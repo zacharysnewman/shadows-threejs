@@ -11,7 +11,8 @@
  * without a user gesture (§4.3), and `Play` is the first gesture there is. §8.3 — `?debug`
  * arms the developer affordances and nothing else does, `?map=<directory>` and
  * `?seed=<word|number>` among them, so a player never lands in a test fixture or on
- * somebody else's replay.
+ * somebody else's replay. `?overlay=0` is the one that subtracts: the harness stays armed
+ * and the readout starts out of the way.
  */
 
 import { AudioCore } from './audio/AudioCore';
@@ -87,9 +88,12 @@ async function main(): Promise<void> {
   // rebuild and identical between runs.
   const viewport = new Viewport();
   const overlay = new DebugOverlay();
-  // §8.3 — off by default. `H` still toggles it, but only once debug mode has armed the
-  // keys at all, so a player has no way to summon it.
-  overlay.setVisible(options.debug);
+  // §8.3 — off by default, and `?overlay=0` starts it hidden with the rest of the harness
+  // still armed: `?map=` needs `?debug`, so testing a map otherwise means wearing the
+  // readout. `H` toggles it, and under debug it also carries its own tap targets, because
+  // `H` is not a control on a phone (§3.1). A player reaches none of this.
+  overlay.setVisible(options.overlay);
+  if (options.debug) overlay.enableTouchToggle();
   /**
    * §8.3 — the balance tuner, and only under `?debug`. Built *before* the first run, so
    * anything it restored from this browser is in the config by the time systems read it —

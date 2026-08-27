@@ -1583,13 +1583,34 @@ was no way to switch the beam on in normal play at all, on any device. `Run.fram
 `input.wasPressed('flashlight')` now, beside `interact`, and `debugKey` no longer handles
 `F` (two paths would toggle twice under `?debug` and the beam would never come on).
 
+*Fixed afterwards — the readout could not be got rid of on a phone.* `H` toggles it and a
+key is not a control on a phone, so the only way out was a keyboard. Worse, `?map=` is gated
+behind `?debug`, so testing a custom map *forced* the readout on, and on a phone it covers
+the whole screen rather than the third it covers on a desktop. Two things closed it: the
+readout carries its own tap targets under `?debug` (a `×` to dismiss, a 44 px `dbg` handle to
+bring it back, both `stopPropagation`-ing their `pointerdown` like the action buttons do, or
+dismissing it would anchor a movement stick and walk the player away), and `?overlay=0`
+starts it hidden with the rest of the harness armed. `parseShellOptions` also stopped reading
+flags by presence alone: `?debug=0` had been arming the harness, which is the opposite of
+what anyone writing it means.
+
+*Verified in Chromium on a Pixel 7 profile* (`?debug&map=phase1-test`): the readout fills the
+screen, tapping `×` clears it to the `dbg` handle, the player's position is unchanged across
+the tap (`(3.00, 3.00)` before and after — the stick was not anchored), and tapping `dbg`
+brings it back. `?debug&map=phase1-test&overlay=0` starts on a clean screen with the handle
+in the corner and the map still loaded. `?debug=0&map=phase1-test` arms nothing and shows no
+handle; a plain load shows no debug chrome at all. The DOM behaviour is browser-only — the
+suite has no jsdom — so `tests/shell.test.ts` holds the invariant instead: `enableTouchToggle`
+is called exactly once and only under `options.debug`.
+
 `tests/shell.test.ts` covers the rules that rot quietly: the credits against `package.json`
 (add a dependency without crediting it and the test fails naming it — checked by adding
 `prettier` and watching it fail), debug being off by default, including that `?map=` and
 `?seed=` are ignored without it and that a map name cannot climb out of `maps/`, and —
 after the above — that every action `Input` binds a key for is actually read by the run.
 That last one is the check that was missing: an action nobody consumes type-checks
-perfectly, so nothing but a source-level assertion could have caught it.
+perfectly, so nothing but a source-level assertion could have caught it. (Its two
+source-level describes had been pasted in twice and ran as duplicates; one copy is gone.)
 
 ## Cross-Cutting
 
