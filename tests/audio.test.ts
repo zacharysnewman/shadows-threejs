@@ -6,11 +6,12 @@
  * model's falloff, the left/right bias, the step cadence, and the placeholder synthesis.
  */
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { AUDIO } from '../src/config';
+import { AUDIO, RUN } from '../src/config';
 import { FootstepCadence } from '../src/audio/Footsteps';
 import { attenuationAt, AUDIO_PROFILES, stereoBias } from '../src/audio/profiles';
-import { isLooping, SOUND_NAMES, synthesise } from '../src/audio/SoundBank';
+import { isLooping, SOUND_NAMES, type SoundName, synthesise } from '../src/audio/SoundBank';
 
 const DEFAULT = AUDIO_PROFILES.default;
 const MONSTER = AUDIO_PROFILES.monsterFootsteps;
@@ -179,6 +180,76 @@ describe('placeholder synthesis', () => {
     const heavy = lowShare('footstep_heavy');
     expect(heavy).toBeGreaterThan(lowShare('footstep_light') * 2);
     expect(heavy).toBeGreaterThan(0.1);
+  });
+});
+
+describe('the death sounds (§5.3)', () => {
+  const sampleRate = 44100;
+
+  /** Share of a sound's energy below ~150 Hz, as `footstep_heavy` is measured above. */
+  const lowShare = (name: SoundName): number => {
+    const { data } = synthesise(name, sampleRate);
+    const coefficient = 1 - Math.exp((-2 * Math.PI * 150) / sampleRate);
+    let filtered = 0;
+    let low = 0;
+    let total = 0;
+    for (const sample of data) {
+      filtered += coefficient * (sample - filtered);
+      low += filtered * filtered;
+      total += sample * sample;
+    }
+    return total === 0 ? 0 : low / total;
+  };
+
+  /** The complement, above ~1 kHz: what "bright" means for the pair below. */
+  const highShare = (name: SoundName): number => {
+    const { data } = synthesise(name, sampleRate);
+    const coefficient = 1 - Math.exp((-2 * Math.PI * 1000) / sampleRate);
+    let filtered = 0;
+    let high = 0;
+    let total = 0;
+    for (const sample of data) {
+      filtered += coefficient * (sample - filtered);
+      const above = sample - filtered;
+      high += above * above;
+      total += sample * sample;
+    }
+    return total === 0 ? 0 : high / total;
+  };
+
+  it('gives the two causes sounds that are not confusable, the way the overlays are not', () => {
+    // §5.3 — the player has to know which mistake they made, and the sound is half of what
+    // tells them. Asserted in both directions, because one of them alone can be satisfied
+    // by a sound that is merely quiet: the monster's is bottom and the spider's is top.
+    expect(lowShare('death_monster')).toBeGreaterThan(lowShare('death_spider') * 5);
+    expect(highShare('death_spider')).toBeGreaterThan(highShare('death_monster') * 5);
+    // And each is decisively one thing rather than both: a sound split evenly across the
+    // spectrum reads as neither.
+    expect(lowShare('death_monster')).toBeGreaterThan(0.3);
+    expect(highShare('death_spider')).toBeGreaterThan(0.5);
+  });
+
+  it("covers the monster's hold, so the screen does not go quiet before it goes black", () => {
+    // §5.3's hold is 1.5 s and the monster's scare ends on full black; a sound that stopped
+    // early would leave the last of it silent.
+    expect(synthesise('death_monster', sampleRate).data.length).toBeGreaterThanOrEqual(
+      sampleRate * RUN.jumpScareSeconds,
+    );
+  });
+
+  it('plays the scare through the world being silenced, not through a suspended context', () => {
+    // The bug this holds shut: `setPaused(true)` suspends the whole `AudioContext`, so a
+    // death sound played beside it is never heard. The world stops; the context does not.
+    const run = readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+    const death = run.split('if (player.health.dead) {')[1]?.split('return;')[0] ?? '';
+    expect(death).not.toBe('');
+    expect(death).toContain('audio.silenceWorld()');
+    expect(death).not.toContain('setPaused(true)');
+    expect(death).toContain('death_spider');
+    expect(death).toContain('death_monster');
   });
 });
 

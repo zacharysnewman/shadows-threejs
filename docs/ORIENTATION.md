@@ -82,6 +82,19 @@ Ownership rules worth knowing before editing:
 
 Each of these looked like bad art or bad luck rather than a bug.
 
+- **ZzFX's `filter` is a high-pass when positive.** Reaching for a positive number to take
+  the top off a sound removes its *bottom* instead — ZzFX builds one biquad from
+  `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form. Negative is the
+  low-pass, and the corner is twice the number either way. It reads as the sound simply
+  being thin, so it is diagnosed by measuring the low-band share rather than by listening.
+- **A source stopped on the render loop is restarted by the render loop.** `SpiderVoices`
+  and `LampVoices` re-`play()` their emitters whenever the thing they speak for is doing
+  something, and they update outside the simulation guard. Silencing the world on death
+  stopped them for exactly one frame. It was invisible for as long as death suspended the
+  whole `AudioContext` — the sources were playing into a suspended context — and only became
+  audible once the context had to stay alive so the jump-scare could have a sound. Anything
+  that silences the world has to stop the updates too, not just the sources.
+
 - **A tree short enough to see whole is a tree that roofs the floor.** The instinct from
   §3.2's 72° pitch is that a 26 m trunk is a dark bar rather than a shape, so a wood should
   be planted from something you can see the top of. It is the wrong way round: a crown below

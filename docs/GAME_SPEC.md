@@ -826,6 +826,8 @@ readable at any distance, and worth reading before the pool goes dark.
 - A paused simulation (§6) silences positional sources: a world that is not advancing must
   not still be walking towards the player. The listener and the context stay alive, so
   unpausing resumes rather than restarts.
+- Death silences the world the same way, and for the same reason, but keeps the context
+  running so the jump-scare's own sound can play over it (§5.3).
 
 ## 5. Enemy Design & AI Specification
 
@@ -1150,6 +1152,16 @@ player a reaction where the design gives them none.
   it arrives in one accelerating rush that ends with the screen fully dark. Nothing about the
   monster's is *lit* — a pale shape would contradict §5.2 twice over, by drawing its body and
   by drawing it bright.
+- **The world goes quiet and the scare does not.** The world's sources stop — a spider still
+  chittering over the jump-scare is a world that has not noticed the player is dead — but the
+  audio context stays alive, because the scare has a voice of its own. Suspending the context
+  outright leaves the loudest moment in the game silent.
+- **One death sound per cause, unalike for the same reason the overlays are.** The spider's
+  is bright, dry and convulsive: stabs on an uneven beat, the shape the scare draws. The
+  monster's is one low impact with a long decay and nothing bright in it at all, running the
+  length of the hold — the scare is the light going out, and a sound with a top end would be
+  a second thing arriving rather than everything leaving. The pair has to separate by ear
+  alone, in case the player is looking away from the screen when it lands.
 - The hold is real time, not simulation time: the world has already stopped.
 - The run ends. There is no respawn and no checkpointing: the jump-scare resolves to a
   game-over screen, and the only continuation is a new game from the level start with all

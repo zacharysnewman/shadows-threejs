@@ -1673,9 +1673,31 @@ a glance, which is the criterion §5.3 actually sets. *A trap for the next perso
 `Animation` is detached from the CSS lifecycle and survives the class change, so capturing
 both scares from one page bleeds one into the other — a fresh page per capture is needed.
 
-*Still outstanding.* Death has no sound: `Run.resolveEnding` pauses the world's audio and
-nothing plays over the scare. §5.3 does not ask for one, so this is noted rather than
-invented.
+*Fixed afterwards — death had no sound.* `Run.resolveEnding` suspended the whole audio
+context, so the loudest moment in the game was silent. §5.3 now gives each cause a sound,
+unalike for the same reason the overlays are: `death_spider` is bright, dry and convulsive —
+three stabs on an uneven beat, the shape the scare draws — and `death_monster` is one low
+impact with a long decay and nothing bright in it, running the length of the 1.5 s hold. The
+world is silenced by stopping its sources (`AudioCore.silenceWorld`) rather than by
+suspending the context, which is what leaves room for the scare to have a voice.
+
+Measured by the same band-share technique `footstep_heavy` is tested with: the monster's
+sound has 49% of its energy below ~150 Hz against the spider's 3%, and the spider has 68% of
+its energy above ~1 kHz against the monster's 3%. Fourteen times lower one way, twenty-six
+times brighter the other — the pair separates by ear alone, which is the point, since a
+player may be looking away when it lands.
+
+*Two traps, both paid for here.* ZzFX's `filter` is a **high-pass** when positive (its biquad
+is built from `sign(filter)`, and `b0 = (1 + sign · cos)/2` is the high-pass form), so the
+first attempt at darkening the monster's sound thinned it instead. And `SpiderVoices` and
+`LampVoices` update on the render loop outside the simulation guard, re-`play()`ing their
+emitters the frame after the world was silenced — invisible for as long as death suspended
+the context, and audible the moment it had to stay alive. Both are in `docs/ORIENTATION.md`.
+
+*Verified in Chromium on a Pixel 7 profile* through real deaths on `phase8-test` and
+`phase7-test`: playing sources go 2 → 1 → 0 for the monster and 4 → 1 → 0 for the spider —
+the world silenced to exactly the death sound, then the sound running out — with the context
+reporting `running` throughout and the right scare class up in each case.
 
 ## Cross-Cutting
 

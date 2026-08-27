@@ -167,6 +167,20 @@ export class AudioCore {
     void context.resume();
   }
 
+  /**
+   * §5.3 — stop everything the world is playing and leave the context running.
+   *
+   * Not `setPaused`, which suspends the context and would take the jump-scare's own sound
+   * with it. What has to stop is the world — a spider still chittering over the scare is a
+   * world that has not noticed the player is dead — and what has to survive is the one
+   * sound the scare is allowed. Nothing is resumed by this; the run that follows builds its
+   * own emitters.
+   */
+  silenceWorld(): void {
+    for (const emitter of this.emitters) emitter.stop();
+    for (const source of this.pool) if (source.isPlaying) source.stop();
+  }
+
   /** Move the listener with the player. Called per rendered frame from the interpolated position. */
   update(x: number, z: number): void {
     this.listener?.position.set(x, 1.4, z);

@@ -161,6 +161,24 @@ describe('the frame loop (§7)', () => {
   });
 });
 
+describe("the world's voices stop when the run does (§5.3)", () => {
+  it('does not run the emitter voices past the end of the run', () => {
+    // The bug this holds shut: `SpiderVoices` and `LampVoices` re-`play()` their emitters
+    // whenever the thing they speak for is doing something, and they update on the render
+    // loop rather than the tick. Silencing the world on death stopped them for one frame
+    // and they came straight back. It was invisible while death suspended the whole audio
+    // context — the sources were playing into a suspended context — and became audible the
+    // moment the context had to stay alive for the scare's own sound.
+    const code = readFileSync(new URL('../src/Run.ts', import.meta.url), 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+
+    const guarded = /if \(outcome\.simulating\) \{[^}]*voices\.update\(\);[^}]*lampVoices\.update\(\);[^}]*\}/s;
+    expect(guarded.test(code)).toBe(true);
+  });
+});
+
 describe('the two jump-scares (§5.3)', () => {
   const source = readFileSync(new URL('../src/ui/RunOverlays.ts', import.meta.url), 'utf8');
 

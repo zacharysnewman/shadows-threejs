@@ -32,6 +32,8 @@ export const SOUND_NAMES = [
   'chitter',
   'lamp_buzz',
   'heartbeat',
+  'death_spider',
+  'death_monster',
 ] as const;
 
 export type SoundName = (typeof SOUND_NAMES)[number];
@@ -44,6 +46,12 @@ export interface SynthesisedSound {
 }
 
 /**
+ * **`filter` is a high-pass when positive and a low-pass when negative, and its corner is
+ * twice the number.** ZzFX builds one biquad from `sign(filter)` — `b0 = (1 + sign · cos)/2`
+ * is the high-pass form — so reaching for a positive number to darken a sound removes its
+ * bottom instead, which is the opposite of what was wanted and reads as the sound simply
+ * being thin.
+ *
  * One ZzFX shot placed in a buffer. The parameter order is ZzFX's own:
  * `volume, randomness, frequency, attack, sustain, release, shape, shapeCurve, slide,
  * deltaSlide, pitchJump, pitchJumpTime, repeatTime, noise, modulation, bitCrush, delay,
@@ -155,6 +163,36 @@ const RECIPES: Readonly<Record<SoundName, Recipe>> = {
     shots: [
       { at: 0.0, params: [1, 0, 58, 0.002, 0.03, 0.14, SINE, 0.8, -30, 0, 0, 0, 0, 0.1, 0, 0, 0, 0.5, 0.1, 0, 180] },
       { at: 0.17, params: [0.55, 0, 52, 0.002, 0.025, 0.12, SINE, 0.8, -26, 0, 0, 0, 0, 0.1, 0, 0, 0, 0.5, 0.1, 0, 180] },
+    ],
+  },
+
+  /**
+   * §5.3 — the spider's kill. Bright, dry and convulsive: three stabs on an uneven beat,
+   * the same shape the scare draws. High and noisy on purpose — it is the half of the pair
+   * that must never be mistaken for the other, and the other is all bottom end.
+   */
+  death_spider: {
+    seconds: 1.0,
+    loop: false,
+    shots: [
+      { at: 0.0, params: [1, 0, 1250, 0.001, 0.05, 0.2, SAW, 1.5, -140, 0, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0.08, 0, 0] },
+      { at: 0.11, params: [0.9, 0, 1620, 0.001, 0.04, 0.16, SAW, 1.6, -180, 0, 0, 0, 0, 0.65, 0, 0, 0, 0.45, 0.06, 0, 0] },
+      { at: 0.27, params: [0.85, 0, 1080, 0.001, 0.07, 0.3, SAW, 1.4, -110, 0, 0, 0, 0, 0.45, 0, 0, 0, 0.5, 0.1, 0, 0] },
+    ],
+  },
+
+  /**
+   * §5.3 — the monster's kill. One low impact with a long decay, and nothing bright in it
+   * at all: the scare is the light going out, and a sound with a top end would be a second
+   * thing arriving rather than everything leaving. It runs the length of the hold.
+   */
+  death_monster: {
+    seconds: 1.5,
+    loop: false,
+    shots: [
+      { at: 0.0, params: [1, 0, 38, 0.03, 0.32, 1.1, SINE, 0.7, -9, 0, 0, 0, 0, 0, 0, 0, 0, 0.6, 0.3, 0, -90] },
+      // A little body over the sub, low-passed hard so it reads as weight and not as a tone.
+      { at: 0.0, params: [0.45, 0, 70, 0.02, 0.14, 0.6, TRIANGLE, 0.9, -20, 0, 0, 0, 0, 0, 0, 0, 0, 0.5, 0.22, 0, -70] },
     ],
   },
 };
