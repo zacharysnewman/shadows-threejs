@@ -325,6 +325,30 @@ describe('sprint (§3.1)', () => {
     expect(player.aim.y).toBeCloseTo(-1, 1);
   });
 
+  it('is unsettled while sprint-locked and while sweeping back, settled the rest of the time', () => {
+    // The flashlight's pointer-aimed pitch (§4.1) reads this to decide whether `aim` is
+    // where the cursor actually is right now, or heading somewhere else under the sprint
+    // lock — trusting the cursor's ground point during either would pitch the beam off
+    // the direction the yaw itself is showing.
+    const player = new Player(spawnAt(9, 9), openField());
+    expect(player.aimSettled).toBe(true);
+
+    run(player, 0.5, 1, 0, true); // sprinting east
+    expect(player.aimSettled).toBe(false);
+
+    // Released with the cursor elsewhere: still unsettled while the sweep-back is under way.
+    player.tick(TICK, 0, 0, false);
+    player.aimTowards(-1, 0);
+    expect(player.aimSettled).toBe(false);
+
+    // Caught up: direct aiming again.
+    for (let i = 0; i < 30; i += 1) {
+      player.aimTowards(-1, 0);
+      player.tick(TICK, 0, 0, false);
+    }
+    expect(player.aimSettled).toBe(true);
+  });
+
   it('outruns everything on the map, and a walk outruns everything but a fleeing spider (§5)', () => {
     // The interlock §5 depends on: speed is never what makes an enemy dangerous.
     expect(PLAYER.sprintSpeed).toBeGreaterThan(ENEMY.spider.fleeSpeed);

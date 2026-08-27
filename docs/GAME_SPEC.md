@@ -731,11 +731,29 @@ shapes on screen is theirs is not playing a dark game, they are playing a broken
   range 12 m along the ground.
 - **Mounting:** carried at chest height (1.6 m) and emitted 0.55 m along the aim, just clear
   of the player's capsule — a light inside the player's own mesh is shadowed by it, and the
-  player's shoulders throw a black wedge across their own beam. The axis is declined so the
-  cone's *upper* edge meets the ground at the beam's range, which puts the near edge of the
-  lit pool about a metre in front of the player. A beam pointed flat along the aim vector
-  spends its upper half on walls and leaves the floor dark around the player, which under
-  the pitched camera (§3.2) reads as a hole rather than as a torch.
+  player's shoulders throw a black wedge across their own beam. With no pointer to follow
+  (see below) the axis is declined so the cone's *upper* edge meets the ground at the beam's
+  range, which puts the near edge of the lit pool about a metre in front of the player. A
+  beam pointed flat along the aim vector spends its upper half on walls and leaves the floor
+  dark around the player, which under the pitched camera (§3.2) reads as a hole rather than
+  as a torch.
+
+  **With a settled pointer aim, the declination instead pitches the beam at the ground point
+  under the cursor** — the mouse only; a stick or gamepad already names a direction rather
+  than a screen point, and has nothing to pitch towards. "Settled" excludes a sprint-locked
+  aim and the sweep back to the cursor once one ends (§3.1): the yaw is not where the cursor
+  is either then, and pitching at it would point the beam off the direction the yaw itself
+  is showing. The point is read off the ground plane the player stands on and nothing else —
+  never a raycast against trees, walls or props, or an occluder under the cursor would tip
+  the beam up at the sky instead of the floor it is meant to search. The distance is clamped
+  between 0.5 m and the beam's range: nearer, or a cursor at or behind the player, projects
+  at or past zero, and the target would land behind the origin instead of in front of it —
+  the beam folding back through the player rather than settling near their feet; further and
+  the pitch would flatten past the range the cone is built for. 0.5 m is low enough that
+  aiming down at the ground right in front of the player still tracks the cursor rather than
+  snapping to a fixed distance. Eased towards rather than snapped to, over a render-frame
+  time constant, so the pitch does not visibly step at display refresh rate. Both the near
+  clamp and the time constant are tunable (§8.3).
 
   **Where the torch is held is five values, and all five are tunable (§8.3):** the height it
   is carried at, how far forward of the player it is emitted, how far to the player's right

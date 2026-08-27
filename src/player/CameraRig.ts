@@ -21,6 +21,7 @@
 
 import * as THREE from 'three';
 import { CAMERA } from '../config';
+import { Damped } from '../core/Damped';
 import type { Viewport } from '../core/Viewport';
 
 /** Ground footprint of the frustum, as offsets from the point the camera looks at. */
@@ -73,42 +74,6 @@ export function groundFootprint(
     minZ: behind - far,
     maxZ: behind - near,
   };
-}
-
-/**
- * One axis of critically damped smoothing (§3.2).
- *
- * Critically damped is the point: an underdamped follow overshoots and sends the map
- * sliding back under the player, and in a game where the player reads threat position off
- * the screen edge, that reads as the world moving rather than the camera settling. Solved
- * analytically so the result is identical at any frame rate, rather than integrated.
- */
-export class Damped {
-  velocity = 0;
-
-  constructor(public value: number = 0) {}
-
-  snap(target: number): void {
-    this.value = target;
-    this.velocity = 0;
-  }
-
-  step(target: number, timeConstant: number, dt: number): number {
-    if (dt <= 0) return this.value;
-    if (timeConstant <= 1e-6) {
-      this.snap(target);
-      return this.value;
-    }
-
-    const omega = 1 / timeConstant;
-    const decay = Math.exp(-omega * dt);
-    const offset = this.value - target;
-    const scaled = this.velocity + omega * offset;
-
-    this.value = target + (offset + scaled * dt) * decay;
-    this.velocity = (this.velocity - omega * scaled * dt) * decay;
-    return this.value;
-  }
 }
 
 export class CameraRig {

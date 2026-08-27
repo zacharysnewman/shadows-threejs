@@ -912,6 +912,31 @@ forward offset was a literal in `Flashlight` (`PLAYER.radius + 0.15`), which is 
 number CLAUDE.md says belongs in the config; it does now. Where the torch is held and where
 it points stay separate: the yaw trim turns the beam and leaves the origin alone.
 
+*The beam now pitches at the ground under the cursor, not just yaws towards it.* The player
+already turns to face the mouse (§3.1); the flashlight's declination did not follow, so the
+beam always met the floor at the derived, fixed distance regardless of where on screen the
+cursor sat. `Flashlight.update` now takes the cursor's ground point — read off the y = 0
+plane the same way the player's own aim already is, never a raycast against the scene, or a
+tree under the cursor would tip the beam at the sky — and projects it onto the beam's own
+axis to get a distance, clamped to `FLASHLIGHT.pointerAim`'s near bound and the beam's range,
+eased in on `Damped` (moved to `src/core/` so the camera rig and the flashlight can both use
+it) rather than snapped. Trusted only while `Player.aimSettled` holds: a sprint-locked aim or
+one sweeping back from a sprint (§3.1) is not pointing where the cursor is yet, and pitching
+at it then would fight the same lock the yaw already respects. No pointer, or the fallback,
+reproduces the derived declination exactly, unchanged.
+
+Driven live on `example` (§ Driving the game in a browser) against the first near bound
+(2 m): a cursor near the player's own screen position clamped the reach to it, one near the
+top of the frame stretched it to ~6.6 m, and both read `target.position.y === 0` throughout
+— the point never leaves the ground plane, because nothing here ever raycasts the scene for
+it. Switching `input.aimSource` to `'stick'` reproduced the derived ~2.76 m reach exactly.
+Sprinting with the cursor thrown across the screen mid-sprint held the reach at ~2.76 m
+rather than following it, matching `aimSettled` gating the pointer out. The near bound was
+then lowered to 0.5 m so aiming close in front of the player still tracks the cursor instead
+of clamping early; re-driven against it, a cursor near the player's own screen position now
+clamps the reach to 0.500 m rather than 2 m, and the far reach, the fallback and the sprint
+lock were unchanged.
+
 *A lamp you can see.* §4.2's environmental lights were a pool of light coming out of nothing,
 so an unpowered one was not dim, it was *absent* — a level with lamps and no switch wired to
 them looked like a level with no lamps in it. There is a post and a shade now, and the head

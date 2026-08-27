@@ -435,7 +435,8 @@ export async function createRun(
   });
   overlay.addRow('aim', () =>
     `(${player.aim.x.toFixed(2)}, ${player.aim.y.toFixed(2)}) · ` +
-    `${player.sprinting ? 'locked to movement (§3.1)' : input.aimSource}`,
+    `${player.sprinting ? 'locked to movement (§3.1)' : input.aimSource}` +
+    `${pointerGround ? ' · pitched to cursor' : ''}`,
   );
   // §5.3, §6 — the run's ending, which is otherwise only visible as a screen.
   overlay.addRow('run', () => {
@@ -592,6 +593,13 @@ export async function createRun(
   const hit = new THREE.Vector3();
   let hovered = '—';
   let hoveredTile: { gx: number; gy: number } | null = null;
+  /**
+   * The cursor's ground point, set by `updateAim` and read by the flashlight's pointer-
+   * aimed pitch (§4.1) — null whenever the pointer is not a trustworthy source for it: a
+   * stick or gamepad is aiming instead, the ray missed the ground plane, or the player's
+   * aim is not settled (mid-sprint or sweeping back from one, §3.1).
+   */
+  let pointerGround: { x: number; z: number } | null = null;
   viewport.renderer.domElement.addEventListener('pointermove', (event) => {
     pointer.set(
       (event.clientX / window.innerWidth) * 2 - 1,
@@ -709,6 +717,7 @@ export async function createRun(
    * rate rather than at the 60 Hz tick.
    */
   function updateAim(): void {
+    pointerGround = null;
     if (input.aimSource === 'stick') {
       player.aimTowards(input.aimX, input.aimZ);
       return;
@@ -716,7 +725,12 @@ export async function createRun(
     if (input.aimSource !== 'pointer') return;
     pointer.set(input.pointerNdcX, input.pointerNdcY);
     raycaster.setFromCamera(pointer, viewport.camera);
-    if (raycaster.ray.intersectPlane(groundPlane, hit)) player.aimAt(hit.x, hit.z);
+    if (!raycaster.ray.intersectPlane(groundPlane, hit)) return;
+    player.aimAt(hit.x, hit.z);
+    // §4.1 — the flashlight's pitch trusts this point only once the yaw it drives has
+    // actually settled on it; mid-sprint or sweeping back from one, `aim` is heading
+    // somewhere else and pitching at the cursor would point the beam off the aim it shows.
+    if (player.aimSettled) pointerGround = { x: hit.x, z: hit.z };
   }
 
   /**
@@ -988,10 +1002,16 @@ export async function createRun(
     if (outcome.awaitingRestart) {
       // §6 — the only thing the action means now is "again".
       if (input.wasPressed('interact')) overlays.dismiss();
+      // `updateAim` does not run to clear this itself while input is disabled — done here
+      // so the beam falls back to its derived pitch rather than holding the last point the
+      // cursor stood over before the run ended.
+      pointerGround = null;
     } else if (outcome.inputEnabled) {
       updateAim();
       resolveInteraction();
       resolveFlashlight();
+    } else {
+      pointerGround = null;
     }
 
     // §7 — the simulation advances in fixed ticks; rendering is whatever the display gives.
@@ -1022,6 +1042,8 @@ export async function createRun(
       player.object.position.z,
       player.aim.x,
       player.aim.y,
+      pointerGround,
+      realDelta,
     );
     // §4.1 — and then the hands go to it, and the torch is drawn between the two. In this
     // order because the beam's placement is the fixed thing and the arm is what gives: a

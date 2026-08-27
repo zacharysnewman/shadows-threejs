@@ -499,6 +499,29 @@ export const FLASHLIGHT = {
     yawTrimDegrees: 0,
   },
   /**
+   * §4.1 — pointer aim: the declination follows the ground point under the cursor instead
+   * of the derived, fixed decline, whenever the pointer is the aim source and settled
+   * (not sprint-locked, not sweeping back from one).
+   */
+  pointerAim: {
+    /**
+     * Nearest distance along the beam axis the pitch will follow the cursor to, in metres.
+     * A cursor on or behind the player projects at or past zero; without a floor the target
+     * would land behind the origin instead of in front of it, and the beam would fold back
+     * through the player rather than settle near their feet. Low enough that aiming the
+     * torch close in — down at the ground right in front of the player — still tracks the
+     * cursor rather than snapping to a fixed distance.
+     */
+    nearDistance: 0.5,
+    /**
+     * Time constant the aim distance eases towards the cursor's ground point on, in
+     * seconds (§7's render delta — this is presentation, not simulation). Short enough
+     * that the beam reads as pointed at the cursor rather than lagging behind it, long
+     * enough that the pitch does not visibly step at display refresh rate.
+     */
+    smoothingTime: 0.08,
+  },
+  /**
    * Beam brightness at full charge, in Three.js spotlight units at the decay below. A look
    * value: §4.1 fixes the cone's shape and the battery's arithmetic, not its candela.
    */
