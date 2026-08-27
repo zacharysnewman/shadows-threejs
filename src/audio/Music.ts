@@ -27,7 +27,22 @@
  *
  * **A browser will not start audio before a gesture**, and the menu is on screen before
  * there has been one. A refusal is the expected first answer rather than a failure, and the
- * reply to it is to wait for an input and try again — see `start`.
+ * reply to it is to wait for an input and try again — see `start`. The attempt is made
+ * anyway, every time, because the refusal is not universal: a browser that has decided this
+ * origin may autoplay starts the menu's music the moment the menu appears, and the only way
+ * to find out which kind of browser this is, is to ask it.
+ *
+ * **A page loaded out of sight has not shown its menu yet.** A tab restored with a session
+ * or opened in the background is refused for a reason that expires — the browser will not
+ * start audio for a page nobody is looking at — so the attempt is repeated when the page
+ * becomes visible. Without it, a menu that was never on screen when the music was asked for
+ * has to wait for a click that a player who is only listening never makes.
+ *
+ * **And once it has started, it stops being heard the same way it stopped being playable.**
+ * A minimised window, a backgrounded tab, a browser that lost focus to something else —
+ * none of those are `stop()` (the run has not started), so the track is paused directly and
+ * resumed the moment the page is visible and focused again, rather than left running for an
+ * empty room or restarted from silence when the player comes back. See `armFocus`.
  *
  * **Two gates open on that gesture, in this order: the context, then the element.** The
  * context is asked to resume and the element is asked to play in the same handler, neither
@@ -83,6 +98,12 @@ export class Music {
   private source: MediaElementAudioSourceNode | null = null;
   /** Removes the one-shot gesture listeners, or null when none are armed. */
   private disarm: (() => void) | null = null;
+  /** Removes the visibility listener, or null when none is armed. */
+  private disarmVisible: (() => void) | null = null;
+  /** Removes the focus/visibility listeners that pause and resume playback, or null. */
+  private disarmFocus: (() => void) | null = null;
+  /** True while playback is paused because the page lost focus or visibility, not `stop()`. */
+  private focusPaused = false;
   private wanted = false;
   /** Whether the track has ever actually started — what tells a first start from a return. */
   private begun = false;
@@ -155,6 +176,8 @@ export class Music {
     // track is mid-phrase where a run interrupted it — and that fades.
     if (this.begun) this.rampTo(MUSIC.volume, MUSIC.fadeInSeconds);
     else this.setLevel(MUSIC.volume);
+    this.armVisible();
+    this.armFocus();
     this.attempt();
   }
 
@@ -162,6 +185,9 @@ export class Music {
   stop(): void {
     this.wanted = false;
     this.clearGesture();
+    this.clearVisible();
+    this.clearFocus();
+    this.focusPaused = false;
     window.clearInterval(this.probe);
     if (this.fellBack) {
       // No fade: a phone holds an element's volume at the device's own, so this is a cut
@@ -181,6 +207,8 @@ export class Music {
     this.wanted = false;
     window.clearInterval(this.probe);
     this.clearGesture();
+    this.clearVisible();
+    this.clearFocus();
     this.element.pause();
     this.element.removeAttribute('src');
     this.source?.disconnect();
@@ -221,6 +249,7 @@ export class Music {
       () => {
         this.begun = true;
         this.clearGesture();
+        this.clearVisible();
         // The context may have come up while the element was starting.
         this.attachToGraph();
         this.watchRoute();
@@ -278,6 +307,85 @@ export class Music {
   private clearGesture(): void {
     this.disarm?.();
     this.disarm = null;
+  }
+
+  /**
+   * Try again whenever the page comes into view, until the track has actually started.
+   *
+   * Not a gesture and not a substitute for one: this is the case where the *reason* for the
+   * refusal was that nobody was looking at the page. A browser willing to autoplay this
+   * origin still will not do it for a background tab, so the attempt made when the menu was
+   * built was answered for a menu that was never on screen. Held rather than one-shot,
+   * because a tab can be hidden and shown any number of times before it is played.
+   */
+  private armVisible(): void {
+    if (this.disarmVisible || this.begun) return;
+
+    const retry = (): void => {
+      if (!this.wanted || this.begun || document.visibilityState !== 'visible') return;
+      this.attempt();
+    };
+    document.addEventListener('visibilitychange', retry);
+    this.disarmVisible = () => document.removeEventListener('visibilitychange', retry);
+  }
+
+  private clearVisible(): void {
+    this.disarmVisible?.();
+    this.disarmVisible = null;
+  }
+
+  /**
+   * Pause the menu's music while nobody could be hearing it, and pick it back up when they
+   * could again — a minimised window, a backgrounded tab, a browser that lost focus to
+   * another application. None of those are `stop()`: the run has not started, the track
+   * should still be *there* when the player comes back, just not spending a run's worth of
+   * play time on an empty room.
+   *
+   * Visibility and focus are two different failures and a track can suffer either without
+   * the other — a tab kept in front on a second monitor while the browser window itself is
+   * not focused is visible but not focused; a tab switched away from behind an unfocused
+   * browser is neither. `document.hasFocus()` alone would miss the first case on some
+   * browsers, which keep reporting focus to a background window; `visibilitychange` alone
+   * misses the second. Together they are the same "can this be heard" question §8.1's music
+   * asks everywhere else, just answered from the DOM instead of the graph.
+   *
+   * Armed once, on `start()`, and left armed for as long as the menu wants the track — it
+   * has nothing to do before the track has actually begun (`syncFocus` no-ops on `!begun`),
+   * so there is no separate teardown for "not yet started" to get wrong.
+   */
+  private armFocus(): void {
+    if (this.disarmFocus) return;
+    const sync = (): void => this.syncFocus();
+    document.addEventListener('visibilitychange', sync);
+    window.addEventListener('blur', sync);
+    window.addEventListener('focus', sync);
+    this.disarmFocus = () => {
+      document.removeEventListener('visibilitychange', sync);
+      window.removeEventListener('blur', sync);
+      window.removeEventListener('focus', sync);
+    };
+  }
+
+  private clearFocus(): void {
+    this.disarmFocus?.();
+    this.disarmFocus = null;
+  }
+
+  private syncFocus(): void {
+    if (!this.wanted || !this.begun) return;
+    const audible = document.visibilityState === 'visible' && document.hasFocus();
+    if (!audible && !this.focusPaused) {
+      this.focusPaused = true;
+      this.element.pause();
+    } else if (audible && this.focusPaused) {
+      this.focusPaused = false;
+      // A script-initiated `play()` with no gesture behind it, but on an element the
+      // browser has already been letting play — the permission this needs was granted
+      // once, at the gesture that started the track, and does not expire because the tab
+      // went to the back for a while. Nothing to do if a browser disagrees; the next
+      // return to focus tries again.
+      void this.element.play().catch(() => undefined);
+    }
   }
 
   /**

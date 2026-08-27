@@ -25,7 +25,7 @@ Pulled from the author's own repository at a pinned commit:
 
 | Our name          | Kit file                      |
 | ----------------- | ----------------------------- |
-| `floor_concrete`  | `floor_tile_small.gltf.glb`   |
+| `floor_grass`  | `floor_tile_small.gltf.glb`   |
 | `floor_dirt`      | `floor_dirt_small_A.gltf.glb` |
 | `wall_brick`      | `wall_half.gltf.glb`          |
 | `fence_chainlink` | `barrier_half.gltf.glb`       |
@@ -56,8 +56,16 @@ with the author.
 
 Our names are the roles the map pipeline asks for and predate the kit; they are not
 descriptions of what these models look like. This kit is stone-and-timber, so
-`floor_concrete` is a flagstone and `fence_chainlink` is a wooden barrier. Renaming the
-roles is a map-data change (`tileset.json`), not a code one.
+`fence_chainlink` is a wooden barrier, and `floor_grass` is not grass — see below. Renaming
+the roles is a map-data change (`tileset.json`), not a code one.
+
+**The floor prefabs bring their shape and not their surface.** Both are re-surfaced on load
+with the ground texture the game generates (§2, `GroundTextures`), so what the kit's
+flagstone contributes is a slab of the right size sitting at the right height — the earth on
+top of it is ours. `floor_grass` and `floor_dirt` wear the same generated ground: a turf
+surface was tried for the former and cut, because at the resolution a floor tile actually
+renders at the blade detail read as noise rather than as grass. The role name stays for map
+authoring; the two are visually identical today.
 
 ## Fitting
 

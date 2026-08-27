@@ -480,11 +480,15 @@ export function buildWalkClip(
     return new THREE.QuaternionKeyframeTrack(`${name}.quaternion`, times, values);
   };
 
-  // Twice per stride: the body lifts over each supporting leg.
+  // Twice per stride: the body lifts over each supporting leg. `cos`, not `sin`, and that
+  // is the whole of it — the peak belongs at the pass, where the legs are together and one
+  // of them is carrying the body, not at the two moments the legs are furthest apart and
+  // the weight is being handed over. Inverted, the body rose exactly when a foot landed,
+  // which reads as bouncing rather than walking and puts §4.3's step on the wrong frame.
   const bobTimes = [0, period / 4, period / 2, (period * 3) / 4, period];
   const bobValues: number[] = [];
   for (const time of bobTimes) {
-    const lift = Math.abs(Math.sin((time / period) * Math.PI * 2)) * bob;
+    const lift = Math.abs(Math.cos((time / period) * Math.PI * 2)) * bob;
     // A position track is absolute, not additive, so the rest position has to be in it —
     // otherwise the first frame of the walk snaps the hips to the model's origin.
     const v = hipRest.clone();

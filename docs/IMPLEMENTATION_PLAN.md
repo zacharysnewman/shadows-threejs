@@ -958,7 +958,7 @@ were already centred and did not move.
 | Spider and Shadow Monster | centres `(18.81, 31.57)` and `(46.35, 3.35)` against positions `(18.83, 31.52)` and `(46.35, 3.35)`; both grounded at `y = 0`, heights 0.71 m and 2.20 m |
 | Every fitted prefab's footing, `poi-test` | all nine centred on `(0, 0)` — the tree's 1.44 m trunk was `(−0.25, −1.22)` off its tile before, the hoop's pole `(0, −0.86)` |
 | The tree, grounded | trunk ring at `y = 0.000` exactly; the root point 0.26 m below the floor, where a root belongs |
-| `floor_dirt` against `floor_concrete` | both surfaces at `y = 0`; the dirt's stones stand to `+0.086` instead of the tile sinking by them |
+| `floor_dirt` against `floor_grass` | both surfaces at `y = 0`; the dirt's stones stand to `+0.086` instead of the tile sinking by them |
 | A north–south fence run | one continuous barrier, screenshot `after-fence.png`; a comb of disconnected rungs before it |
 | A north–south wall run | one continuous wall, screenshot `after-wall.png` |
 | Torch held at `height 0.6, lateral 0.7, yaw 25°` | origin `(20.30, 0.60, 27.55)` for a player at `(21, 27)` and a beam aimed 25° right of the aim — matches the arithmetic to 3 dp, and the pool moves off-centre on screen |
@@ -1276,7 +1276,7 @@ that judgement has to be made on real hardware.
   skeleton for a character. Still outstanding: the audio, the level itself, and a real
   authored rig for the player (below).
 
-  **The kit is medieval stone, and the prefab names are not.** `floor_concrete` is a
+  **The kit is medieval stone, and the prefab names are not.** `floor_grass` is a
   flagstone and `fence_chainlink` is a timber barrier. The names are the *roles* the map
   pipeline asks for and predate the kit, so this is a map-data question (`tileset.json`) and
   not a code one — but it does mean the game currently looks like a dungeon rather than the

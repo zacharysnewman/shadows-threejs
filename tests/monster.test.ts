@@ -392,9 +392,10 @@ describe('Shadow Monster blink (§5.2)', () => {
     }
   });
 
-  it('can be heard walking while the beam is down', () => {
-    // The blink used to be silent, because a 2 m jump-cut is not eight strides. It is a
-    // walk now, and the footsteps are the only thing the player has in that half second.
+  it('walks the blink rather than jump-cutting through it', () => {
+    // §5.2 — the window is something the player is inside, not something they are told
+    // about afterwards, and that rests on the monster covering the ground at its own pace.
+    // It makes no sound doing it (§5.2), so the ground is the only thing that says so.
     const built = world(OPEN);
     const light = beam(true);
     const monster = monsterAt(20, 20);
@@ -412,9 +413,11 @@ describe('Shadow Monster blink (§5.2)', () => {
       }
     }
 
-    // `MonsterFootsteps` plays one step per `strideMetres` of ground covered, and no
-    // longer suppresses the blink — so ground covered here is steps heard.
-    expect(movedWhileBlinking).toBeGreaterThan(ENEMY.shadowMonster.strideMetres);
+    // Derived from the two values that decide it, not a distance of its own: a blink is
+    // its pursuit speed held for the blink's length. Most of one blink is the floor here,
+    // because a run of them can be cut short by the monster arriving.
+    const perBlink = ENEMY.shadowMonster.pursueSpeed * ENEMY.shadowMonster.blink.seconds;
+    expect(movedWhileBlinking).toBeGreaterThan(perBlink * 0.8);
   });
 
   it('cannot retrigger inside its cooldown', () => {

@@ -43,7 +43,6 @@ export const PLAYER_FOOTSTEPS = [
 export const SOUND_NAMES = [
   'test_ping',
   ...PLAYER_FOOTSTEPS,
-  'footstep_heavy',
   'chitter',
   'lamp_buzz',
   'heartbeat',
@@ -131,22 +130,6 @@ const RECIPES: Readonly<Record<SoundName, Recipe>> = {
   footstep_light_2: FOOTSTEP_LIGHT,
   footstep_light_3: FOOTSTEP_LIGHT,
   footstep_light_4: FOOTSTEP_LIGHT,
-
-  /**
-   * The Shadow Monster's step (§5.2, §4.3): the same gesture an octave and a half down,
-   * with a long tail. Low frequencies are what survive distance, and being tracked by ear
-   * before it is seen is the whole of how this creature is played against.
-   */
-  footstep_heavy: {
-    seconds: 0.55,
-    loop: false,
-    shots: [
-      // Almost no noise: at anything above a trace it swamps the fundamental, and the
-      // low end is the whole point — measured, a noisy version puts 4% of its energy
-      // below 150 Hz where this puts 14%.
-      { at: 0, params: [1, 0, 55, 0.005, 0.08, 0.34, SINE, 0.9, -18, 0, 0, 0, 0, 0.03, 0, 0, 0, 0.7, 0.1, 0, 0] },
-    ],
-  },
 
   /** The spider (§5.1): a run of dry clicks, looping. */
   chitter: {

@@ -85,6 +85,109 @@ export const TREES = {
   trunkHalfWidth: 0.35,
 } as const;
 
+/**
+ * §2 — the ground, generated rather than loaded (`GroundTextures`).
+ *
+ * One surface — a colour, a normal and a roughness map — that every floor tile and the
+ * whole of the surround is drawn with. A second, grass-textured surface was built and cut:
+ * at the resolution a floor tile actually renders at, blade detail read as noise rather
+ * than as grass, and this earth alone reads better than either did.
+ *
+ * The values that matter most here are the relief ones. §4 is a torch beam raking across a
+ * floor at a low angle, and a flat surface takes that light flatly — the relief is what
+ * turns a bright patch into light falling on ground.
+ */
+export const GROUND = {
+  /**
+   * Side of every generated map, in pixels, and the ground it covers, in metres.
+   *
+   * The pair is the resolution: 64 px per metre, which is about a centimetre and a half per
+   * texel — finer than a pixel of screen at the camera's height, so a beam lying across the
+   * floor finds detail rather than a gradient. The repeat is deliberately several tiles
+   * wide: a texture that repeated per tile would put the map's own grid into the ground.
+   */
+  textureSize: 512,
+  metresPerRepeat: 8,
+  /**
+   * How strongly the height field bends the normal, and how much of that reaches the light.
+   *
+   * The height field is in *metres* and so is the ground a texel covers, so the gradient is
+   * already a true slope and 1 is the honest answer; this is the exaggeration on top, which
+   * ground textures earn because the relief that matters here is smaller than a texel.
+   * `normalScale` is the material's own, and the one to reach for when the ground looks
+   * like sandpaper or like glass.
+   */
+  normalStrength: 2.5,
+  normalScale: 1.0,
+  /** Texture samples per pixel at a glancing angle — ground is almost always at one. */
+  anisotropy: 8,
+
+  /**
+   * Lattice periods, in cells across one repeat. Every one is a power-of-two factor of the
+   * texture size, which is what makes the field tile: an octave whose lattice does not
+   * divide the texture is a seam.
+   */
+  patchPeriod: 4,
+  clodPeriod: 8,
+  grainPeriod: 64,
+
+  /**
+   * How deep the relief goes, in metres, at the top of the height field.
+   *
+   * A small number, and it has to be: this is beaten earth, not rubble. What makes it read
+   * is that it is *measured* — a normal map built from a height field in metres over a
+   * texel of known size is a real slope, so a millimetre-scale clod lights like one and the
+   * beam has something to find.
+   */
+  dirtRelief: 0.024,
+  /** How much of that relief is the fine grain over the slower clods under it. */
+  grainRelief: 0.35,
+
+  /** Earth, from damp to dry, and the darker colour where water has stood. */
+  dirtDark: 0x4a3a2b,
+  dirtLight: 0x7d6446,
+  dirtDamp: 0x342a1f,
+  dirtRoughness: 1.0,
+
+  /**
+   * The stones lying on it: one candidate per lattice cell, of which this fraction hold a
+   * stone. Ground paved with them is shingle, and the point of a pebble is that it is the
+   * one thing on an otherwise even surface that a moving light picks out.
+   */
+  pebbleCells: 22,
+  pebbleCoverage: 0.22,
+  /** Stone radius, in metres. Gravel, not cobbles. */
+  pebbleRadius: { min: 0.018, max: 0.055 },
+  /** How far a stone stands proud of the ground, as a fraction of its own radius. */
+  pebbleRelief: 0.45,
+  /**
+   * How much of a stone's colour covers the ground at its centre — well short of 1, because
+   * a stone lies half *in* the earth and the shape is the normal map's job rather than the
+   * colour's. Opaque discs read as bubbles on the surface.
+   */
+  pebbleOpacity: 0.55,
+  /** Every stone one of these, drawn from its own hash: one grey repeated is a pattern. */
+  pebbleDark: 0x6e6a60,
+  pebblePale: 0xa09c90,
+  /** Smoother than earth: a stone catching a highlight is how the beam finds it. */
+  pebbleRoughness: 0.55,
+
+  /**
+   * Which ground each floor prefab is surfaced with, and what §2's surround stands on.
+   *
+   * All three name the same generated ground (`GroundTextures`). A textured lawn was tried
+   * for `floor_grass` and cut — at the resolution a floor tile renders at, blade detail read
+   * as noise rather than as grass — so the role stays for map authoring, the way
+   * `fence_chainlink` stays a role name for a wooden barrier in this kit, and every role
+   * wears the same earth.
+   */
+  surfaces: {
+    floor_grass: 'dirt',
+    floor_dirt: 'dirt',
+  },
+  surroundSurface: 'dirt',
+} as const;
+
 export const SURROUND = {
   /**
    * How tall a surround tree stands, in metres, and how much that varies.
@@ -106,12 +209,15 @@ export const SURROUND = {
    * *generated* rather than a kit prefab (see `Surround`) — at this spacing a 50-triangle
    * tree fills the band for a fraction of what one 3,104-triangle model would cost (§7).
    */
-  spacingMetres: 0.5,
+  // Density was halved from the value that came first: it read as too thick a hedge at
+  // the map's edge. A grid pitch scales instance count with its square, so halving the
+  // count is a spacing of `× √2`, not `× 2`.
+  spacingMetres: 0.71,
   /**
    * How far a tree may sit from its grid point, in metres. Enough to break the lattice —
    * a visible grid at the edge of the map advertises the boundary it exists to disguise.
    */
-  jitterMetres: 0.25,
+  jitterMetres: 0.35,
   /**
    * How deep the band holds that spacing, in metres — and past it, how much coarser the
    * lattice gets.
@@ -140,16 +246,17 @@ export const SURROUND = {
    * ultrawide sees a little further sideways than there are trees.
    */
   widestAspect: 21 / 9,
-  /**
-   * Albedo of the ground beyond the boundary — dark earth, lit by §4's night ambient
-   * exactly as the map's own floor is.
-   *
-   * Deliberately *not* the fog's colour. Fog is what the scene fades into and is also the
-   * background (§7), so ground painted fog-coloured is ground indistinguishable from the
-   * void it was laid down to cover. It has to be lit like floor to read as floor, and then
-   * the fog takes it into the distance on its own.
-   */
-  groundColour: 0x241f1a,
+} as const;
+
+/**
+ * §8.3 — the debug floodlight: what the ambient is turned up to for *looking* at the world.
+ *
+ * Not a design value and deliberately not near one. It is high enough that §2's ground and
+ * the kit's art read as they would in daylight, which is the only way to judge a surface
+ * across a whole map rather than a beam's width at a time. Nothing in a run ever sees it.
+ */
+export const FLOODLIGHT = {
+  ambientIntensity: 40,
 } as const;
 
 /** §7 — shadow budget. Shadows are a mechanic, so these are design constraints. */
@@ -615,27 +722,11 @@ export const AUDIO = {
    * so this only has to cover footsteps, interactions and the like happening at once.
    */
   poolSize: 16,
-  /**
-   * §4.3 — ground covered between the player's own footsteps, one per foot. Driven by
-   * distance and not by a timer, so a player held against a wall makes no noise however
-   * hard they walk into it.
-   */
-  playerStrideMetres: 0.95,
   /** §4.3 — every source unless it names another profile. */
   defaultProfile: {
     model: 'linear',
     refDistance: 2,
     maxDistance: 25,
-    rolloffFactor: 1.0,
-  },
-  /**
-   * §4.3 — the Shadow Monster's footsteps carry further than anything else on the map,
-   * because hearing is the only way to track it before it is close enough to read.
-   */
-  monsterFootstepProfile: {
-    model: 'linear',
-    refDistance: 4,
-    maxDistance: 35,
     rolloffFactor: 1.0,
   },
 } as const;
@@ -799,8 +890,6 @@ export const ENEMY = {
        */
       cooldownSeconds: 0.5,
     },
-    /** §5.2 — ground covered between footsteps. Slower than the player's 0.95 m (§4.3). */
-    strideMetres: 1.6,
   },
 } as const;
 
@@ -842,7 +931,7 @@ export const PREFAB_KITS: readonly PrefabKit[] = [
     attributionRequired: false,
     prefabs: [
       'fence_chainlink',
-      'floor_concrete',
+      'floor_grass',
       'floor_dirt',
       'gate_wood',
       'prop_crate',
@@ -966,9 +1055,20 @@ export const PLAYER_RIG = {
   legSpreadFraction: 0.12,
   /** One stride, in seconds, at `walkClipSpeed`. */
   strideSeconds: 0.9,
+  /**
+   * §3.1, §4.3 — where in the cycle a foot plants: the quarter at which a leg reaches its
+   * forward extreme, and again half a cycle later for the other leg. It is the moment the
+   * step is heard, so moving it moves the sound and the body together, which is the whole
+   * point of there being one number for both.
+   */
+  footPlantPhase: 0.25,
   /** Peak leg swing from vertical. Small: the camera is 14 m up and looking down (§3.2). */
   legSwingDegrees: 22,
-  /** How far the hips rise over each supporting foot, as a fraction of height. */
+  /**
+   * How far the hips rise over each supporting foot, as a fraction of height. The peak is
+   * at the *pass* — legs together, the body over the foot carrying it — so the two lowest
+   * points of the cycle are the two footfalls, which is where the weight goes.
+   */
   bobFraction: 0.012,
   /**
    * Ground speed the stride above is authored at, in m/s — the player's own walk (§3.1), so

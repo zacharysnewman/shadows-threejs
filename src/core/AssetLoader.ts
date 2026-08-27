@@ -26,8 +26,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { PREFAB_FIT, PREFAB_FOOTING } from '../config';
+import { GROUND, PREFAB_FIT, PREFAB_FOOTING } from '../config';
 import { GENERATED_PREFABS } from './GeneratedPrefabs';
+import { groundMaterial, type GroundSurface } from './GroundTextures';
 
 export interface Prefab {
   name: string;
@@ -216,11 +217,13 @@ export class AssetLoader {
     const cached = this.cache.get(key);
     if (cached) return cached;
 
-    const pending = this.loadUncached(name, tileSize).catch((error: unknown) => {
-      console.warn(`[assets] prefab "${name}" failed to load; using placeholder`, error);
-      this.missing.add(name);
-      return this.makePlaceholder(name, tileSize);
-    });
+    const pending = this.loadUncached(name, tileSize)
+      .catch((error: unknown) => {
+        console.warn(`[assets] prefab "${name}" failed to load; using placeholder`, error);
+        this.missing.add(name);
+        return this.makePlaceholder(name, tileSize);
+      })
+      .then((prefab) => resurface(prefab));
 
     this.cache.set(key, pending);
     return pending;
@@ -373,9 +376,38 @@ export class AssetLoader {
     for (const pending of this.cache.values()) {
       void pending.then((prefab) => {
         prefab.geometry.dispose();
-        for (const material of [prefab.material].flat()) material.dispose();
+        // The ground materials are shared between every prefab that uses them and outlive
+        // any one loader (`GroundTextures`), so they are not this cache's to throw away.
+        for (const material of [prefab.material].flat()) {
+          if (!material.name.startsWith('ground:')) material.dispose();
+        }
       });
     }
     this.cache.clear();
   }
+}
+
+/**
+ * §2 — give a floor prefab the ground it is actually made of.
+ *
+ * The kit's floor modules bring their *shape*: a slab of the right size, sitting at the
+ * right height, with the rim and the thickness that make a tile read as ground rather than
+ * as a painted plane. What they do not bring is a surface anyone would want a whole map of —
+ * their texture is an atlas of one flagstone, and a hundred of them laid side by side is a
+ * hundred copies of one flagstone.
+ *
+ * Done here rather than in the map builder because everything that draws a prefab goes
+ * through this loader: the map, the editor's preview, and whatever comes next all get the
+ * same ground without any of them knowing there is a substitution.
+ *
+ * A placeholder floor is re-surfaced too. It stands in for missing art, and the ground is
+ * not missing.
+ */
+function resurface(prefab: Prefab): Prefab {
+  const surface = (GROUND.surfaces as Record<string, GroundSurface | undefined>)[prefab.name];
+  if (!surface) return prefab;
+  // The kit's own material and its texture are the only reference to several megabytes of
+  // atlas, and nothing else is going to let go of them.
+  for (const material of [prefab.material].flat()) material.dispose();
+  return { ...prefab, material: groundMaterial(surface) };
 }

@@ -183,15 +183,42 @@ describe('the walk clip (§3.1)', () => {
     }
   });
 
-  it('lifts the body twice per stride, once over each foot', () => {
+  it('puts the lift at the pass and the low points at the footfalls (§3.1)', () => {
+    // The one that was silently wrong: the body used to rise exactly where a leg reached
+    // its forward extreme — highest at the moment the foot lands, which reads as bouncing
+    // and, once §4.3's step is hung off the same phase, puts the sound on the wrong frame.
+    // The lift belongs at the pass, where the legs are together and one carries the body.
     const clip = buildWalkClip(axes, 1.86, new THREE.Vector3());
     const hips = clip.tracks.find((track) => track.name === 'hips.position')!;
-    const ys = [0, 1, 2, 3, 4].map((frame) => hips.values[frame * 3 + 1]!);
-    // Down, up, down, up, down across the five keys.
-    expect(ys[1]).toBeGreaterThan(ys[0]!);
-    expect(ys[2]).toBeLessThan(ys[1]!);
-    expect(ys[3]).toBeGreaterThan(ys[2]!);
-    expect(ys[4]).toBeLessThan(ys[3]!);
+    const lift = (frame: number): number => hips.values[frame * 3 + 1]!;
+
+    // Keys are at 0, 1/4, 1/2, 3/4, 1 of the stride, so the plant phases are frames 1 and
+    // 3 — read off the config rather than assumed, since one number decides both.
+    const plant = Math.round(PLAYER_RIG.footPlantPhase * 4);
+    expect(lift(plant)).toBeLessThan(lift(0));
+    expect(lift(plant + 2)).toBeLessThan(lift(0));
+    // Up, down, up, down, up: the pass is the peak, twice per stride.
+    expect(lift(2)).toBeCloseTo(lift(0));
+    expect(lift(4)).toBeCloseTo(lift(0));
+  });
+
+  it('swings each leg to its forward extreme at a plant phase (§3.1, §4.3)', () => {
+    // What makes the footfall phase mean anything: the step is played at
+    // `footPlantPhase`, so a leg has to be at the end of its swing there. The two legs
+    // are in antiphase, so one is at each of the two plants and neither is at the pass.
+    const clip = buildWalkClip(axes, 1.86, new THREE.Vector3());
+    const plant = Math.round(PLAYER_RIG.footPlantPhase * 4);
+    const angleAt = (name: string, frame: number): number => {
+      const track = clip.tracks.find((t) => t.name === `${name}.quaternion`)!;
+      const q = new THREE.Quaternion().fromArray(Array.from(track.values), frame * 4);
+      return 2 * Math.atan2(Math.hypot(q.x, q.y, q.z), q.w);
+    };
+
+    const swing = THREE.MathUtils.degToRad(PLAYER_RIG.legSwingDegrees);
+    expect(angleAt('legL', plant)).toBeCloseTo(swing);
+    expect(angleAt('legR', plant + 2)).toBeCloseTo(swing);
+    expect(angleAt('legL', 0)).toBeCloseTo(0);
+    expect(angleAt('legR', 0)).toBeCloseTo(0);
   });
 });
 

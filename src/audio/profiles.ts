@@ -2,9 +2,9 @@
  * Distance models and the cues they produce (§4.3).
  *
  * A profile is the whole of how far a sound carries: the Web Audio `linear` model with a
- * reference distance, a maximum, and a rolloff factor. §4.3 gives two — everything on the
- * map, and the Shadow Monster's footsteps, which carry further because hearing it is the
- * only way to track it before it is close enough to read as a shadow.
+ * reference distance, a maximum, and a rolloff factor. §4.3 gives one, which everything on
+ * the map uses; the type is a record rather than a constant so a sound that has to carry
+ * differently can be given its own without threading a distance model through its caller.
  *
  * The two functions here duplicate arithmetic the audio hardware is already doing. That is
  * deliberate: "locatable by ear" is not a property a unit test can hear, so the debug
@@ -21,11 +21,10 @@ export interface DistanceProfile {
   rolloffFactor: number;
 }
 
-export type ProfileName = 'default' | 'monsterFootsteps';
+export type ProfileName = 'default';
 
 export const AUDIO_PROFILES: Readonly<Record<ProfileName, DistanceProfile>> = {
   default: AUDIO.defaultProfile,
-  monsterFootsteps: AUDIO.monsterFootstepProfile,
 };
 
 /**

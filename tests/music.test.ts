@@ -161,6 +161,47 @@ function fakeWindow(): unknown {
   };
 }
 
+/** The page's own visibility, which the music retries on. */
+let visibility: DocumentVisibilityState = 'visible';
+
+function fakeDocument(): unknown {
+  return {
+    get visibilityState() {
+      return visibility;
+    },
+    hasFocus: () => focused,
+    addEventListener: (type: string, fire: () => void) => {
+      listeners.push({ type, fire, once: false });
+    },
+    removeEventListener: (type: string, fire: () => void) => {
+      listeners = listeners.filter((entry) => entry.type !== type || entry.fire !== fire);
+    },
+  };
+}
+
+/** Fire every armed `visibilitychange` listener without touching `visibility` itself. */
+function fireVisibilityChange(): void {
+  for (const entry of listeners.filter((armed) => armed.type === 'visibilitychange')) {
+    entry.fire();
+  }
+}
+
+/** The tab being brought to the front — the moment the menu is actually shown. */
+function reveal(): void {
+  visibility = 'visible';
+  fireVisibilityChange();
+}
+
+/** Whether the browser *window* has focus — a different failure from tab visibility. */
+let focused = true;
+
+function fireWindowEvent(type: 'blur' | 'focus'): void {
+  for (const entry of listeners.filter((armed) => armed.type === type)) entry.fire();
+}
+
+const blurWindow = (): void => fireWindowEvent('blur');
+const focusWindow = (): void => fireWindowEvent('focus');
+
 /**
  * The player touching the screen. One tap is four events in a browser, dispatched in this
  * order — which matters, because the first handler to run disarms the rest, and a fake that
@@ -193,9 +234,12 @@ async function flush(): Promise<void> {
 beforeEach(() => {
   vi.useFakeTimers();
   listeners = [];
+  visibility = 'visible';
+  focused = true;
   FakeAudio.built = [];
   FakeAudio.allowPlay = false;
   vi.stubGlobal('window', fakeWindow());
+  vi.stubGlobal('document', fakeDocument());
   vi.stubGlobal('Audio', FakeAudio);
   vi.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -465,5 +509,139 @@ describe('the gesture the context waits on (§4.3)', () => {
     expect(armed).not.toBe('');
     expect(armed).toContain('this.gestureArmed = false;');
     expect(armed).toContain('this.armGesture()');
+  });
+});
+
+describe('a menu that was never on screen (§8.1)', () => {
+  it('tries again when the page becomes visible', async () => {
+    // A tab restored with a session or opened in the background is refused for a reason
+    // that expires: the browser will not start audio for a page nobody is looking at. The
+    // attempt made when the menu was built was answered for a menu that was never shown,
+    // and without this the music waits for a click a listening player never makes.
+    visibility = 'hidden';
+    const { music, context } = build();
+    music.start();
+    await flush();
+    expect(music.playing).toBe(false);
+
+    // The browser is willing now; nothing has been touched.
+    FakeAudio.allowPlay = true;
+    context.state = 'running';
+    reveal();
+    await flush();
+
+    expect(music.playing).toBe(true);
+    expect(music.route).toBe('graph');
+  });
+
+  it('stops asking once the track has started', async () => {
+    // "Asking" here is `attempt()`, which calls `context.resume()` on every attempt while
+    // the context is not yet running — a countable side effect independent of whether a
+    // `visibilitychange` listener still exists. A separate listener stays armed after this
+    // point to pause and resume playback on focus (`a paused menu (§8.1)` below); it fires
+    // on the same event and must not be mistaken for a second retry.
+    FakeAudio.allowPlay = true;
+    const { music, context } = build();
+    music.start();
+    await flush();
+    expect(context.resumeCalls).toBe(1);
+
+    visibility = 'hidden';
+    fireVisibilityChange();
+    visibility = 'visible';
+    fireVisibilityChange();
+    await flush();
+    expect(context.resumeCalls).toBe(1);
+  });
+
+  it('lets go of both visibility listeners when the menu does', async () => {
+    // The music belongs to these screens and nothing else: a retry left armed would start
+    // the menu's track over the top of a run the moment the player switched tabs back, and
+    // a focus listener left armed would resume it the same way.
+    visibility = 'hidden';
+    const { music } = build();
+    music.start();
+    await flush();
+    // The retry (never shown yet) and the focus tracker (`armFocus`) are both armed here —
+    // both are `visibilitychange`, and both have a reason to be listening at this point.
+    expect(listeners.filter((entry) => entry.type === 'visibilitychange')).toHaveLength(2);
+
+    music.stop();
+    expect(listeners.filter((entry) => entry.type === 'visibilitychange')).toHaveLength(0);
+
+    FakeAudio.allowPlay = true;
+    reveal();
+    await flush();
+    expect(music.playing).toBe(false);
+  });
+});
+
+describe('a paused menu (§8.1)', () => {
+  it('pauses when the page loses visibility, and resumes when it regains it', async () => {
+    FakeAudio.allowPlay = true;
+    const { music } = build();
+    music.start();
+    await flush();
+    expect(music.playing).toBe(true);
+
+    visibility = 'hidden';
+    fireVisibilityChange();
+    expect(music.playing).toBe(false);
+
+    visibility = 'visible';
+    fireVisibilityChange();
+    expect(music.playing).toBe(true);
+  });
+
+  it('pauses when the window loses focus, even if the tab stays visible', async () => {
+    // The two-monitor case: a tab kept in front while the browser window itself is not
+    // focused. `visibilitychange` alone would miss this — the page never reports hidden.
+    FakeAudio.allowPlay = true;
+    focused = true;
+    const { music } = build();
+    music.start();
+    await flush();
+    expect(music.playing).toBe(true);
+
+    focused = false;
+    blurWindow();
+    expect(music.playing).toBe(false);
+
+    focused = true;
+    focusWindow();
+    expect(music.playing).toBe(true);
+  });
+
+  it('does not fight `stop()`: a run starting while backgrounded stays stopped', async () => {
+    FakeAudio.allowPlay = true;
+    const { music } = build();
+    music.start();
+    await flush();
+
+    visibility = 'hidden';
+    fireVisibilityChange();
+    expect(music.playing).toBe(false);
+
+    // The player started a run from another tab, somehow, or the harness just calls stop()
+    // regardless of visibility — either way this must not be undone by focus returning.
+    music.stop();
+    visibility = 'visible';
+    fireVisibilityChange();
+    expect(music.playing).toBe(false);
+  });
+
+  it('never pauses or resumes before the track has actually started', async () => {
+    // Focus flapping before the first successful `play()` must not call `pause()` on an
+    // element that was never playing, and must not substitute for the gesture retry.
+    const { music } = build();
+    music.start();
+    await flush();
+    expect(music.playing).toBe(false);
+
+    visibility = 'hidden';
+    fireVisibilityChange();
+    visibility = 'visible';
+    fireVisibilityChange();
+    expect(music.playing).toBe(false);
   });
 });
