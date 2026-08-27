@@ -933,7 +933,9 @@ it. Switching `input.aimSource` to `'stick'` reproduced the derived ~2.76 m reac
 Sprinting with the cursor thrown across the screen mid-sprint held the reach at ~2.76 m
 rather than following it, matching `aimSettled` gating the pointer out. The near bound was
 then lowered to 0.5 m so aiming close in front of the player still tracks the cursor instead
-of clamping early; re-verification against that value is outstanding.
+of clamping early; re-driven against it, a cursor near the player's own screen position now
+clamps the reach to 0.500 m rather than 2 m, and the far reach, the fallback and the sprint
+lock were unchanged.
 
 *A lamp you can see.* §4.2's environmental lights were a pool of light coming out of nothing,
 so an unpowered one was not dim, it was *absent* — a level with lamps and no switch wired to
