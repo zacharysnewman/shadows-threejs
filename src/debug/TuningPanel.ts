@@ -34,7 +34,8 @@ const VISIBLE_STORAGE_KEY = 'shadows:tuning:open';
 
 interface Row {
   tunable: Tunable;
-  slider: HTMLInputElement;
+  /** A range for a number, a swatch for a colour — the panel's only difference between them. */
+  input: HTMLInputElement;
   readout: HTMLElement;
   label: HTMLElement;
 }
@@ -110,7 +111,7 @@ export class TuningPanel {
   refresh(): void {
     for (const row of this.rows) {
       const value = row.tunable.get();
-      row.slider.value = String(value);
+      row.input.value = row.tunable.kind === 'colour' ? toHex(value) : String(value);
       row.readout.textContent = format(value, row.tunable);
       const overridden = value !== defaultFor(row.tunable.key);
       row.label.style.color = overridden ? '#ffcf8a' : '#cfe3d0';
@@ -167,14 +168,23 @@ export class TuningPanel {
     const readout = document.createElement('span');
     readout.style.cssText = 'font-variant-numeric:tabular-nums;opacity:0.85';
 
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = String(tunable.min);
-    slider.max = String(tunable.max);
-    slider.step = String(tunable.step);
-    slider.style.cssText = 'width:100%;margin:2px 0 0;accent-color:#8fd6a8';
-    slider.addEventListener('input', () => {
-      tunable.set(Number(slider.value));
+    const colourful = tunable.kind === 'colour';
+    const input = document.createElement('input');
+    if (colourful) {
+      input.type = 'color';
+      // Full width like a slider, and tall enough to judge: the swatch *is* the readout for
+      // a colour, and a 20 px chip of night-time earth against a dark panel is not one.
+      input.style.cssText =
+        'width:100%;height:22px;margin:2px 0 0;padding:0;border:0;background:none;cursor:pointer';
+    } else {
+      input.type = 'range';
+      input.min = String(tunable.min);
+      input.max = String(tunable.max);
+      input.step = String(tunable.step);
+      input.style.cssText = 'width:100%;margin:2px 0 0;accent-color:#8fd6a8';
+    }
+    input.addEventListener('input', () => {
+      tunable.set(colourful ? fromHex(input.value) : Number(input.value));
       // Stored on every move rather than on release: a tuning session that loses its
       // numbers to a reload is a tuning session done twice.
       saveTuning(overriddenTuning());
@@ -183,8 +193,8 @@ export class TuningPanel {
     });
 
     label.append(name, readout);
-    row.append(label, slider);
-    this.rows.push({ tunable, slider, readout, label: name });
+    row.append(label, input);
+    this.rows.push({ tunable, input, readout, label: name });
     return row;
   }
 }
@@ -218,7 +228,18 @@ function button(text: string, onClick: () => void): HTMLElement {
  * Two decimals reads as noise on a speed and as nothing at all on a drain rate, so the
  * drain gets what it actually means: how long a full charge lasts.
  */
+/** `0xrrggbb` as the `#rrggbb` an `input[type=color]` speaks, and back. */
+function toHex(value: number): string {
+  return `#${Math.max(0, Math.round(value)).toString(16).padStart(6, '0').slice(-6)}`;
+}
+
+function fromHex(text: string): number {
+  const parsed = Number.parseInt(text.replace('#', ''), 16);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function format(value: number, tunable: Tunable): string {
+  if (tunable.kind === 'colour') return toHex(value);
   if (tunable.key === 'torch.drain') return `${(1 / value / 60).toFixed(1)} min`;
   const decimals = tunable.step >= 1 ? 0 : tunable.step >= 0.1 ? 1 : tunable.step >= 0.01 ? 2 : 3;
   return `${value.toFixed(decimals)}${tunable.unit ? ` ${tunable.unit}` : ''}`;

@@ -54,9 +54,16 @@ export function treeGeometry(): THREE.BufferGeometry {
   paint(lower, TREES.canopyColour);
   paint(upper, TREES.canopyColour);
 
+  const trunkVertices = trunk.getAttribute('position').count;
   const merged = mergeGeometries([trunk, lower, upper], false);
   for (const part of [trunk, lower, upper]) part.dispose();
   if (!merged) throw new Error('generated tree: parts would not merge');
+
+  // §8.3 — where the trunk stops and the crowns start, so the two colours can be moved on
+  // the tuner without rebuilding the geometry they are baked into. The merge is in the
+  // order above, so the trunk is the first run of vertices and everything after it is
+  // canopy; nothing else here needs to know that, and this is the only place that does.
+  merged.userData[PART_KEY] = { trunkVertices } satisfies TreeParts;
 
   // Normalised so "height 1" stays true whatever the proportions above become: callers
   // multiply by a height in metres, and that only means metres if this does.
@@ -74,6 +81,48 @@ export function treeMaterial(): THREE.MeshStandardMaterial {
     roughness: TREES.roughness,
     metalness: 0,
   });
+}
+
+/**
+ * Push `TREES` onto every generated tree in a scene (§8.3).
+ *
+ * The colours are baked into a vertex attribute rather than carried by the material — one
+ * material is what makes a band of ten thousand trees one draw call (§2) — so moving them
+ * means rewriting that attribute. It is fifty triangles' worth of floats, which is why a
+ * tuner slider can afford to do it on every change where the ground cannot.
+ *
+ * Walks the scene for the same reason `ModelMaterials` does: the geometry is handed out to
+ * the surround and to whatever placed `tree_small`, and the scene is where both end up.
+ */
+export function repaintTrees(root: THREE.Object3D): void {
+  root.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    const parts = node.geometry.userData?.[PART_KEY] as TreeParts | undefined;
+    if (!parts) return;
+    paintTree(node.geometry, parts);
+    for (const material of [node.material].flat()) {
+      if (material instanceof THREE.MeshStandardMaterial) material.roughness = TREES.roughness;
+    }
+  });
+}
+
+/** Trunk first, crowns after — the order `treeGeometry` merges its parts in. */
+interface TreeParts {
+  trunkVertices: number;
+}
+
+const PART_KEY = 'treeParts';
+
+function paintTree(geometry: THREE.BufferGeometry, parts: TreeParts): void {
+  const attribute = geometry.getAttribute('color');
+  if (!attribute) return;
+  const trunk = new THREE.Color(TREES.trunkColour);
+  const canopy = new THREE.Color(TREES.canopyColour);
+  for (let i = 0; i < attribute.count; i += 1) {
+    const rgb = i < parts.trunkVertices ? trunk : canopy;
+    attribute.setXYZ(i, rgb.r, rgb.g, rgb.b);
+  }
+  attribute.needsUpdate = true;
 }
 
 /** Give every vertex of a part the same colour, so the merged tree needs one material. */

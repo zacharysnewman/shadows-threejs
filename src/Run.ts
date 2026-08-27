@@ -36,7 +36,10 @@ import { Spider } from './enemies/Spider';
 import { SpiderVoices } from './enemies/SpiderVoices';
 import type { AssetLoader } from './core/AssetLoader';
 import type { CharacterLoader } from './core/CharacterLoader';
+import { repaintTrees } from './core/GeneratedPrefabs';
+import { requestGroundRebuild } from './core/GroundTextures';
 import type { Input } from './core/Input';
+import { refreshModelLook } from './core/ModelMaterials';
 import { OccluderFade } from './core/OccluderFade';
 import { Rng } from './core/rng';
 import { SimClock } from './core/SimClock';
@@ -726,6 +729,14 @@ export async function createRun(
    * (§4), and the player's body took §4's readability allowance when its materials were
    * first touched. Without this they would only take effect on the next run, which for a
    * value you are trying to *feel* is no use at all.
+   *
+   * §2's art is the same problem one step further out, because it is not a light value at
+   * all but a *surface*: the kit's models were tinted as they were loaded, the generated
+   * tree's colours were baked into its vertices, and the ground was rasterised into a
+   * texture. All three are re-pushed by walking the scene, which is the one place every
+   * copy of them is reachable — a prefab's material is shared by all of its instances, and
+   * a cloned one belongs to a single enemy. The ground is the exception that waits: it is a
+   * quarter of a second of arithmetic, so it coalesces to the end of a slider drag.
    */
   if (tuning) {
     tuning.onChange = (): void => {
@@ -735,6 +746,9 @@ export async function createRun(
       flashlight.shaftDensity = LIGHT_SHAFT.flashlightDensity;
       environment.shaftDensity = LIGHT_SHAFT.environmentDensity;
       player.lift();
+      refreshModelLook(viewport.scene);
+      repaintTrees(viewport.scene);
+      requestGroundRebuild();
     };
     tuning.onChange();
   }

@@ -8,10 +8,25 @@
  */
 
 import * as THREE from 'three';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TREES } from '../src/config';
-import { GENERATED_PREFABS, treeGeometry } from '../src/core/GeneratedPrefabs';
+import {
+  GENERATED_PREFABS,
+  repaintTrees,
+  treeGeometry,
+  treeMaterial,
+} from '../src/core/GeneratedPrefabs';
+import { TUNABLES, resetTuning } from '../src/debug/Tuning';
 import { Props } from '../src/world/Props';
+
+const tunable = (key: string) => {
+  const found = TUNABLES.find((entry) => entry.key === key);
+  if (!found) throw new Error(`no tunable "${key}"`);
+  return found;
+};
+
+// The colour test moves live config (§8.3), so every test puts it back.
+afterEach(() => resetTuning());
 
 function triangles(geometry: THREE.BufferGeometry): number {
   const index = geometry.getIndex();
@@ -37,6 +52,34 @@ describe('the generated tree (§2)', () => {
     // trees in five figures, which at that cost is a budget nobody has — that, and showing
     // a crown to the camera at all, is the whole reason this exists.
     expect(triangles(treeGeometry())).toBeLessThan(120);
+  });
+
+  it('takes new colours without being built again (§8.3)', () => {
+    // The colours are baked into a vertex attribute because that is what makes a band of
+    // ten thousand trees one draw call (§2) — so the tuner's push has to rewrite the
+    // attribute, and it has to know which vertices are trunk and which are crown. A push
+    // that got the split wrong paints a brown canopy, which reads as the colours simply
+    // not working.
+    const geometry = treeGeometry();
+    const scene = new THREE.Scene().add(new THREE.Mesh(geometry, treeMaterial()));
+    const colours = geometry.getAttribute('color');
+    const authored = (colours.array as Float32Array).slice();
+
+    tunable('trees.trunk').set(0xff0000);
+    tunable('trees.canopy').set(0x0000ff);
+    repaintTrees(scene);
+
+    const trunk = new THREE.Color(0xff0000);
+    const canopy = new THREE.Color(0x0000ff);
+    expect(colours.getX(0)).toBeCloseTo(trunk.r, 5);
+    expect(colours.getZ(0)).toBeCloseTo(trunk.b, 5);
+    expect(colours.getZ(colours.count - 1)).toBeCloseTo(canopy.b, 5);
+    expect(colours.getX(colours.count - 1)).toBeCloseTo(canopy.r, 5);
+
+    // And back, exactly: a tuning session is a series of absolute answers, not a drift.
+    resetTuning();
+    repaintTrees(scene);
+    expect(colours.array).toEqual(authored);
   });
 
   it('is a tree at every size, because it scales uniformly', () => {
