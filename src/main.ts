@@ -190,13 +190,14 @@ async function main(): Promise<void> {
    * sound until the player happened to click something.
    */
   // §8.3 — the music's own row. Shell-level like the music itself, and it is the only place
-  // a graph that plays nothing is visible: `silent` is the shape of `createMediaElementSource`
-  // failing, which looks exactly like a track that never loaded.
+  // a route that carries nothing is visible: a graph playing silence looks exactly like a
+  // track that never loaded. It carries the context's state as well, because the run's own
+  // `audio` row is not on screen where the music plays, and "playing, and still silent" is
+  // a question only that answers.
   if (music) {
     overlay.addShellRow('music', () =>
-      music.silent
-        ? 'playing, but the graph is silent'
-        : `${music.playing ? 'playing' : 'stopped'} · ${(music.volume * 100).toFixed(0)}%`,
+      `${music.playing ? 'playing' : 'stopped'} · ${(music.volume * 100).toFixed(0)}% · ` +
+      `${music.route} · context ${audio.state}`,
     );
   }
 

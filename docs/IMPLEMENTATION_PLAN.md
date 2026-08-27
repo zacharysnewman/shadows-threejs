@@ -1732,11 +1732,7 @@ Two decisions worth keeping:
 through, so a raw `AudioBuffer` built at an assumed rate plays at the wrong speed and pitch.
 That trap is real and this project already guards it — `SoundBank.synthesiseBuffer` builds at
 `context.sampleRate` — but it does not reach the music: a media element source is resampled
-by the graph, as decoded files are. What iOS *does* threaten here is
-`createMediaElementSource` itself, silent on Safari for years and only dependable from
-iOS 15, which is why `Music.silent` exists and why it has a readout row: a graph playing
-nothing looks exactly like a track that failed to load. **Not verified on real iOS** — there
-is no device in this environment — so that remains outstanding.
+by the graph, as decoded files are.
 
 The project map indexed the mp3 as 30,065 "lines" with `§` citations scraped out of
 compressed audio. `scripts/mp3-facts.mjs` now measures audio the way `glb-facts.mjs`
@@ -1749,6 +1745,35 @@ tapping `Credits` — a gesture that is not `Play` — starts it and fades it to
 With `Play` as the very first gesture it starts and stops without the volume rising, so
 there is no blip. The `music` readout row survives a restart, which is what `addShellRow`
 is for.
+
+*Added afterwards — the menu was silent on iOS Safari.* The element played — the phone
+showed a media indicator — and nothing came out. §8.1 now says how the two gates open, and
+`src/audio/Music.ts` opens them that way:
+
+- **The track joins the graph only once the context is running.** A `MediaElementSource`
+  built against a context that has never run is a node iOS never carries, and `Music` built
+  exactly that in its constructor, which runs while the menu is still waiting for its first
+  tap. It is held off the graph until then, and muted while it is off it, so the gap is
+  silence rather than the track at the device's own volume.
+- **The context and the element are asked for in the same gesture, and neither is awaited.**
+  Safari counts a gesture as spent across an `await`.
+- **A gesture that leaves the context not running re-arms.** iOS has an `interrupted` state
+  the standard does not, where `resume` resolves with nothing changed; `AudioCore.armGesture`
+  used to disarm on the first try and leave the session silent for good.
+- **Where the graph carries nothing anyway, the track comes out as plain media.** The
+  analyser reads the graph's own output for 2 s before believing it. The fallback costs the
+  lock-screen transport and the level — a phone holds a media element at the device's volume,
+  so the fade out becomes a cut — and it beats a menu that shows every sign of playing and
+  makes no sound. An element cannot come off the graph once attached, so that fallback is a
+  second element.
+
+*Verified in Chromium*, since there is no iOS device in this environment: on the real gesture
+path the music reaches `route: 'graph'` and fades 0 → 0.45 without the fallback firing, which
+is the probe hearing the graph carry it; with `createMediaElementSource` stubbed to a node the
+element never feeds, and again with `resume` stubbed never to resolve, it lands on
+`route: 'media'`, playing, within ~2.5 s of the tap. **The fix is not verified on real iOS** —
+what that device does with either path is still outstanding, and the `music` readout row now
+carries the route and the context's state so the answer can be read off the phone.
 
 *Added afterwards — the menu's backdrop.* §8.1 had said nothing animated behind the title;
 it now says a film of oily water, and gives the values it is made of. `src/ui/MenuBackdrop.ts`
