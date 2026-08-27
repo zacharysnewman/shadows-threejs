@@ -145,7 +145,7 @@ async function main(): Promise<void> {
    * Published now rather than at the first run, because the title screen is where the
    * music plays and a handle that only exists inside a run cannot reach it.
    */
-  const shellHandle = { music, restart: () => void startRun() };
+  const shellHandle = { music, restart: () => void startRun(), backdrop: () => title.backdrop };
   if (import.meta.env.DEV) {
     (window as unknown as { shadows: unknown }).shadows = shellHandle;
   }
@@ -199,6 +199,15 @@ async function main(): Promise<void> {
         : `${music.playing ? 'playing' : 'stopped'} · ${(music.volume * 100).toFixed(0)}%`,
     );
   }
+
+  // §8.3 — the backdrop's own row, shell-level for the same reason the music's is. `still`
+  // is the only thing that tells a film that stopped because this device could not afford it
+  // from one that was never running, and neither is visible in a screenshot.
+  overlay.addShellRow('menu', () => {
+    const backdrop = title.backdrop;
+    if (backdrop.running) return 'backdrop turning over';
+    return backdrop.still ? `backdrop still (${backdrop.still})` : 'backdrop stopped';
+  });
 
   const title = new TitleScreen({
     onPlay: () => {

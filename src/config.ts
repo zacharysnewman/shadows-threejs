@@ -1125,6 +1125,88 @@ export const ILLUMINATION = {
 } as const;
 
 /**
+ * §8.1 — the title screen's backdrop: an oily film of water, turned over slowly behind the
+ * menu. Its own values rather than part of `MUSIC`, which is the only other thing the shell
+ * owns and shares nothing with this.
+ *
+ * The first four are a budget, not a look. The field is evaluated per sample on the CPU —
+ * five domain-warped fBm lookups apiece, of which two are cached per grid — so the cost is
+ * the sample count times the redraw rate times the octaves, and every one of those is here
+ * to be turned down rather than discovered in a profiler. It is drawn small and scaled up
+ * because the thing being drawn has no detail to lose: water this slow is all low
+ * frequencies. `budgetMilliseconds` at the bottom is the same concern from the other end —
+ * what happens on a device where turning these down was not enough.
+ */
+export const MENU_BACKDROP = {
+  /** Samples across the longest edge of the screen. The short edge follows the aspect. */
+  resolution: 144,
+  /** Redraws per second. The film moves slowly enough that more would not be visible. */
+  frameRateCap: 30,
+  /** fBm octaves in the lookup the picture is made of. Below 3 it reads as cloth. */
+  octaves: 3,
+  /**
+   * fBm octaves in the two lookups that *displace* that one. Fewer, and not a compromise:
+   * a warp is a large-scale drag, and detail in it is detail nothing can see through the
+   * lookup it feeds — while costing exactly as much as detail that can be seen.
+   */
+  warpOctaves: 2,
+  /** Field cells across the longest edge — how large the swirls read. */
+  featureScale: 5.5,
+  /** How far each warp stage drags the field. This is what makes it swirl rather than boil. */
+  warp: 1.2,
+  /** Seconds for the churn to advance one radian: the whole sense of it being liquid. */
+  churnSeconds: 9,
+  /**
+   * The field's own median, which is not a half: fBm built on smoothstepped value noise and
+   * then read through a warp is biased upward, and this is where the measured distribution
+   * actually sits. It is what the stretch below is centred on — centre it on a half instead
+   * and an eighth of the picture clips to the highlight, which is the pale plateaus that
+   * made the first version of this read as smoke rather than as water.
+   */
+  midpoint: 0.61,
+  /**
+   * How hard the field is stretched about that midpoint before anything is read off it.
+   * fBm is a sum of independent samples and piles up around its mean — nine tenths of the
+   * field lies inside a band about a third of [0, 1] wide — so without this every value
+   * lands in the greys and the picture has no blacks in it at all.
+   */
+  contrast: 2.1,
+  /** Exponent on thickness before it is a grey. Above 1 it puts most of the film in the dark. */
+  depthCurve: 3.2,
+  /** Bands of thin-film sheen across the field's range. Oil on water, in greys. */
+  bands: 3.4,
+  /** Exponent on the sheen. Higher is a thinner, wetter-looking ridge. */
+  gloss: 6,
+  /** The two greys the film lies between, darkest first, as sRGB bytes. */
+  shadow: [3, 4, 6],
+  highlight: [98, 106, 118],
+  /**
+   * How much of the title's own amber (§8.1's one flourish) the sheen carries, 0 for none.
+   * Small on purpose: the film is grey, and this only keeps it from reading as a separate
+   * palette from the words in front of it.
+   */
+  amber: 0.1,
+  /**
+   * How far the centre of the screen is scrimmed back, 0..1. The menu's words sit there,
+   * and a backdrop that competes with them is a backdrop that has to go.
+   */
+  centreScrim: 0.72,
+  /**
+   * Milliseconds a frame of the film may take. A device that cannot draw it inside this
+   * gets the picture and stops turning it over, which is §8.1's rule applied where it
+   * actually bites: a menu that stutters is a promise about the game behind it.
+   */
+  budgetMilliseconds: 8,
+  /**
+   * Frames the judgement is made over, by their median. A single frame does not settle
+   * anything — a page still loading, a garbage collection or the browser scheduling
+   * something else lands one frame well over budget on hardware that draws the other
+   * fifty inside it, and a rule that stops on the first of those stops on all of them.
+   */
+  budgetSamples: 12,
+} as const;
+
+/**
  * §8.2 — everything the credits screen names that is not the art (`PREFAB_SOURCE` above).
  *
  * Beside the values the game loads by, for the reason §8.2 gives: a credits screen typed
